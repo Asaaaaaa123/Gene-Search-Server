@@ -36,19 +36,37 @@ export default function Home() {
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+  // Debug logging
+  useEffect(() => {
+    console.log('API_BASE_URL:', API_BASE_URL);
+    console.log('Environment variables:', {
+      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+      NODE_ENV: process.env.NODE_ENV
+    });
+  }, []);
+
   useEffect(() => {
     loadGeneSymbols();
   }, []);
 
   const loadGeneSymbols = async () => {
     try {
+      console.log('Attempting to fetch gene symbols from:', `${API_BASE_URL}/api/gene/symbols`);
       const response = await fetch(`${API_BASE_URL}/api/gene/symbols`);
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('Gene symbols data:', data);
       setGeneSymbols(data.gene_symbols);
       setFilteredGenes(data.gene_symbols);
     } catch (error) {
-      setError('Failed to load gene symbols');
       console.error('Error loading gene symbols:', error);
+      setError(`Failed to load gene symbols: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -69,8 +87,17 @@ export default function Home() {
     setError('');
 
     try {
+      console.log('Searching for gene:', selectedGene);
+      console.log('API URL:', `${API_BASE_URL}/api/gene/symbol/search?gene_symbol=${selectedGene}`);
       const response = await fetch(`${API_BASE_URL}/api/gene/symbol/search?gene_symbol=${selectedGene}`);
+      console.log('Search response status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data: SearchResponse = await response.json();
+      console.log('Search response data:', data);
       
       if (data.data && data.data.length > 0) {
         setSearchResults(data.data);
@@ -79,8 +106,8 @@ export default function Home() {
         setError('No results found for this gene symbol');
       }
     } catch (error) {
-      setError('Failed to search for gene');
       console.error('Error searching gene:', error);
+      setError(`Failed to search for gene: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
