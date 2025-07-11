@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface GeneData {
   organ: string;
@@ -33,6 +33,8 @@ export default function Home() {
   const [plotTitle, setPlotTitle] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -47,6 +49,20 @@ export default function Home() {
 
   useEffect(() => {
     loadGeneSymbols();
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const loadGeneSymbols = async () => {
@@ -75,6 +91,11 @@ export default function Home() {
       gene.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setFilteredGenes(filtered);
+  };
+
+  const handleGeneSelect = (gene: string) => {
+    setSelectedGene(gene);
+    setIsDropdownOpen(false);
   };
 
   const searchGene = async () => {
@@ -193,27 +214,54 @@ export default function Home() {
         {/* Gene Input Section */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex flex-col sm:flex-row gap-4 items-center">
-            <div className="flex-1">
+            <div className="flex-1 relative" ref={dropdownRef}>
               <label htmlFor="gene-symbol" className="block text-sm font-medium text-gray-700 mb-2">
                 Gene Symbol:
               </label>
-              <input
-                id="gene-symbol"
-                type="text"
-                value={selectedGene}
-                onChange={(e) => {
-                  setSelectedGene(e.target.value);
-                  filterGenes(e.target.value);
-                }}
-                list="gene-list"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter gene symbol..."
-              />
-              <datalist id="gene-list">
-                {filteredGenes.map((gene, index) => (
-                  <option key={index} value={gene} />
-                ))}
-              </datalist>
+              <div className="relative">
+                                  <input
+                    id="gene-symbol"
+                    type="text"
+                    value={selectedGene}
+                    onChange={(e) => {
+                      setSelectedGene(e.target.value);
+                      filterGenes(e.target.value);
+                      setIsDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
+                    placeholder="Enter gene symbol..."
+                  />
+                <button
+                  type="button"
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Dropdown */}
+              {isDropdownOpen && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {filteredGenes.length > 0 ? (
+                    filteredGenes.map((gene, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => handleGeneSelect(gene)}
+                        className="w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                      >
+                        {gene}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-gray-500">No genes found</div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -259,7 +307,7 @@ export default function Home() {
         {/* Results Table */}
         {searchResults.length > 0 && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">Search Results</h2>
+            <h2 className="text-xl font-semibold mb-4 text-gray-900">Search Results</h2>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -298,7 +346,7 @@ export default function Home() {
         {/* Plot Display */}
         {currentPlot && (
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">{plotTitle}</h2>
+            <h2 className="text-xl font-semibold mb-4 text-gray-900">{plotTitle}</h2>
             <div className="flex justify-center">
               <img 
                 src={currentPlot} 
