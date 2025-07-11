@@ -9,22 +9,21 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/data:/app/data
-    environment:
-      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
     networks:
       - gene-search-network
-
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_API_URL=http://45.76.225.113:8000
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://45.76.225.113:8000
+    env_file:
+      - .env
     depends_on:
       - backend
     networks:
