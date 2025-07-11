@@ -293,6 +293,12 @@ export default function Home() {
               >
                 Show LSmean (10mg/kg)
               </button>
+              <button
+                onClick={() => window.location.href = '/login'}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+              >
+                Add Gene
+              </button>
             </div>
           </div>
         </div>
