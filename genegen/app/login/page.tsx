@@ -24,7 +24,7 @@ export default function LoginPage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+    
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('authToken', token);
         router.push('/add-gene');
@@ -32,7 +32,7 @@ export default function LoginPage() {
         const errorData = await response.json();
         setError(errorData.detail || 'Invalid token');
       }
-    } catch (error) {
+    } catch {
       setError('Network error. Please try again.');
     }
     

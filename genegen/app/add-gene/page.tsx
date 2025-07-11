@@ -48,7 +48,7 @@ export default function AddGenePage() {
   ];
 
   useEffect(() => {
-    // 检查登录状态
+
     const isLoggedIn = localStorage.getItem('isLoggedIn');
     if (!isLoggedIn) {
       router.push('/login');
@@ -69,7 +69,7 @@ export default function AddGenePage() {
     setError('');
     setSuccess('');
 
-    // 验证所有字段都已填写
+
     const requiredFields = Object.keys(formData) as (keyof GeneFormData)[];
     const emptyFields = requiredFields.filter(field => !formData[field]);
     
@@ -99,10 +99,10 @@ export default function AddGenePage() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+
       setSuccess('Gene added successfully!');
       
-      // 清空表单
+    
       setFormData({
         gene_symbol: '',
         gene_name: '',
