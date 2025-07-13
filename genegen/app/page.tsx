@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 interface GeneData {
   organ: string;
@@ -35,8 +35,35 @@ export default function Home() {
   const [error, setError] = useState<string>('');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // Create a search index for better performance
+  const searchIndex = useMemo(() => {
+    const index: { [key: string]: string[] } = {};
+    
+    geneSymbols.forEach(gene => {
+      const lowerGene = gene.toLowerCase();
+      
+      // Create prefixes for faster prefix matching
+      for (let i = 1; i <= Math.min(lowerGene.length, 10); i++) {
+        const prefix = lowerGene.substring(0, i);
+        if (!index[prefix]) {
+          index[prefix] = [];
+        }
+        index[prefix].push(gene);
+      }
+      
+      // Also add exact matches
+      if (!index[lowerGene]) {
+        index[lowerGene] = [];
+      }
+      index[lowerGene].push(gene);
+    });
+    
+    return index;
+  }, [geneSymbols]);
 
   // Debug logging
   useEffect(() => {
@@ -65,6 +92,15 @@ export default function Home() {
     };
   }, []);
 
+  // Cleanup debounce timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const loadGeneSymbols = async () => {
     try {
       console.log('Attempting to fetch gene symbols from:', `${API_BASE_URL}/api/gene/symbols`);
@@ -79,23 +115,78 @@ export default function Home() {
       const data = await response.json();
       console.log('Gene symbols data:', data);
       setGeneSymbols(data.gene_symbols);
-      setFilteredGenes(data.gene_symbols);
+      setFilteredGenes(data.gene_symbols.slice(0, 100)); // Only show first 100 initially
     } catch (error) {
       console.error('Error loading gene symbols:', error);
       setError(`Failed to load gene symbols: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  const filterGenes = (searchTerm: string) => {
-    const filtered = geneSymbols.filter(gene => 
-      gene.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  // Optimized filter function using search index
+  const filterGenesOptimized = (searchTerm: string) => {
+    const term = searchTerm.toLowerCase().trim();
+    
+    if (term === '') {
+      // Show first 100 genes when search is empty
+      setFilteredGenes(geneSymbols.slice(0, 100));
+      return;
+    }
+
+    // Use search index for faster matching
+    const results = new Set<string>();
+    
+    // Check for prefix matches first (most efficient)
+    if (searchIndex[term]) {
+      searchIndex[term].forEach(gene => results.add(gene));
+    }
+    
+    // Also check for partial matches in the first few characters
+    for (let i = 1; i <= Math.min(term.length, 5); i++) {
+      const prefix = term.substring(0, i);
+      if (searchIndex[prefix]) {
+        searchIndex[prefix].forEach(gene => {
+          if (gene.toLowerCase().includes(term)) {
+            results.add(gene);
+          }
+        });
+      }
+    }
+    
+    // Convert to array and limit results
+    const filtered = Array.from(results).slice(0, 50);
     setFilteredGenes(filtered);
+  };
+
+  // Debounced filter function
+  const debouncedFilterGenes = (searchTerm: string) => {
+    // Clear existing timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Set new timeout
+    debounceTimeoutRef.current = setTimeout(() => {
+      filterGenesOptimized(searchTerm);
+    }, 200); // Reduced to 200ms for better responsiveness
   };
 
   const handleGeneSelect = (gene: string) => {
     setSelectedGene(gene);
     setIsDropdownOpen(false);
+  };
+
+  const handleInputChange = (value: string) => {
+    setSelectedGene(value);
+    
+    if (value.trim() === '') {
+      // If input is empty, show first 100 genes
+      setFilteredGenes(geneSymbols.slice(0, 100));
+      setIsDropdownOpen(true);
+    } else {
+      // Use debounced filter for non-empty input
+      debouncedFilterGenes(value);
+      setIsDropdownOpen(true);
+    }
   };
 
   const searchGene = async () => {
@@ -223,11 +314,7 @@ export default function Home() {
                     id="gene-symbol"
                     type="text"
                     value={selectedGene}
-                    onChange={(e) => {
-                      setSelectedGene(e.target.value);
-                      filterGenes(e.target.value);
-                      setIsDropdownOpen(true);
-                    }}
+                    onChange={(e) => handleInputChange(e.target.value)}
                     onFocus={() => setIsDropdownOpen(true)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                     placeholder="Enter gene symbol..."
@@ -247,9 +334,9 @@ export default function Home() {
               {isDropdownOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                   {filteredGenes.length > 0 ? (
-                    filteredGenes.map((gene, index) => (
+                    filteredGenes.slice(0, 50).map((gene) => (
                       <button
-                        key={index}
+                        key={gene} // Use gene as key for better React optimization
                         type="button"
                         onClick={() => handleGeneSelect(gene)}
                         className="w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
@@ -259,6 +346,11 @@ export default function Home() {
                     ))
                   ) : (
                     <div className="px-3 py-2 text-gray-500">No genes found</div>
+                  )}
+                  {filteredGenes.length > 50 && (
+                    <div className="px-3 py-2 text-gray-500 text-sm border-t">
+                      Showing first 50 results. Type more to narrow down.
+                    </div>
                   )}
                 </div>
               )}
