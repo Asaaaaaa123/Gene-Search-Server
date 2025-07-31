@@ -15,7 +15,7 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
@@ -28,7 +28,7 @@ export default function LoginPage() {
     
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('authToken', token);
-        router.push('/add-gene');
+        router.push('/upload-csv');
       } else {
         const errorData = await response.json();
         setError(errorData.detail || 'Invalid token');

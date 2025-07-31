@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Depends, status
+from fastapi import FastAPI, HTTPException, Query, Depends, status, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -7,6 +7,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
+
+# 配置matplotlib以避免字体问题
+plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'sans-serif']
+plt.rcParams['font.size'] = 10
+plt.rcParams['figure.dpi'] = 100
 import base64
 import io
 import os
@@ -18,6 +23,8 @@ import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
+import seaborn as sns
+from gprofiler import GProfiler
 
 # Load environment variables
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -477,6 +484,689 @@ async def add_gene(gene_data: GeneData, token: str = Query(..., description="Aut
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error adding gene: {str(e)}")
 
+# Gene Ontology Analysis Class
+class GeneOntologyAPI:
+    def __init__(self):
+        self.gp = GProfiler(return_dataframe=True)
+        self.themes = {
+            "Stress & cytokine response": [
+                "stress", "interferon", "cytokine", "inflammatory", "defense", "response to stress",
+                "cellular response to stress", "response to cytokine", "cytokine production"
+            ],
+            "Inflammation & immune signaling": [
+                "inflammation", "inflammatory", "tnf", "il-1", "il-6", "nf-kb", "toll-like",
+                "interleukin", "chemokine", "ccl", "cxcl", "immune response",
+                "inflammasome", "pattern recognition", "pathogen response", "immune system",
+                "inflammatory response", "immune signaling", "toll-like receptor"
+            ],
+            "Oxidative stress & redox regulation": [
+                "oxidative", "redox", "reactive oxygen", "ros", "nitrosative", "nrf2",
+                "antioxidant", "glutathione", "superoxide", "peroxidase", "peroxiredoxin",
+                "sod", "catalase", "thioredoxin", "oxidoreductase"
+            ],
+            "Extracellular matrix & adhesion": [
+                "extracellular", "matrix", "adhesion", "integrin", "collagen",
+                "remodeling", "fibronectin", "laminin", "basement membrane",
+                "mmp", "matrix metalloproteinase", "tenascin", "focal adhesion",
+                "ecm", "tissue remodeling", "stromal", "scaffold", "matrisome",
+                "cell junction", "cell adhesion", "cell-matrix", "desmosome"
+            ],
+            "Metabolic re-wiring": [
+                "metabolic", "oxidoreductase", "catabolic", "fatty",
+                "one-carbon", "biosynthetic"
+            ],
+            "Hematopoietic & immune commitment": [
+                "hematopoiet", "myeloid", "lymphoid", "leukocyte", "granulocyte",
+                "erythro", "megakary", "erythropoiet", "myelopoiet", "thrombopoiet",
+                "lymphocyte", "monocyte", "neutrophil", "eosinophil", "basophil",
+                "platelet", "erythrocyte", "anemia", "cytopenia", "pancytopenia",
+                "thrombocytopenia", "leukopenia", "neutropenia", "immune cell",
+                "blood cell", "hematologic", "hematopoiesis", "stem cell", "hsc"
+            ],
+            "Cell-cycle & Apoptosis": [
+                "cell cycle", "mitotic", "chromosome", "checkpoint",
+                "dna replication", "nuclear division", "apoptosis",
+                "programmed cell death", "caspase"
+            ],
+            "Neuronal Excitability & Synapse": [
+                "axon", "dendrite", "synapse", "neurotransmitter", "vesicle",
+                "action potential", "ion channel", "potassium", "sodium", "calcium",
+                "glutamate", "gaba", "synaptic", "neurogenesis", "axonogenesis"
+            ],
+            "Neurotrophic Signaling & Growth Factors": [
+                "neurotrophin", "ngf", "bdnf", "ntf", "trk", "trka", "trkb", "gdnf",
+                "growth factor", "igf", "egf", "fgf", "receptor tyrosine kinase"
+            ],
+            "Immune-Neuronal Crosstalk": [
+                "microglia", "macrophage", "satellite glia", "neuroimmune", "neuroinflammation",
+                "cd11b", "cd68", "csf1", "tslp", "complement", "ccr", "cxcr"
+            ],
+            "Pain & Nociception": [
+                "pain", "nociception", "nociceptor", "hyperalgesia", "allodynia",
+                "trpv1", "trpa1", "scn9a", "piezo", "itch", "sensory perception", "neuropeptide"
+            ],
+            "Oxidative Phosphorylation & Mitochondria": [
+                "mitochondrial", "oxidative phosphorylation", "electron transport chain",
+                "atp synthase", "complex i", "respiratory chain", "mitophagy"
+            ],
+            "Autophagy & Proteostasis": [
+                "autophagy", "lysosome", "proteasome", "ubiquitin", "protein folding", "chaperone"
+            ],
+            "Myelination & Schwann Cell Biology": [
+                "myelin", "schwann cell", "mbp", "mpz", "prx", "pmp22", "node of ranvier"
+            ],
+            "Membrane & Cell Surface": [
+                "membrane", "plasma membrane", "cell surface", "membrane protein",
+                "transmembrane", "integral membrane", "membrane transport", "ion channel"
+            ],
+            "Nucleus & Nuclear Processes": [
+                "nucleus", "nuclear", "chromatin", "dna", "rna", "transcription",
+                "nucleolus", "nuclear envelope", "nuclear pore", "chromosome"
+            ],
+            "Cytoplasm & Cytoskeleton": [
+                "cytoplasm", "cytoskeleton", "microtubule", "actin", "intermediate filament",
+                "microfilament", "centrosome", "centriole", "cilium", "flagellum"
+            ],
+            "Mitochondria & Energy": [
+                "mitochondria", "mitochondrial", "atp", "energy", "respiration",
+                "electron transport", "oxidative phosphorylation", "krebs cycle"
+            ],
+            "Endoplasmic Reticulum & Golgi": [
+                "endoplasmic reticulum", "er", "golgi", "golgi apparatus", "vesicle",
+                "secretory", "protein folding", "glycosylation", "trafficking"
+            ]
+        }
+
+    def load_genes_from_file(self, file_content: str) -> List[str]:
+        """Load genes from file content"""
+        genes = [g.strip() for g in file_content.split('\n') if g.strip()]
+        return genes
+
+    def enrich(self, genes: List[str], p_thresh: float = 1e-2) -> pd.DataFrame:
+        """Perform gene enrichment analysis"""
+        if not genes:
+            return pd.DataFrame()
+        
+        try:
+            df = self.gp.profile(organism="mmusculus", query=genes)
+            df = df[df["p_value"] < p_thresh].sort_values("p_value").copy()
+            df["Score"] = -np.log10(df["p_value"])
+            return df
+        except Exception as e:
+            print(f"Error in enrichment analysis: {e}")
+            return pd.DataFrame()
+
+    def assign_theme(self, name: str) -> Optional[str]:
+        """Assign theme to GO term based on keywords"""
+        low = name.lower()
+        matched_themes = []
+        
+        # 检查每个主题的关键词匹配
+        for th, kws in self.themes.items():
+            for kw in kws:
+                if kw in low:
+                    matched_themes.append(th)
+                    break  # 找到一个匹配就跳出内层循环
+        
+        # 如果有多个匹配，返回第一个（优先级）
+        if matched_themes:
+            return matched_themes[0]
+        
+        return None
+
+    def aggregate(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate GO terms by theme"""
+        if df.empty:
+            return pd.DataFrame()
+        
+        df["Theme"] = df["name"].apply(self.assign_theme)
+        themed = (df.dropna(subset=["Theme"])
+                  .groupby("Theme")
+                  .agg(Score=("Score", "sum"),
+                       Terms=("Theme", "count"))
+                  .sort_values("Score", ascending=False))
+        return themed
+
+    def create_theme_chart(self, df: pd.DataFrame, theme_name: str) -> str:
+        """Create chart for a specific theme"""
+        try:
+            # Filter GO terms belonging to the current theme
+            sub_df = df[df["Theme"] == theme_name].sort_values("Score", ascending=True)
+
+            if sub_df.empty:
+                print(f"No data found for theme: {theme_name}")
+                return ""
+
+            print(f"Creating chart for theme: {theme_name} with {len(sub_df)} terms")
+
+            # Create plot with better proportions to avoid font stretching
+            fig_width = 12
+            fig_height = max(6, 0.3 * len(sub_df))  # Reduced height multiplier
+            plt.figure(figsize=(fig_width, fig_height))
+            
+            # Create horizontal bar chart
+            bars = plt.barh(sub_df["name"], sub_df["Score"], color="mediumseagreen", height=0.6)
+            
+            # Improve font settings
+            plt.xlabel("-log10(p-value)", size=12)
+            plt.title(f"Top GO Terms in Theme: {theme_name}", loc="left", fontsize=14, weight="bold")
+            
+            # Adjust y-axis to prevent font stretching
+            plt.gca().set_ylim(-0.5, len(sub_df) - 0.5)
+            
+            # Improve layout
+            plt.tight_layout(pad=1.5)
+
+            # Convert to base64
+            img_buffer = io.BytesIO()
+            plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+            img_buffer.seek(0)
+            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            plt.close()
+
+            print(f"Chart created successfully for theme: {theme_name}")
+            return img_base64
+            
+        except Exception as e:
+            print(f"Error creating chart for theme {theme_name}: {str(e)}")
+            # 清理matplotlib状态
+            plt.close('all')
+            raise e
+
+    def create_summary_chart(self, themed_df: pd.DataFrame) -> str:
+        """Create summary chart showing all themes"""
+        try:
+            if themed_df.empty:
+                print("No data for summary chart")
+                return ""
+
+            print(f"Creating summary chart with {len(themed_df)} themes")
+
+            # Create plot with better proportions
+            fig_width = 12
+            fig_height = max(8, 0.4 * len(themed_df))  # Better height calculation
+            plt.figure(figsize=(fig_width, fig_height))
+            
+            # Sort by score for better visualization
+            themed_df_sorted = themed_df.sort_values("Score", ascending=True)
+            
+            # Define distinct colors for different themes - more vibrant and distinct
+            colors = [
+                '#FF6B6B',  # Red
+                '#4ECDC4',  # Teal
+                '#45B7D1',  # Blue
+                '#96CEB4',  # Green
+                '#FFEAA7',  # Yellow
+                '#DDA0DD',  # Plum
+                '#98D8C8',  # Mint
+                '#F7DC6F',  # Gold
+                '#BB8FCE',  # Lavender
+                '#85C1E9',  # Sky Blue
+                '#F8C471',  # Orange
+                '#82E0AA',  # Light Green
+                '#F1948A',  # Salmon
+                '#A9CCE3',  # Light Blue
+                '#FAD7A0',  # Peach
+                '#D7BDE2',  # Light Purple
+                '#A9DFBF',  # Light Mint
+                '#F9E79F',  # Light Yellow
+                '#F5B7B1',  # Light Pink
+                '#AED6F1'   # Light Sky Blue
+            ]
+            
+            # Create horizontal bar chart with different colors and better bar height
+            bars = plt.barh(themed_df_sorted.index, themed_df_sorted["Score"], 
+                           color=colors[:len(themed_df_sorted)], alpha=0.9, height=0.7)
+            
+            # Add value labels on bars with better contrast
+            for i, (theme, score) in enumerate(zip(themed_df_sorted.index, themed_df_sorted["Score"])):
+                plt.text(score + 1, i, f'{score:.1f}', va='center', fontsize=10, 
+                        fontweight='bold', color='black')
+            
+            plt.xlabel("Cumulative Score (-log10(p-value))", size=12)
+            plt.title("Gene Ontology Analysis Summary by Theme", loc="left", fontsize=14, weight="bold")
+            
+            # Adjust y-axis to prevent font stretching
+            plt.gca().set_ylim(-0.5, len(themed_df_sorted) - 0.5)
+            
+            plt.tight_layout(pad=1.5)
+
+            # Convert to base64
+            img_buffer = io.BytesIO()
+            plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+            img_buffer.seek(0)
+            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            plt.close()
+
+            print(f"Summary chart created successfully with {len(themed_df_sorted)} distinct colors")
+            return img_base64
+            
+        except Exception as e:
+            print(f"Error creating summary chart: {str(e)}")
+            # 清理matplotlib状态
+            plt.close('all')
+            raise e
+
+# Initialize ontology API
+ontology_api = GeneOntologyAPI()
+
+@app.post("/api/ontology/analyze")
+async def analyze_ontology(file: UploadFile = File(...)):
+    """Analyze gene ontology from uploaded file"""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    
+    try:
+        # Read file content
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        
+        # Load genes
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            raise HTTPException(status_code=400, detail="No valid genes found in file")
+        
+        # Perform enrichment
+        enr_df = ontology_api.enrich(genes)
+        if enr_df.empty:
+            return {"results": [], "message": "No significant enrichment results found"}
+        
+        # Assign themes and aggregate
+        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        themed = ontology_api.aggregate(enr_df)
+        
+        # Convert to list of dictionaries
+        results = []
+        for theme, row in themed.iterrows():
+            results.append({
+                "theme": theme,
+                "score": float(row["Score"]),
+                "terms": int(row["Terms"])
+            })
+        
+        return {"results": results}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing genes: {str(e)}")
+
+@app.post("/api/ontology/theme-chart")
+async def generate_theme_chart(file: UploadFile = File(...), theme: str = Form(...)):
+    """Generate chart for a specific theme"""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    
+    try:
+        print(f"Processing theme chart request for theme: {theme}")
+        
+        # Read file content
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        print(f"File content length: {len(file_content)} characters")
+        
+        # Load genes
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            raise HTTPException(status_code=400, detail="No valid genes found in file")
+        print(f"Loaded {len(genes)} genes from file")
+        
+        # Perform enrichment
+        enr_df = ontology_api.enrich(genes)
+        if enr_df.empty:
+            raise HTTPException(status_code=400, detail="No significant enrichment results found")
+        print(f"Enrichment analysis completed with {len(enr_df)} significant terms")
+        
+        # Assign themes
+        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        themed_terms = enr_df[enr_df["Theme"].notna()]
+        print(f"Assigned themes to {len(themed_terms)} terms")
+        
+        # Check if theme exists
+        theme_terms = enr_df[enr_df["Theme"] == theme]
+        if theme_terms.empty:
+            available_themes = enr_df["Theme"].dropna().unique().tolist()
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Theme '{theme}' not found. Available themes: {available_themes}"
+            )
+        
+        # Create chart
+        chart_base64 = ontology_api.create_theme_chart(enr_df, theme)
+        if not chart_base64:
+            raise HTTPException(status_code=400, detail=f"No data found for theme: {theme}")
+        
+        # Get subterms for the theme
+        sub_df = enr_df[enr_df["Theme"] == theme].sort_values("Score", ascending=False)
+        subterms = []
+        for _, row in sub_df.iterrows():
+            subterms.append({
+                "name": row["name"],
+                "score": float(row["Score"])
+            })
+        
+        print(f"Successfully generated chart for theme: {theme} with {len(subterms)} subterms")
+        return {
+            "chart_base64": chart_base64,
+            "subterms": subterms
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        print(f"Unexpected error in generate_theme_chart: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating chart: {str(e)}")
+
+@app.post("/api/ontology/summary-chart")
+async def generate_summary_chart(file: UploadFile = File(...)):
+    """Generate summary chart showing all themes"""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    
+    try:
+        print("Processing summary chart request")
+        
+        # Read file content
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        print(f"File content length: {len(file_content)} characters")
+        
+        # Load genes
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            raise HTTPException(status_code=400, detail="No valid genes found in file")
+        print(f"Loaded {len(genes)} genes from file")
+        
+        # Perform enrichment
+        enr_df = ontology_api.enrich(genes)
+        if enr_df.empty:
+            raise HTTPException(status_code=400, detail="No significant enrichment results found")
+        print(f"Enrichment analysis completed with {len(enr_df)} significant terms")
+        
+        # Assign themes and aggregate
+        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        themed = ontology_api.aggregate(enr_df)
+        
+        if themed.empty:
+            raise HTTPException(status_code=400, detail="No themes could be aggregated")
+        print(f"Aggregated {len(themed)} themes")
+        
+        # Generate summary chart
+        chart_base64 = ontology_api.create_summary_chart(themed)
+        
+        if not chart_base64:
+            raise HTTPException(status_code=500, detail="Failed to generate summary chart")
+        
+        print("Successfully generated summary chart")
+        return {"chart": chart_base64}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating summary chart: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.post("/api/ontology/custom-analyze")
+async def analyze_custom_ontology(file: UploadFile = File(...), themes: str = Form(...)):
+    """Analyze gene ontology with custom theme selection"""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    
+    try:
+        # Parse selected themes
+        import json
+        selected_themes = json.loads(themes)
+        if not selected_themes:
+            raise HTTPException(status_code=400, detail="No themes selected")
+        
+        print(f"Custom analysis requested for themes: {selected_themes}")
+        
+        # Read file content
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        
+        # Load genes
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            raise HTTPException(status_code=400, detail="No valid genes found in file")
+        
+        # Perform enrichment
+        enr_df = ontology_api.enrich(genes)
+        if enr_df.empty:
+            return {"results": [], "message": "No significant enrichment results found"}
+        
+        # Filter results based on selected themes
+        # For custom analysis, we'll map theme IDs to actual theme names
+        theme_mapping = {
+            # Biological Processes
+            'metabolism': 'Metabolic re-wiring',
+            'cell_cycle': 'Cell-cycle & Apoptosis',
+            'apoptosis': 'Cell-cycle & Apoptosis',
+            'immune_response': 'Inflammation & immune signaling',
+            'development': 'Neurotrophic Signaling & Growth Factors',
+            'signaling': 'Neurotrophic Signaling & Growth Factors',
+            'transport': 'Extracellular matrix & adhesion',
+            'transcription': 'Metabolic re-wiring',
+            'translation': 'Metabolic re-wiring',
+            'stress_response': 'Stress & cytokine response',
+            
+            # Molecular Functions
+            'enzyme_activity': 'Metabolic re-wiring',
+            'binding': 'Metabolic re-wiring',
+            'receptor_activity': 'Neurotrophic Signaling & Growth Factors',
+            'transporter_activity': 'Extracellular matrix & adhesion',
+            'structural_molecule': 'Extracellular matrix & adhesion',
+            
+            # Cellular Components
+            'membrane': 'Membrane & Cell Surface',
+            'nucleus': 'Nucleus & Nuclear Processes',
+            'cytoplasm': 'Cytoplasm & Cytoskeleton',
+            'mitochondria': 'Mitochondria & Energy',
+            'endoplasmic_reticulum': 'Endoplasmic Reticulum & Golgi',
+            'golgi': 'Endoplasmic Reticulum & Golgi',
+            'cytoskeleton': 'Cytoplasm & Cytoskeleton'
+        }
+        
+        print(f"Available themes in ontology: {list(ontology_api.themes.keys())}")
+        
+        # Assign themes and filter by selected themes
+        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        selected_theme_names = [theme_mapping.get(theme_id, theme_id) for theme_id in selected_themes]
+        
+        print(f"Selected theme IDs: {selected_themes}")
+        print(f"Mapped theme names: {selected_theme_names}")
+        print(f"Available themes in data: {enr_df['Theme'].dropna().unique().tolist()}")
+        
+        # Filter enrichment results to only include selected themes
+        filtered_df = enr_df[enr_df["Theme"].isin(selected_theme_names)]
+        
+        print(f"Filtered dataframe shape: {filtered_df.shape}")
+        
+        if filtered_df.empty:
+            return {"results": [], "message": f"No enrichment results found for selected themes: {selected_theme_names}"}
+        
+        # Aggregate results for selected themes
+        themed = ontology_api.aggregate(filtered_df)
+        
+        # Convert to list of dictionaries
+        results = []
+        for theme, row in themed.iterrows():
+            results.append({
+                "theme": theme,
+                "score": float(row["Score"]),
+                "terms": int(row["Terms"])
+            })
+        
+        print(f"Custom analysis completed with {len(results)} results")
+        return {"results": results}
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid themes format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing genes: {str(e)}")
+
+@app.post("/api/ontology/custom-summary-chart")
+async def generate_custom_summary_chart(file: UploadFile = File(...), themes: str = Form(...)):
+    """Generate summary chart for custom theme selection"""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    
+    try:
+        # Parse selected themes
+        import json
+        selected_themes = json.loads(themes)
+        if not selected_themes:
+            raise HTTPException(status_code=400, detail="No themes selected")
+        
+        print(f"Custom summary chart requested for themes: {selected_themes}")
+        
+        # Read file content
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        
+        # Load genes
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            raise HTTPException(status_code=400, detail="No valid genes found in file")
+        
+        # Perform enrichment
+        enr_df = ontology_api.enrich(genes)
+        if enr_df.empty:
+            raise HTTPException(status_code=400, detail="No significant enrichment results found")
+        
+        # Theme mapping
+        theme_mapping = {
+            # Biological Processes
+            'metabolism': 'Metabolic re-wiring',
+            'cell_cycle': 'Cell-cycle & Apoptosis',
+            'apoptosis': 'Cell-cycle & Apoptosis',
+            'immune_response': 'Inflammation & immune signaling',
+            'development': 'Neurotrophic Signaling & Growth Factors',
+            'signaling': 'Neurotrophic Signaling & Growth Factors',
+            'transport': 'Extracellular matrix & adhesion',
+            'transcription': 'Metabolic re-wiring',
+            'translation': 'Metabolic re-wiring',
+            'stress_response': 'Stress & cytokine response',
+            
+            # Molecular Functions
+            'enzyme_activity': 'Metabolic re-wiring',
+            'binding': 'Metabolic re-wiring',
+            'receptor_activity': 'Neurotrophic Signaling & Growth Factors',
+            'transporter_activity': 'Extracellular matrix & adhesion',
+            'structural_molecule': 'Extracellular matrix & adhesion',
+            
+            # Cellular Components
+            'membrane': 'Membrane & Cell Surface',
+            'nucleus': 'Nucleus & Nuclear Processes',
+            'cytoplasm': 'Cytoplasm & Cytoskeleton',
+            'mitochondria': 'Mitochondria & Energy',
+            'endoplasmic_reticulum': 'Endoplasmic Reticulum & Golgi',
+            'golgi': 'Endoplasmic Reticulum & Golgi',
+            'cytoskeleton': 'Cytoplasm & Cytoskeleton'
+        }
+        
+        print(f"Custom summary chart - Available themes in ontology: {list(ontology_api.themes.keys())}")
+        
+        # Assign themes and filter by selected themes
+        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        selected_theme_names = [theme_mapping.get(theme_id, theme_id) for theme_id in selected_themes]
+        
+        # Filter enrichment results to only include selected themes
+        filtered_df = enr_df[enr_df["Theme"].isin(selected_theme_names)]
+        
+        if filtered_df.empty:
+            raise HTTPException(status_code=400, detail=f"No enrichment results found for selected themes: {selected_theme_names}")
+        
+        # Aggregate results for selected themes
+        themed = ontology_api.aggregate(filtered_df)
+        
+        if themed.empty:
+            raise HTTPException(status_code=400, detail="No themes could be aggregated")
+        
+        # Generate summary chart
+        chart_base64 = ontology_api.create_summary_chart(themed)
+        
+        if not chart_base64:
+            raise HTTPException(status_code=500, detail="Failed to generate custom summary chart")
+        
+        print("Successfully generated custom summary chart")
+        return {"chart": chart_base64}
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid themes format")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating custom summary chart: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/api/debug/themes")
+async def debug_themes():
+    """Debug endpoint to show available themes"""
+    return {
+        "available_themes": list(ontology_api.themes.keys()),
+        "theme_count": len(ontology_api.themes)
+    }
+
+@app.post("/api/debug/test-enrichment")
+async def debug_test_enrichment(file: UploadFile = File(...)):
+    """Debug endpoint to test enrichment analysis"""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    
+    try:
+        # Read file content
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        
+        # Load genes
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            return {"error": "No valid genes found in file"}
+        
+        # Perform enrichment
+        enr_df = ontology_api.enrich(genes)
+        if enr_df.empty:
+            return {"error": "No significant enrichment results found"}
+        
+        # Assign themes with detailed logging
+        print(f"Assigning themes to {len(enr_df)} terms...")
+        theme_assignments = []
+        for idx, row in enr_df.iterrows():
+            term_name = row["name"]
+            assigned_theme = ontology_api.assign_theme(term_name)
+            theme_assignments.append({
+                "term": term_name,
+                "theme": assigned_theme,
+                "score": row["Score"]
+            })
+            if assigned_theme:
+                print(f"  '{term_name}' -> '{assigned_theme}'")
+        
+        enr_df["Theme"] = [ta["theme"] for ta in theme_assignments]
+        themed_terms = enr_df[enr_df["Theme"].notna()]
+        
+        # Get theme distribution
+        theme_counts = enr_df["Theme"].value_counts().to_dict()
+        
+        return {
+            "gene_count": len(genes),
+            "enrichment_terms": len(enr_df),
+            "themed_terms": len(themed_terms),
+            "theme_distribution": theme_counts,
+            "available_themes": list(theme_counts.keys()),
+            "sample_terms": enr_df.head(5)[["name", "Theme", "Score"]].to_dict('records'),
+            "theme_assignments": theme_assignments[:10]  # 前10个分配结果
+        }
+        
+    except Exception as e:
+        return {"error": f"Debug error: {str(e)}"}
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -489,10 +1179,111 @@ async def root():
             "GET /api/gene/symbol/showFoldChange?gene_symbol=<symbol>": "Get fold change plot (base64)",
             "GET /api/gene/symbol/showLSMeanControl?gene_symbol=<symbol>": "Get LSmean(Control) plot (base64)",
             "GET /api/gene/symbol/showLSMeanTenMgKg?gene_symbol=<symbol>": "Get LSmean(10mg/kg) plot (base64)",
-            "POST /api/gene/add": "Add a new gene to the database"
+            "POST /api/gene/add": "Add a new gene to the database",
+            "POST /api/ontology/analyze": "Analyze gene ontology from uploaded file",
+            "POST /api/ontology/theme-chart": "Generate theme-specific chart",
+            "GET /api/debug/themes": "Debug: Show available themes",
+            "POST /api/debug/test-enrichment": "Debug: Test enrichment analysis"
         }
     }
 
+def install_requirements():
+    """安装依赖项"""
+    import subprocess
+    import sys
+    
+    print("正在检查并安装依赖项...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        print("✅ 依赖项安装完成")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ 依赖项安装失败: {e}")
+        return False
+    except FileNotFoundError:
+        print("⚠️  找不到requirements.txt文件，跳过依赖项安装")
+        return True
+
+def check_dependencies():
+    """检查关键依赖项是否可用"""
+    missing_deps = []
+    
+    try:
+        import fastapi
+    except ImportError:
+        missing_deps.append("fastapi")
+    
+    try:
+        import uvicorn
+    except ImportError:
+        missing_deps.append("uvicorn")
+    
+    try:
+        import pandas
+    except ImportError:
+        missing_deps.append("pandas")
+    
+    try:
+        import matplotlib
+    except ImportError:
+        missing_deps.append("matplotlib")
+    
+    try:
+        import gprofiler
+    except ImportError:
+        missing_deps.append("gprofiler-official")
+    
+    if missing_deps:
+        print(f"❌ 缺少以下依赖项: {', '.join(missing_deps)}")
+        print("正在尝试安装...")
+        return install_requirements()
+    
+    return True
+
+def start_server():
+    """启动服务器"""
+    print("=== 基因搜索后端服务器 ===")
+    
+    # 检查依赖项
+    if not check_dependencies():
+        print("❌ 依赖项检查失败，无法启动服务器")
+        return
+    
+    # 尝试不同的端口
+    ports = [8001, 8002, 8003, 8004, 8005]
+    import socket
+    
+    def is_port_available(port):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('localhost', port))
+                return True
+            except OSError:
+                return False
+    
+    # 找到可用端口
+    available_port = None
+    for port in ports:
+        if is_port_available(port):
+            available_port = port
+            break
+    
+    if not available_port:
+        print("❌ 无法找到可用端口，请手动指定端口")
+        return
+    
+    print(f"正在启动服务器...")
+    print(f"服务器地址: http://localhost:{available_port}")
+    print(f"API文档: http://localhost:{available_port}/docs")
+    print("按 Ctrl+C 停止服务器")
+    
+    try:
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=available_port, reload=False)
+    except KeyboardInterrupt:
+        print("\n服务器已停止")
+    except Exception as e:
+        print(f"❌ 启动服务器失败: {e}")
+
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    start_server() 
