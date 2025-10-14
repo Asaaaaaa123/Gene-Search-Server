@@ -32,7 +32,7 @@ export default function AddGenePage() {
   const [success, setSuccess] = useState('');
   const router = useRouter();
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // 可用的器官选项
   const organOptions = [

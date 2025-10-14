@@ -19,6 +19,7 @@ interface ThemeOption {
   name: string;
   description: string;
   category: string;
+  keywords?: string[]; // For custom themes
 }
 
 export default function CustomizeTheme() {
@@ -33,8 +34,24 @@ export default function CustomizeTheme() {
   const [currentChart, setCurrentChart] = useState<string>('');
   const [summaryChart, setSummaryChart] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Custom theme dialog states
+  const [showAddThemeDialog, setShowAddThemeDialog] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [customThemes, setCustomThemes] = useState<ThemeOption[]>([]);
+  const [newThemeName, setNewThemeName] = useState('');
+  const [newThemeDescription, setNewThemeDescription] = useState('');
+  const [newThemeKeywords, setNewThemeKeywords] = useState('');
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // Safe number formatting function
+  const safeNumberFormat = (value: any, decimals: number = 3): string => {
+    if (value === null || value === undefined || value === '') return 'N/A';
+    const num = Number(value);
+    if (isNaN(num)) return 'N/A';
+    return num.toFixed(decimals);
+  };
 
   // Predefined theme options
   const themeOptions: ThemeOption[] = [
@@ -99,6 +116,47 @@ export default function CustomizeTheme() {
     );
   };
 
+  const handleAddThemeClick = (category: string) => {
+    setSelectedCategory(category);
+    setShowAddThemeDialog(true);
+    setNewThemeName('');
+    setNewThemeDescription('');
+    setNewThemeKeywords('');
+  };
+
+  const handleSaveCustomTheme = () => {
+    if (!newThemeName.trim()) {
+      setError('Please enter a theme name');
+      return;
+    }
+    
+    if (!newThemeKeywords.trim()) {
+      setError('Please enter at least one keyword');
+      return;
+    }
+
+    const themeId = `custom_${Date.now()}_${newThemeName.toLowerCase().replace(/\s+/g, '_')}`;
+    const keywords = newThemeKeywords.split(',').map(k => k.trim()).filter(k => k);
+    
+    const newTheme: ThemeOption = {
+      id: themeId,
+      name: newThemeName.trim(),
+      description: newThemeDescription.trim() || 'Custom theme',
+      category: selectedCategory,
+      keywords: keywords,
+    };
+
+    setCustomThemes(prev => [...prev, newTheme]);
+    setShowAddThemeDialog(false);
+    setSuccess(`Custom theme "${newThemeName}" added successfully!`);
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleDeleteCustomTheme = (themeId: string) => {
+    setCustomThemes(prev => prev.filter(t => t.id !== themeId));
+    setSelectedThemes(prev => prev.filter(id => id !== themeId));
+  };
+
   const analyzeGenes = async () => {
     if (!selectedFile) {
       setError('Please select a gene file first');
@@ -122,6 +180,19 @@ export default function CustomizeTheme() {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
+      
+      // Add custom themes with their keywords
+      const customThemeData = customThemes
+        .filter(theme => selectedThemes.includes(theme.id))
+        .map(theme => ({
+          id: theme.id,
+          name: theme.name,
+          keywords: theme.keywords || []
+        }));
+      
+      if (customThemeData.length > 0) {
+        formData.append('custom_themes', JSON.stringify(customThemeData));
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/custom-analyze`, {
         method: 'POST',
@@ -212,6 +283,19 @@ export default function CustomizeTheme() {
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
       
+      // Add custom themes with their keywords
+      const customThemeData = customThemes
+        .filter(theme => selectedThemes.includes(theme.id))
+        .map(theme => ({
+          id: theme.id,
+          name: theme.name,
+          keywords: theme.keywords || []
+        }));
+      
+      if (customThemeData.length > 0) {
+        formData.append('custom_themes', JSON.stringify(customThemeData));
+      }
+      
       console.log('Sending request to custom-summary-chart with themes:', selectedThemes);
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/custom-summary-chart`, {
@@ -266,7 +350,10 @@ export default function CustomizeTheme() {
     window.URL.revokeObjectURL(url);
   };
 
-  const groupedThemes = themeOptions.reduce((acc, theme) => {
+  // Merge predefined and custom themes
+  const allThemes = [...themeOptions, ...customThemes];
+  
+  const groupedThemes = allThemes.reduce((acc, theme) => {
     if (!acc[theme.category]) {
       acc[theme.category] = [];
     }
@@ -351,7 +438,7 @@ export default function CustomizeTheme() {
                   {themes.map((theme) => (
                     <div
                       key={theme.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                      className={`p-3 rounded-lg border cursor-pointer transition-colors relative ${
                         selectedThemes.includes(theme.id)
                           ? 'bg-blue-50 border-blue-300'
                           : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
@@ -365,13 +452,40 @@ export default function CustomizeTheme() {
                           onChange={() => handleThemeToggle(theme.id)}
                           className="rounded"
                         />
-                        <div>
+                        <div className="flex-1">
                           <div className="font-medium text-gray-900">{theme.name}</div>
                           <div className="text-sm text-gray-600">{theme.description}</div>
                         </div>
+                        {theme.id.startsWith('custom_') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCustomTheme(theme.id);
+                            }}
+                            className="text-red-500 hover:text-red-700 transition-colors"
+                            title="Delete custom theme"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
+                  
+                  {/* Add Theme Button */}
+                  <button
+                    onClick={() => handleAddThemeClick(category)}
+                    className="p-3 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center cursor-pointer group"
+                  >
+                    <div className="text-center">
+                      <svg className="w-8 h-8 mx-auto text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <div className="text-sm text-gray-500 group-hover:text-blue-600 mt-1">Add Custom Theme</div>
+                    </div>
+                  </button>
                 </div>
               </div>
             ))}
@@ -451,7 +565,7 @@ export default function CustomizeTheme() {
                       >
                         <div className="font-bold text-black">{result.theme}</div>
                         <div className="text-sm text-gray-700 mt-1">
-                          Score: {result.score.toFixed(3)} | Terms: {result.terms}
+                          Score: {safeNumberFormat(result.score)} | Terms: {result.terms}
                         </div>
                       </button>
                     ))}
@@ -469,7 +583,7 @@ export default function CustomizeTheme() {
                         <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                           <span className="text-sm text-gray-900">{subterm.name}</span>
                           <span className="text-sm font-medium text-blue-600">
-                            {subterm.score.toFixed(3)}
+                            {safeNumberFormat(subterm.score)}
                           </span>
                         </div>
                       ))}
@@ -514,7 +628,7 @@ export default function CustomizeTheme() {
                               {result.theme}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {result.score.toFixed(3)}
+                              {safeNumberFormat(result.score)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {result.terms}
@@ -584,6 +698,120 @@ export default function CustomizeTheme() {
             </ul>
           </div>
         </div>
+
+        {/* Add Custom Theme Dialog */}
+        {showAddThemeDialog && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    Add Custom Theme to {selectedCategory}
+                  </h3>
+                  <button
+                    onClick={() => setShowAddThemeDialog(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Theme Name */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Theme Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newThemeName}
+                      onChange={(e) => setNewThemeName(e.target.value)}
+                      placeholder="e.g., DNA Repair, Protein Degradation"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Theme Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={newThemeDescription}
+                      onChange={(e) => setNewThemeDescription(e.target.value)}
+                      placeholder="Brief description of this theme"
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Keywords */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Keywords <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={newThemeKeywords}
+                      onChange={(e) => setNewThemeKeywords(e.target.value)}
+                      placeholder="Enter keywords separated by commas (e.g., dna repair, double strand break, rad51, brca)"
+                      rows={4}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <p className="text-sm text-gray-500 mt-2">
+                      These keywords will be used to match GO terms. Enter multiple keywords separated by commas.
+                    </p>
+                  </div>
+
+                  {/* Info Box */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                      <svg className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="text-sm text-blue-800">
+                        <p className="font-semibold mb-1">Tips for creating effective themes:</p>
+                        <ul className="list-disc list-inside space-y-1 ml-2">
+                          <li>Use specific biological process or pathway names</li>
+                          <li>Include both full names and abbreviations (e.g., &quot;DNA&quot; and &quot;deoxyribonucleic acid&quot;)</li>
+                          <li>Add related protein names or gene families</li>
+                          <li>Keywords are case-insensitive</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Example */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">Example:</p>
+                    <div className="space-y-2 text-sm text-gray-600">
+                      <p><strong>Theme Name:</strong> DNA Repair</p>
+                      <p><strong>Description:</strong> DNA damage repair and genome stability mechanisms</p>
+                      <p><strong>Keywords:</strong> dna repair, double strand break, base excision, nucleotide excision, mismatch repair, rad51, brca, xrcc, parp</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end space-x-3 mt-8 pt-6 border-t">
+                  <button
+                    onClick={() => setShowAddThemeDialog(false)}
+                    className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCustomTheme}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Add Theme
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Loading Indicator */}
         {isAnalyzing && (

@@ -1,196 +1,174 @@
 'use client';
 
-import React from 'react';
 import Link from 'next/link';
 
 export default function GeneOntologyOptions() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="max-w-6xl mx-auto px-6 py-12">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">
-            Thematic Gene Ontology Analysis
-          </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Choose your preferred analysis approach for functional enrichment analysis
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Link href="/" className="flex items-center text-gray-600 hover:text-gray-900 transition-colors">
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back to Home
+              </Link>
+            </div>
+            <div className="flex items-center">
+              <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900">Gene Ontology Analysis</h1>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-6xl mx-auto px-6 py-16">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
+            Choose Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Analysis Approach</span>
+          </h2>
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+            Select the analysis method that best fits your research needs. Our platform offers both automated and customizable approaches for comprehensive gene ontology exploration.
           </p>
         </div>
 
-        {/* Options Cards */}
-        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-          {/* Default Theme Card */}
-          <div className="bg-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2">
-            <div className="p-8">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6 mx-auto">
-                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">
-                Default Theme Analysis
-              </h2>
-              <p className="text-gray-600 mb-6 text-center">
-                Use predefined biological themes for automatic functional enrichment analysis. 
-                The system will automatically detect and analyze the most relevant themes from your gene list.
-              </p>
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center text-sm text-gray-600">
-                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        {/* Analysis Options */}
+        <div className="grid lg:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          {/* Default Theme Analysis */}
+          <div className="group relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-3xl blur opacity-20 group-hover:opacity-30 transition-opacity duration-300"></div>
+            <div className="relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 border border-gray-100 overflow-hidden">
+              <div className="p-10">
+                <div className="w-16 h-16 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center mb-6 mx-auto group-hover:scale-110 transition-transform duration-300">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
-                  Automatic theme detection
                 </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Quick and easy analysis
+                
+                <h3 className="text-2xl font-bold text-gray-900 mb-4 text-center">
+                  Default Theme Analysis
+                </h3>
+                
+                <p className="text-gray-600 mb-6 text-center leading-relaxed">
+                  Automated analysis using our pre-configured biological themes. Perfect for quick insights and standard research workflows.
+                </p>
+
+                <div className="space-y-3 mb-8">
+                  <div className="flex items-center text-sm text-gray-600">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                    Pre-configured biological themes
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                    Automated statistical analysis
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+                    Standard research workflow
+                  </div>
                 </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Comprehensive results
+
+                <div className="text-center">
+                  <Link 
+                    href="/gene-ontology/default-theme"
+                    className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                  >
+                    Start Default Analysis
+                    <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </Link>
                 </div>
-              </div>
-              <div className="text-center">
-                <Link 
-                  href="/gene-ontology/default-theme"
-                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                >
-                  Start Default Analysis
-                  <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
               </div>
             </div>
           </div>
 
-          {/* Customize Theme Card */}
-          <div className="bg-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2">
-            <div className="p-8">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6 mx-auto">
-                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">
-                Customize Theme Analysis
-              </h2>
-              <p className="text-gray-600 mb-6 text-center">
-                Select specific biological themes for targeted analysis. 
-                Choose from predefined themes across biological processes, molecular functions, and cellular components.
-              </p>
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center text-sm text-gray-600">
-                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          {/* Customize Theme Analysis */}
+          <div className="group relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-600 rounded-3xl blur opacity-20 group-hover:opacity-30 transition-opacity duration-300"></div>
+            <div className="relative bg-white rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 border border-gray-100 overflow-hidden">
+              <div className="p-10">
+                <div className="w-16 h-16 bg-gradient-to-r from-green-100 to-emerald-100 rounded-2xl flex items-center justify-center mb-6 mx-auto group-hover:scale-110 transition-transform duration-300">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
                   </svg>
-                  Targeted theme selection
                 </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Research-focused analysis
+                
+                <h3 className="text-2xl font-bold text-gray-900 mb-4 text-center">
+                  Customize Theme Analysis
+                </h3>
+                
+                <p className="text-gray-600 mb-6 text-center leading-relaxed">
+                  Select specific biological themes and customize your analysis parameters for targeted research insights.
+                </p>
+
+                <div className="space-y-3 mb-8">
+                  <div className="flex items-center text-sm text-gray-600">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                    Custom theme selection
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                    Targeted analysis focus
+                  </div>
+                  <div className="flex items-center text-sm text-gray-600">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                    Advanced research control
+                  </div>
                 </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Multiple theme categories
+
+                <div className="text-center">
+                  <Link 
+                    href="/gene-ontology/customize-theme"
+                    className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                  >
+                    Start Custom Analysis
+                    <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </Link>
                 </div>
-              </div>
-              <div className="text-center">
-                <Link 
-                  href="/gene-ontology/customize-theme"
-                  className="inline-flex items-center px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors duration-200"
-                >
-                  Start Custom Analysis
-                  <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Comparison Table */}
-        <div className="mt-12 bg-white rounded-2xl shadow-xl p-8 max-w-4xl mx-auto">
-          <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center">Analysis Comparison</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-900">Feature</th>
-                  <th className="text-center py-3 px-4 font-semibold text-blue-600">Default Theme</th>
-                  <th className="text-center py-3 px-4 font-semibold text-green-600">Customize Theme</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                <tr>
-                  <td className="py-3 px-4 text-gray-700">Theme Selection</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Automatic</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Manual</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-4 text-gray-700">Analysis Speed</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Fast</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Targeted</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-4 text-gray-700">Research Focus</td>
-                  <td className="py-3 px-4 text-center text-gray-600">General</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Specific</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-4 text-gray-700">Best For</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Exploratory analysis</td>
-                  <td className="py-3 px-4 text-center text-gray-600">Hypothesis testing</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Back to Home */}
-        <div className="text-center mt-12">
-          <Link 
-            href="/"
-            className="inline-flex items-center px-6 py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors duration-200"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Home
-          </Link>
-        </div>
-
-        {/* Information Section */}
-        <div className="mt-12 bg-blue-50 rounded-2xl p-8 max-w-4xl mx-auto">
-          <h3 className="text-2xl font-bold text-blue-900 mb-4 text-center">About Thematic Gene Ontology Analysis</h3>
-          <div className="text-blue-800 space-y-4">
-            <p className="text-center">
-              Our thematic gene ontology analysis provides two powerful approaches for functional enrichment analysis:
+        {/* Additional Information */}
+        <div className="mt-20 text-center">
+          <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-2xl p-8 border border-gray-200">
+            <h3 className="text-2xl font-bold text-gray-900 mb-4">
+              Need Help Choosing?
+            </h3>
+            <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
+              Our Default Theme Analysis is perfect for most research needs, while Customize Theme Analysis gives you full control over your analysis parameters.
             </p>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="font-semibold text-blue-900 mb-2">Default Theme Analysis</h4>
-                <p className="text-sm">
-                  Perfect for exploratory research where you want to discover all relevant biological themes 
-                  in your gene list. The system automatically identifies and analyzes the most significant themes.
-                </p>
-              </div>
-              <div>
-                <h4 className="font-semibold text-blue-900 mb-2">Customize Theme Analysis</h4>
-                <p className="text-sm">
-                  Ideal for hypothesis-driven research where you want to focus on specific biological processes, 
-                  molecular functions, or cellular components of interest.
-                </p>
-              </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link 
+                href="/gene-ontology/default-theme"
+                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Try Default First
+                <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </Link>
+              <Link 
+                href="/gene-ontology/customize-theme"
+                className="inline-flex items-center px-6 py-3 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:border-gray-400 transition-colors"
+              >
+                Explore Custom Options
+                <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </Link>
             </div>
           </div>
         </div>

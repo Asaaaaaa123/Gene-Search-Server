@@ -43,19 +43,28 @@ for k, v in os.environ.items():
 
 # MongoDB connection
 MONGODB_URI = os.getenv('MONGODB_URI')
-if not MONGODB_URI:
-    raise ValueError("MONGODB_URI environment variable is required")
+MONGODB_AVAILABLE = False
 
-try:
-    client = MongoClient(MONGODB_URI)
-    # Test the connection
-    client.admin.command('ping')
-    print("Successfully connected to MongoDB")
-    db = client.gene_search_db
-    collection = db.gene_data
-except ConnectionFailure as e:
-    print(f"Failed to connect to MongoDB: {e}")
-    raise
+if MONGODB_URI:
+    try:
+        client = MongoClient(MONGODB_URI)
+        # Test the connection
+        client.admin.command('ping')
+        print("Successfully connected to MongoDB")
+        db = client.gene_search_db
+        collection = db.gene_data
+        MONGODB_AVAILABLE = True
+    except ConnectionFailure as e:
+        print(f"Failed to connect to MongoDB: {e}")
+        print("Server will start without MongoDB functionality")
+        MONGODB_AVAILABLE = False
+    except Exception as e:
+        print(f"Unexpected error connecting to MongoDB: {e}")
+        print("Server will start without MongoDB functionality")
+        MONGODB_AVAILABLE = False
+else:
+    print("MONGODB_URI not provided, server will start without MongoDB functionality")
+    MONGODB_AVAILABLE = False
 
 # Pydantic models
 class GeneData(BaseModel):
@@ -487,7 +496,13 @@ async def add_gene(gene_data: GeneData, token: str = Query(..., description="Aut
 # Gene Ontology Analysis Class
 class GeneOntologyAPI:
     def __init__(self):
-        self.gp = GProfiler(return_dataframe=True)
+        try:
+            print("Initializing GeneOntologyAPI...")
+            self.gp = GProfiler(return_dataframe=True)
+            print("GProfiler initialized successfully")
+        except Exception as e:
+            print(f"Error initializing GProfiler: {e}")
+            raise e
         self.themes = {
             "Stress & cytokine response": [
                 "stress", "interferon", "cytokine", "inflammatory", "defense", "response to stress",
@@ -588,12 +603,17 @@ class GeneOntologyAPI:
             return pd.DataFrame()
         
         try:
+            print(f"Starting enrichment analysis for {len(genes)} genes")
             df = self.gp.profile(organism="mmusculus", query=genes)
+            print(f"GProfiler returned {len(df)} results")
             df = df[df["p_value"] < p_thresh].sort_values("p_value").copy()
+            print(f"After filtering, {len(df)} results remain")
             df["Score"] = -np.log10(df["p_value"])
             return df
         except Exception as e:
             print(f"Error in enrichment analysis: {e}")
+            import traceback
+            traceback.print_exc()
             return pd.DataFrame()
 
     def assign_theme(self, name: str) -> Optional[str]:
@@ -757,23 +777,32 @@ async def analyze_ontology(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
     
     try:
+        print("Starting ontology analysis...")
+        
         # Read file content
         content = await file.read()
         file_content = content.decode('utf-8')
+        print(f"File content length: {len(file_content)} characters")
         
         # Load genes
         genes = ontology_api.load_genes_from_file(file_content)
         if not genes:
             raise HTTPException(status_code=400, detail="No valid genes found in file")
+        print(f"Loaded {len(genes)} genes from file")
         
         # Perform enrichment
+        print("Starting enrichment analysis...")
         enr_df = ontology_api.enrich(genes)
         if enr_df.empty:
+            print("No enrichment results found")
             return {"results": [], "message": "No significant enrichment results found"}
+        print(f"Enrichment analysis completed with {len(enr_df)} results")
         
         # Assign themes and aggregate
+        print("Assigning themes...")
         enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
         themed = ontology_api.aggregate(enr_df)
+        print(f"Theme aggregation completed with {len(themed)} themes")
         
         # Convert to list of dictionaries
         results = []
@@ -784,9 +813,16 @@ async def analyze_ontology(file: UploadFile = File(...)):
                 "terms": int(row["Terms"])
             })
         
+        print(f"Analysis completed successfully with {len(results)} results")
         return {"results": results}
         
+    except ImportError as e:
+        print(f"Import error in ontology analysis: {e}")
+        raise HTTPException(status_code=500, detail=f"Missing dependency: {str(e)}")
     except Exception as e:
+        print(f"Error in ontology analysis: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error analyzing genes: {str(e)}")
 
 @app.post("/api/ontology/theme-chart")
@@ -910,7 +946,11 @@ async def generate_summary_chart(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/api/ontology/custom-analyze")
-async def analyze_custom_ontology(file: UploadFile = File(...), themes: str = Form(...)):
+async def analyze_custom_ontology(
+    file: UploadFile = File(...), 
+    themes: str = Form(...),
+    custom_themes: str = Form(None)
+):
     """Analyze gene ontology with custom theme selection"""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
@@ -923,6 +963,24 @@ async def analyze_custom_ontology(file: UploadFile = File(...), themes: str = Fo
             raise HTTPException(status_code=400, detail="No themes selected")
         
         print(f"Custom analysis requested for themes: {selected_themes}")
+        
+        # Parse custom themes if provided
+        custom_theme_data = []
+        if custom_themes:
+            try:
+                custom_theme_data = json.loads(custom_themes)
+                print(f"Custom themes received: {custom_theme_data}")
+            except json.JSONDecodeError:
+                print("Warning: Failed to parse custom themes")
+        
+        # Temporarily add custom themes to the ontology API
+        original_themes = ontology_api.themes.copy()
+        for custom_theme in custom_theme_data:
+            theme_name = custom_theme.get('name')
+            keywords = custom_theme.get('keywords', [])
+            if theme_name and keywords:
+                ontology_api.themes[theme_name] = keywords
+                print(f"Added custom theme '{theme_name}' with keywords: {keywords}")
         
         # Read file content
         content = await file.read()
@@ -970,6 +1028,13 @@ async def analyze_custom_ontology(file: UploadFile = File(...), themes: str = Fo
             'cytoskeleton': 'Cytoplasm & Cytoskeleton'
         }
         
+        # Add custom themes to mapping (they map to themselves)
+        for custom_theme in custom_theme_data:
+            theme_id = custom_theme.get('id')
+            theme_name = custom_theme.get('name')
+            if theme_id and theme_name:
+                theme_mapping[theme_id] = theme_name
+        
         print(f"Available themes in ontology: {list(ontology_api.themes.keys())}")
         
         # Assign themes and filter by selected themes
@@ -1001,15 +1066,29 @@ async def analyze_custom_ontology(file: UploadFile = File(...), themes: str = Fo
             })
         
         print(f"Custom analysis completed with {len(results)} results")
+        
+        # Restore original themes
+        ontology_api.themes = original_themes
+        
         return {"results": results}
         
     except json.JSONDecodeError:
+        # Restore original themes on error
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
         raise HTTPException(status_code=400, detail="Invalid themes format")
     except Exception as e:
+        # Restore original themes on error
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
         raise HTTPException(status_code=500, detail=f"Error analyzing genes: {str(e)}")
 
 @app.post("/api/ontology/custom-summary-chart")
-async def generate_custom_summary_chart(file: UploadFile = File(...), themes: str = Form(...)):
+async def generate_custom_summary_chart(
+    file: UploadFile = File(...), 
+    themes: str = Form(...),
+    custom_themes: str = Form(None)
+):
     """Generate summary chart for custom theme selection"""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
@@ -1022,6 +1101,24 @@ async def generate_custom_summary_chart(file: UploadFile = File(...), themes: st
             raise HTTPException(status_code=400, detail="No themes selected")
         
         print(f"Custom summary chart requested for themes: {selected_themes}")
+        
+        # Parse custom themes if provided
+        custom_theme_data = []
+        if custom_themes:
+            try:
+                custom_theme_data = json.loads(custom_themes)
+                print(f"Custom themes received: {custom_theme_data}")
+            except json.JSONDecodeError:
+                print("Warning: Failed to parse custom themes")
+        
+        # Temporarily add custom themes to the ontology API
+        original_themes = ontology_api.themes.copy()
+        for custom_theme in custom_theme_data:
+            theme_name = custom_theme.get('name')
+            keywords = custom_theme.get('keywords', [])
+            if theme_name and keywords:
+                ontology_api.themes[theme_name] = keywords
+                print(f"Added custom theme '{theme_name}' with keywords: {keywords}")
         
         # Read file content
         content = await file.read()
@@ -1068,6 +1165,13 @@ async def generate_custom_summary_chart(file: UploadFile = File(...), themes: st
             'cytoskeleton': 'Cytoplasm & Cytoskeleton'
         }
         
+        # Add custom themes to mapping (they map to themselves)
+        for custom_theme in custom_theme_data:
+            theme_id = custom_theme.get('id')
+            theme_name = custom_theme.get('name')
+            if theme_id and theme_name:
+                theme_mapping[theme_id] = theme_name
+        
         print(f"Custom summary chart - Available themes in ontology: {list(ontology_api.themes.keys())}")
         
         # Assign themes and filter by selected themes
@@ -1078,28 +1182,47 @@ async def generate_custom_summary_chart(file: UploadFile = File(...), themes: st
         filtered_df = enr_df[enr_df["Theme"].isin(selected_theme_names)]
         
         if filtered_df.empty:
+            # Restore original themes before raising exception
+            ontology_api.themes = original_themes
             raise HTTPException(status_code=400, detail=f"No enrichment results found for selected themes: {selected_theme_names}")
         
         # Aggregate results for selected themes
         themed = ontology_api.aggregate(filtered_df)
         
         if themed.empty:
+            # Restore original themes before raising exception
+            ontology_api.themes = original_themes
             raise HTTPException(status_code=400, detail="No themes could be aggregated")
         
         # Generate summary chart
         chart_base64 = ontology_api.create_summary_chart(themed)
         
         if not chart_base64:
+            # Restore original themes before raising exception
+            ontology_api.themes = original_themes
             raise HTTPException(status_code=500, detail="Failed to generate custom summary chart")
         
         print("Successfully generated custom summary chart")
+        
+        # Restore original themes
+        ontology_api.themes = original_themes
+        
         return {"chart": chart_base64}
         
     except json.JSONDecodeError:
+        # Restore original themes on error
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
         raise HTTPException(status_code=400, detail="Invalid themes format")
     except HTTPException:
+        # Restore original themes on error
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
         raise
     except Exception as e:
+        # Restore original themes on error
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
         print(f"Error generating custom summary chart: {str(e)}")
         import traceback
         traceback.print_exc()
@@ -1187,6 +1310,16 @@ async def root():
         }
     }
 
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": "2024-01-01T00:00:00Z"}
+
+@app.get("/api/test")
+async def test_endpoint():
+    """Test endpoint for debugging"""
+    return {"message": "Test endpoint is working"}
+
 def install_requirements():
     """安装依赖项"""
     import subprocess
@@ -1249,8 +1382,8 @@ def start_server():
         print("❌ 依赖项检查失败，无法启动服务器")
         return
     
-    # 尝试不同的端口
-    ports = [8001, 8002, 8003, 8004, 8005]
+    # 使用固定端口 8000
+    port = 8000
     import socket
     
     def is_port_available(port):
@@ -1261,25 +1394,20 @@ def start_server():
             except OSError:
                 return False
     
-    # 找到可用端口
-    available_port = None
-    for port in ports:
-        if is_port_available(port):
-            available_port = port
-            break
-    
-    if not available_port:
-        print("❌ 无法找到可用端口，请手动指定端口")
+    # 检查端口 8000 是否可用
+    if not is_port_available(port):
+        print(f"❌ 端口 {port} 已被占用")
+        print("请停止占用该端口的其他服务，或修改前端配置使用其他端口")
         return
     
     print(f"正在启动服务器...")
-    print(f"服务器地址: http://localhost:{available_port}")
-    print(f"API文档: http://localhost:{available_port}/docs")
+    print(f"服务器地址: http://localhost:{port}")
+    print(f"API文档: http://localhost:{port}/docs")
     print("按 Ctrl+C 停止服务器")
     
     try:
         import uvicorn
-        uvicorn.run(app, host="0.0.0.0", port=available_port, reload=False)
+        uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
     except KeyboardInterrupt:
         print("\n服务器已停止")
     except Exception as e:

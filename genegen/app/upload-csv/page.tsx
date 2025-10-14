@@ -8,7 +8,7 @@ export default function UploadCSVPage() {
   const [success, setSuccess] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const handleUploadClick = () => {
     if (fileInputRef.current) {
