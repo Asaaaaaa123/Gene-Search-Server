@@ -181,7 +181,7 @@ export default function GeneSearch() {
       // Handle the API response format: {"gene_symbols": [...]}
       if (data.gene_symbols && Array.isArray(data.gene_symbols)) {
         // Validate and filter the gene symbols data
-        const validGeneSymbols = data.gene_symbols.filter(gene => 
+        const validGeneSymbols = data.gene_symbols.filter((gene: any) => 
           gene && 
           typeof gene === 'object' &&
           gene.symbol &&
@@ -192,7 +192,7 @@ export default function GeneSearch() {
         setGeneSymbols(validGeneSymbols);
       } else if (Array.isArray(data)) {
         // Fallback for direct array response - validate the data
-        const validGeneSymbols = data.filter(gene => 
+        const validGeneSymbols = data.filter((gene: any) => 
           gene && 
           typeof gene === 'object' &&
           gene.symbol &&
