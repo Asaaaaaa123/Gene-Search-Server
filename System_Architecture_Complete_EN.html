@@ -1,0 +1,2036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appendix 1. GenoCorr Platform Complete System Architecture Documentation - GenoCorr Platform System Architecture</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 2.5cm 2cm;
+            }
+            
+            body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            
+            .no-print {
+                display: none;
+            }
+            
+            h1, h2, h3, h4, h5, h6 {
+                page-break-after: avoid;
+            }
+            
+            pre, blockquote, table {
+                page-break-inside: avoid;
+            }
+            
+            .flow-diagram {
+                page-break-inside: avoid;
+            }
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 12pt;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14pt;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        .print-button:hover {
+            background-color: #2980b9;
+        }
+        
+        h1 {
+            font-size: 28pt;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 0.5em;
+        }
+        
+        h2 {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+            border-bottom: 2px solid #95a5a6;
+            padding-bottom: 0.3em;
+        }
+        
+        h3 {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.3em;
+            margin-bottom: 0.5em;
+        }
+        
+        h4 {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+        }
+        
+        h5, h6 {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+        }
+        
+        p {
+            margin: 0.8em 0;
+            text-align: justify;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10.5pt;
+            color: #c7254e;
+            border: 1px solid #e1e1e1;
+        }
+        
+        pre {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+            margin: 1em 0;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10pt;
+            line-height: 1.5;
+        }
+        
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            border: none;
+            color: #333;
+            font-size: 10pt;
+            display: block;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5em 0;
+            font-size: 11pt;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        ul, ol {
+            margin: 0.8em 0;
+            padding-left: 2em;
+        }
+        
+        li {
+            margin: 0.4em 0;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3498db;
+            margin: 1.5em 0;
+            padding-left: 1.5em;
+            padding-right: 1em;
+            color: #555;
+            font-style: italic;
+            background-color: #f9f9f9;
+            padding-top: 0.5em;
+            padding-bottom: 0.5em;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #ddd;
+            margin: 2em 0;
+        }
+        
+        strong {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        em {
+            font-style: italic;
+            color: #555;
+        }
+        
+        .toc {
+            background-color: #f9f9f9;
+            padding: 1.5em;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .toc ul {
+            list-style-type: none;
+            padding-left: 1em;
+        }
+        
+        .toc li {
+            margin: 0.3em 0;
+        }
+        
+        .toc a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Flow diagram styles */
+        .flow-diagram {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10pt;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        /* Special characters in code blocks */
+        pre.highlight, pre code {
+            white-space: pre;
+            word-wrap: normal;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button no-print" onclick="window.print()">
+        🖨️ Print to PDF
+    </button>
+    
+    <h1 id="genocorr-platform-complete-system-architecture-documentation">Appendix 1. GenoCorr Platform Complete System Architecture Documentation<a class="headerlink" href="#genocorr-platform-complete-system-architecture-documentation" title="Permanent link">&para;</a></h1>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#overall-architecture-overview">Overall Architecture Overview</a></li>
+<li><a href="#three-tier-architecture-details">Three-Tier Architecture Details</a></li>
+<li><a href="#frontend-architecture-detailed-design">Frontend Architecture Detailed Design</a></li>
+<li><a href="#backend-architecture-detailed-design">Backend Architecture Detailed Design</a></li>
+<li><a href="#data-flow-and-interaction-processes">Data Flow and Interaction Processes</a></li>
+<li><a href="#core-module-architecture">Core Module Architecture</a></li>
+<li><a href="#api-interface-architecture">API Interface Architecture</a></li>
+<li><a href="#database-architecture">Database Architecture</a></li>
+<li><a href="#deployment-architecture">Deployment Architecture</a></li>
+<li><a href="#technology-stack-details">Technology Stack Details</a></li>
+</ol>
+<hr />
+<h2 id="overall-architecture-overview">Overall Architecture Overview<a class="headerlink" href="#overall-architecture-overview" title="Permanent link">&para;</a></h2>
+<h3 id="architecture-pattern">Architecture Pattern<a class="headerlink" href="#architecture-pattern" title="Permanent link">&para;</a></h3>
+<p>The GenoCorr platform adopts a <strong>Three-Tier Client-Server Architecture</strong>, combined with <strong>RESTful API</strong> communication patterns and <strong>frontend-backend separation</strong> design principles.</p>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                  Presentation Layer                          │
+│                  Next.js 15.3.5 Frontend                     │
+│                (React 19.0 + TypeScript)                     │
+└────────────────────┬──────────────────────────────────────────┘
+                     │ HTTP/REST API (JSON)
+                     │ Port: 8000
+┌────────────────────▼──────────────────────────────────────────┐
+│               Business Logic Layer                            │
+│               FastAPI 0.68.0 Backend                         │
+│                (Python 3.9+)                                 │
+└───────┬────────────────────────┬──────────────┬───────────────┘
+        │                        │              │
+        │                        │              │
+┌───────▼────────┐  ┌───────────▼──────┐  ┌───▼──────────────┐
+│   MongoDB      │  │   GProfiler API  │  │  File System     │
+│ (Data Persist  │  │ (External API    │  │  (Excel/CSV/TSV) │
+│    Layer)      │  │   Service)       │  │                  │
+│                │  │                  │  │                  │
+│ gene_search_db │  │ Enrichment       │  │ Backend Data     │
+│                │  │ Analysis Service │  │ Files            │
+└────────────────┘  └──────────────────┘  └──────────────────┘
+</code></pre>
+<h3 id="architecture-layer-description">Architecture Layer Description<a class="headerlink" href="#architecture-layer-description" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Presentation Layer (Frontend)</strong>: User interface and interaction</li>
+<li><strong>Business Logic Layer (Backend)</strong>: Core business processing and algorithms</li>
+<li><strong>Data Persistence Layer</strong>: Data storage and external service integration</li>
+</ol>
+<hr />
+<h2 id="three-tier-architecture-details">Three-Tier Architecture Details<a class="headerlink" href="#three-tier-architecture-details" title="Permanent link">&para;</a></h2>
+<h3 id="layer-1-presentation-layer-frontend-nextjs">Layer 1: Presentation Layer (Frontend - Next.js)<a class="headerlink" href="#layer-1-presentation-layer-frontend-nextjs" title="Permanent link">&para;</a></h3>
+<h4 id="technology-stack">Technology Stack<a class="headerlink" href="#technology-stack" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Framework</strong>: Next.js 15.3.5 (based on React 19.0)</li>
+<li><strong>Language</strong>: TypeScript 5.x</li>
+<li><strong>Styling</strong>: Tailwind CSS 4.x</li>
+<li><strong>Visualization</strong>: Plotly.js 2.35.3</li>
+<li><strong>Build Tool</strong>: Turbopack (built into Next.js)</li>
+</ul>
+<h4 id="frontend-directory-structure">Frontend Directory Structure<a class="headerlink" href="#frontend-directory-structure" title="Permanent link">&para;</a></h4>
+<pre><code>genegen/
+├── app/                          # Next.js App Router
+│   ├── layout.tsx               # Root layout component
+│   ├── page.tsx                 # Home page
+│   ├── globals.css              # Global styles
+│   │
+│   ├── gene-search/             # Module 1: Gene Search
+│   │   └── page.tsx            # Gene search page component
+│   │
+│   ├── gene-ontology/           # Module 2: Theme Analysis
+│   │   ├── page.tsx            # Theme analysis entry page
+│   │   ├── default-theme/      # Default theme analysis
+│   │   │   └── page.tsx
+│   │   └── customize-theme/    # Custom theme analysis
+│   │       └── page.tsx
+│   │
+│   ├── ivcca/                   # Module 3: IVCCA Analysis
+│   │   └── page.tsx            # IVCCA analysis page
+│   │
+│   ├── login/                   # Authentication page
+│   │   └── page.tsx
+│   │
+│   ├── add-gene/                # Add gene data (requires authentication)
+│   │   └── page.tsx
+│   │
+│   └── upload-csv/              # CSV upload functionality
+│       └── page.tsx
+│
+├── public/                      # Static resources
+│   └── 885_genes.txt           # Example gene list
+│
+├── package.json                 # Dependencies configuration
+├── tsconfig.json                # TypeScript configuration
+└── next.config.ts               # Next.js configuration
+</code></pre>
+<h4 id="frontend-component-architecture">Frontend Component Architecture<a class="headerlink" href="#frontend-component-architecture" title="Permanent link">&para;</a></h4>
+<p><strong>1. Page Components</strong></p>
+<p>Each page is an independent React component, marked as a client component using the <code>'use client'</code> directive.</p>
+<pre><code class="language-typescript">// Example: Gene search page structure
+export default function GeneSearch() {
+  // State management
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState&lt;GeneData[]&gt;([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // API calls
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // Event handler function
+  const handleSearch = async () =&gt; {
+    // Call backend API
+    const response = await fetch(`${API_BASE_URL}/api/gene/symbol/search?gene_symbol=${searchTerm}`);
+    const data = await response.json();
+    setSearchResults(data.data);
+  };
+
+  // UI rendering
+  return (
+    // JSX structure
+  );
+}
+</code></pre>
+<p><strong>2. State Management Architecture</strong></p>
+<ul>
+<li><strong>Local State</strong>: Using React <code>useState</code> Hook</li>
+<li><strong>Global State</strong>: Through Context API or props passing</li>
+<li><strong>API State</strong>: Independently managed for each API call</li>
+<li><strong>Caching Strategy</strong>: Browser localStorage (authentication token)</li>
+</ul>
+<p><strong>3. Data Fetching Process</strong></p>
+<pre><code>User Action → Event Trigger → API Call → State Update → UI Re-render
+</code></pre>
+<h4 id="frontend-backend-communication">Frontend-Backend Communication<a class="headerlink" href="#frontend-backend-communication" title="Permanent link">&para;</a></h4>
+<p><strong>Communication Protocol</strong>:<br />
+- <strong>Protocol</strong>: HTTP/HTTPS<br />
+- <strong>Data Format</strong>: JSON<br />
+- <strong>Methods</strong>: GET, POST<br />
+- <strong>Authentication</strong>: Token-based (stored in localStorage)</p>
+<p><strong>API Call Pattern</strong>:</p>
+<pre><code class="language-typescript">// Standard API call pattern
+const response = await fetch(`${API_BASE_URL}/api/endpoint`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify(requestData),
+});
+
+const data = await response.json();
+</code></pre>
+<p><strong>Error Handling</strong>:<br />
+- Try-catch to capture network errors<br />
+- HTTP status code checking<br />
+- User-friendly error messages</p>
+<h3 id="layer-2-business-logic-layer-backend-fastapi">Layer 2: Business Logic Layer (Backend - FastAPI)<a class="headerlink" href="#layer-2-business-logic-layer-backend-fastapi" title="Permanent link">&para;</a></h3>
+<h4 id="technology-stack_1">Technology Stack<a class="headerlink" href="#technology-stack_1" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Framework</strong>: FastAPI 0.68.0</li>
+<li><strong>Language</strong>: Python 3.9+</li>
+<li><strong>Data Science Libraries</strong>:</li>
+<li>pandas: Data processing</li>
+<li>NumPy: Numerical computation</li>
+<li>SciPy: Scientific computing</li>
+<li>scikit-learn: Machine learning</li>
+<li><strong>Visualization</strong>: matplotlib, seaborn</li>
+<li><strong>External Service</strong>: GProfiler Python client</li>
+</ul>
+<h4 id="backend-directory-structure">Backend Directory Structure<a class="headerlink" href="#backend-directory-structure" title="Permanent link">&para;</a></h4>
+<pre><code>backend/
+├── server.py                    # FastAPI main application (1900+ lines)
+├── ivcca_core.py               # IVCCA core algorithm module (2200+ lines)
+├── start_backend.py            # Backend startup script
+├── requirements.txt            # Python dependencies
+│
+├── data/                       # Data files directory
+│   ├── BoneMarrow.xlsx
+│   ├── Cortex.xlsx
+│   ├── DRG.xlsx
+│   ├── Fat.xlsx
+│   ├── Heart.xlsx
+│   ├── Hypothalamus.xlsx
+│   ├── Kidneys.xlsx
+│   ├── Liver.xlsx
+│   └── Muscle.xlsx
+│
+└── .env                        # Environment variables configuration
+</code></pre>
+<h4 id="backend-application-architecture">Backend Application Architecture<a class="headerlink" href="#backend-application-architecture" title="Permanent link">&para;</a></h4>
+<p><strong>1. FastAPI Application Initialization</strong></p>
+<pre><code class="language-python"># server.py
+app = FastAPI(title=&quot;Gene Expression Search API&quot;, version=&quot;1.0.0&quot;)
+
+# CORS middleware configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[&quot;*&quot;],
+    allow_credentials=True,
+    allow_methods=[&quot;*&quot;],
+    allow_headers=[&quot;*&quot;],
+)
+</code></pre>
+<p><strong>2. API Class Organization</strong></p>
+<pre><code class="language-python"># Three main API classes
+class GeneSearchAPI:
+    &quot;&quot;&quot;Gene Search API class&quot;&quot;&quot;
+    - load_data_to_mongodb()
+    - search_gene_data()
+    - create_fold_change_plot()
+    # ...
+
+class GeneOntologyAPI:
+    &quot;&quot;&quot;Gene Ontology Analysis API class&quot;&quot;&quot;
+    - enrich()
+    - assign_theme()
+    - aggregate()
+    - create_theme_chart()
+    # ...
+
+# IVCCA functionality is implemented through classes in ivcca_core.py
+# Direct use of IVCCAAnalyzer class in server.py
+</code></pre>
+<p><strong>3. Request Processing Flow</strong></p>
+<pre><code>HTTP Request → FastAPI Route → Pydantic Validation → Business Logic → Data Processing → Response Return
+</code></pre>
+<h4 id="api-endpoint-organization">API Endpoint Organization<a class="headerlink" href="#api-endpoint-organization" title="Permanent link">&para;</a></h4>
+<p><strong>Endpoint Categories</strong>:</p>
+<ol>
+<li><strong>Authentication Endpoints</strong>:</li>
+<li>
+<p><code>POST /api/auth/login</code> - Token authentication</p>
+</li>
+<li>
+<p><strong>Gene Search Endpoints</strong> (7 endpoints):</p>
+</li>
+<li><code>GET /api/gene/symbols</code> - Get all gene symbols</li>
+<li><code>GET /api/gene/symbol/search</code> - Search gene</li>
+<li><code>GET /api/gene/symbol/showFoldChange</code> - Fold Change chart</li>
+<li><code>GET /api/gene/symbol/showLSMeanControl</code> - Control group chart</li>
+<li><code>GET /api/gene/symbol/showLSMeanTenMgKg</code> - Treatment group chart</li>
+<li>
+<p><code>POST /api/gene/add</code> - Add gene (requires authentication)</p>
+</li>
+<li>
+<p><strong>Theme Analysis Endpoints</strong> (4 endpoints):</p>
+</li>
+<li><code>POST /api/ontology/analyze</code> - Standard enrichment analysis</li>
+<li><code>POST /api/ontology/custom-analyze</code> - Custom theme analysis</li>
+<li><code>POST /api/ontology/theme-chart</code> - Theme detailed chart</li>
+<li>
+<p><code>POST /api/ontology/custom-summary-chart</code> - Theme summary chart</p>
+</li>
+<li>
+<p><strong>IVCCA Analysis Endpoints</strong> (14 endpoints):</p>
+</li>
+<li><code>POST /api/ivcca/load-data</code> - Load data</li>
+<li><code>POST /api/ivcca/calculate-correlation</code> - Calculate correlation</li>
+<li><code>POST /api/ivcca/sort-matrix</code> - Sort matrix</li>
+<li><code>POST /api/ivcca/heatmap</code> - Heatmap</li>
+<li><code>POST /api/ivcca/histogram</code> - Histogram</li>
+<li><code>POST /api/ivcca/optimal-clusters</code> - Optimal cluster number</li>
+<li><code>POST /api/ivcca/dendrogram</code> - Dendrogram</li>
+<li><code>POST /api/ivcca/pca</code> - PCA analysis</li>
+<li><code>POST /api/ivcca/tsne</code> - t-SNE analysis</li>
+<li><code>POST /api/ivcca/single-pathway</code> - Single pathway analysis</li>
+<li><code>POST /api/ivcca/compare-pathways</code> - Pathway comparison</li>
+<li><code>POST /api/ivcca/gene-to-genes</code> - Gene to genes</li>
+<li><code>POST /api/ivcca/gene-to-pathways</code> - Gene to pathways</li>
+<li><code>POST /api/ivcca/multi-pathway</code> - Multi-pathway analysis</li>
+<li><code>POST /api/ivcca/venn-diagram</code> - Venn diagram</li>
+<li>
+<p><code>POST /api/ivcca/network-analysis</code> - Network analysis</p>
+</li>
+<li>
+<p><strong>Utility Endpoints</strong>:</p>
+</li>
+<li><code>GET /api/health</code> - Health check</li>
+<li><code>GET /api/test</code> - Test endpoint</li>
+<li><code>GET /docs</code> - API documentation (auto-generated)</li>
+</ol>
+<p><strong>Total</strong>: Approximately 40+ API endpoints</p>
+<h3 id="layer-3-data-persistence-layer">Layer 3: Data Persistence Layer<a class="headerlink" href="#layer-3-data-persistence-layer" title="Permanent link">&para;</a></h3>
+<h4 id="mongodb-database">MongoDB Database<a class="headerlink" href="#mongodb-database" title="Permanent link">&para;</a></h4>
+<p><strong>Connection Management</strong>:</p>
+<pre><code class="language-python"># Connection configuration
+MONGODB_URI = os.getenv('MONGODB_URI')
+client = MongoClient(MONGODB_URI)
+db = client.gene_search_db
+collection = db.gene_data
+</code></pre>
+<p><strong>Data Model</strong>:</p>
+<pre><code class="language-python"># Document structure
+{
+    '_id': ObjectId,                    # Auto-generated by MongoDB
+    'organ': 'Heart',                   # Organ name (9 types)
+    'gene_symbol': 'GAPDH',            # Gene symbol (indexed field)
+    'gene_name': 'Glyceraldehyde-3-phosphate dehydrogenase',
+    'p_value_10_mgkg_vs_control': '0.001',
+    'fdr_step_up_10_mgkg_vs_control': '0.05',
+    'ratio_10_mgkg_vs_control': '1.5',
+    'fold_change_10_mgkg_vs_control': '0.5',
+    'lsmean_10mgkg_10_mgkg_vs_control': '10.5',
+    'lsmean_control_10_mgkg_vs_control': '8.5'
+}
+</code></pre>
+<p><strong>Index Design</strong>:</p>
+<pre><code class="language-python"># Single-field index (accelerate queries)
+collection.create_index([(&quot;gene_symbol&quot;, 1)])      # Ascending index
+collection.create_index([(&quot;organ&quot;, 1)])
+
+# Composite unique index (prevent duplicates)
+collection.create_index(
+    [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)], 
+    unique=True
+)
+</code></pre>
+<h4 id="external-api-service">External API Service<a class="headerlink" href="#external-api-service" title="Permanent link">&para;</a></h4>
+<p><strong>GProfiler API</strong>:</p>
+<pre><code class="language-python"># Initialization
+from gprofiler import GProfiler
+gp = GProfiler(return_dataframe=True)
+
+# Enrichment analysis call
+df = gp.profile(
+    organism=&quot;mmusculus&quot;,  # Mouse
+    query=genes_list       # Gene list
+)
+</code></pre>
+<h4 id="file-system-storage">File System Storage<a class="headerlink" href="#file-system-storage" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Excel Files</strong>: <code>backend/data/*.xlsx</code> (9 organs)</li>
+<li><strong>Gene Lists</strong>: <code>.txt</code> files (pathway definitions, gene lists)</li>
+<li><strong>Generated Charts</strong>: Temporarily stored in memory, returned as base64 encoding</li>
+</ul>
+<hr />
+<h2 id="frontend-architecture-detailed-design">Frontend Architecture Detailed Design<a class="headerlink" href="#frontend-architecture-detailed-design" title="Permanent link">&para;</a></h2>
+<h3 id="component-hierarchy">Component Hierarchy<a class="headerlink" href="#component-hierarchy" title="Permanent link">&para;</a></h3>
+<pre><code>RootLayout (layout.tsx)
+├── Navigation/Header (embedded in each page)
+├── Page Components
+│   ├── GeneSearch (gene-search/page.tsx)
+│   │   ├── SearchInput Component
+│   │   ├── GeneList Component
+│   │   ├── ResultsTable Component
+│   │   └── PlotDisplay Component
+│   │
+│   ├── ThemeAnalysis (gene-ontology/*/page.tsx)
+│   │   ├── FileUpload Component
+│   │   ├── ThemeSelector Component
+│   │   ├── ResultsDisplay Component
+│   │   └── ChartDisplay Component
+│   │
+│   └── IVCCA (ivcca/page.tsx)
+│       ├── DataUpload Component
+│       ├── AnalysisControls Component
+│       ├── CorrelationMatrix Component
+│       ├── VisualizationPanel Component
+│       └── ResultsPanel Component
+└── Footer (embedded in each page)
+</code></pre>
+<h3 id="data-flow-frontend-perspective">Data Flow (Frontend Perspective)<a class="headerlink" href="#data-flow-frontend-perspective" title="Permanent link">&para;</a></h3>
+<p><strong>1. User Input Flow</strong></p>
+<pre><code>User Input → State Update (useState) → Event Handler Function → API Call → Response Processing → State Update → UI Update
+</code></pre>
+<p><strong>2. API Call Flow</strong></p>
+<pre><code class="language-typescript">// Standard flow
+async function handleApiCall() {
+  setIsLoading(true);                    // 1. Set loading state
+  setError('');                          // 2. Clear errors
+
+  try {
+    const response = await fetch(...);    // 3. Make request
+    if (!response.ok) {                   // 4. Check response status
+      throw new Error(...);
+    }
+    const data = await response.json();   // 5. Parse JSON
+    setResults(data);                     // 6. Update state
+  } catch (error) {
+    setError(error.message);              // 7. Error handling
+  } finally {
+    setIsLoading(false);                  // 8. Clear loading state
+  }
+}
+</code></pre>
+<p><strong>3. Visualization Data Flow</strong></p>
+<pre><code class="language-typescript">// Plotly chart data flow
+API Return Data → Data Transformation → Plotly JSON Configuration → React Plotly Component → Interactive Chart
+
+// Static image data flow
+API Return base64 → &lt;img src={`data:image/png;base64,${image}`} /&gt; → Display Image
+</code></pre>
+<h3 id="state-management-architecture">State Management Architecture<a class="headerlink" href="#state-management-architecture" title="Permanent link">&para;</a></h3>
+<p><strong>Local State (Component State)</strong>:</p>
+<ul>
+<li>Use <code>useState</code> Hook to manage component-level state</li>
+<li>Each page component independently manages its own state</li>
+<li>State types:</li>
+<li>User input (form data)</li>
+<li>API response data</li>
+<li>UI state (loading, error, expand/collapse)</li>
+<li>Visualization configuration (chart type, parameters)</li>
+</ul>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-typescript">// Gene search page state
+const [searchTerm, setSearchTerm] = useState('');
+const [searchResults, setSearchResults] = useState&lt;GeneData[]&gt;([]);
+const [isLoading, setIsLoading] = useState(false);
+const [error, setError] = useState('');
+const [currentPlot, setCurrentPlot] = useState('');
+</code></pre>
+<p><strong>Global State (App State)</strong>:</p>
+<ul>
+<li>API URL: Through environment variable <code>NEXT_PUBLIC_API_URL</code></li>
+<li>Authentication Token: Stored in <code>localStorage</code></li>
+<li>No global state management library (Redux/Zustand), keeping it simple</li>
+</ul>
+<h3 id="routing-architecture-nextjs-app-router">Routing Architecture (Next.js App Router)<a class="headerlink" href="#routing-architecture-nextjs-app-router" title="Permanent link">&para;</a></h3>
+<p><strong>File System Routing</strong>:</p>
+<pre><code>app/
+├── page.tsx                 → /
+├── gene-search/
+│   └── page.tsx            → /gene-search
+├── gene-ontology/
+│   ├── page.tsx            → /gene-ontology
+│   ├── default-theme/
+│   │   └── page.tsx        → /gene-ontology/default-theme
+│   └── customize-theme/
+│       └── page.tsx        → /gene-ontology/customize-theme
+└── ivcca/
+    └── page.tsx            → /ivcca
+</code></pre>
+<p><strong>Navigation Implementation</strong>:</p>
+<pre><code class="language-typescript">// Use Next.js Link component
+import Link from 'next/link';
+
+&lt;Link href=&quot;/gene-search&quot;&gt;Gene Search&lt;/Link&gt;
+&lt;Link href=&quot;/gene-ontology&quot;&gt;Theme Analysis&lt;/Link&gt;
+&lt;Link href=&quot;/ivcca&quot;&gt;IVCCA Analysis&lt;/Link&gt;
+</code></pre>
+<hr />
+<h2 id="backend-architecture-detailed-design">Backend Architecture Detailed Design<a class="headerlink" href="#backend-architecture-detailed-design" title="Permanent link">&para;</a></h2>
+<h3 id="fastapi-application-structure">FastAPI Application Structure<a class="headerlink" href="#fastapi-application-structure" title="Permanent link">&para;</a></h3>
+<h4 id="1-application-initialization-process">1. Application Initialization Process<a class="headerlink" href="#1-application-initialization-process" title="Permanent link">&para;</a></h4>
+<pre><code class="language-python"># Step 1: Import dependencies
+from fastapi import FastAPI, HTTPException, ...
+from ivcca_core import IVCCAAnalyzer
+
+# Step 2: Load environment variables
+load_dotenv(env_path)
+
+# Step 3: Connect to MongoDB
+client = MongoClient(MONGODB_URI)
+db = client.gene_search_db
+collection = db.gene_data
+
+# Step 4: Initialize API classes
+gene_api = GeneSearchAPI()        # Automatically load data to MongoDB
+ontology_api = GeneOntologyAPI()  # Initialize GProfiler client
+
+# Step 5: Create FastAPI application
+app = FastAPI(title=&quot;...&quot;, version=&quot;1.0.0&quot;)
+
+# Step 6: Configure middleware
+app.add_middleware(CORSMiddleware, ...)
+
+# Step 7: Define route endpoints
+@app.get(&quot;/api/...&quot;)
+async def endpoint(...):
+    ...
+</code></pre>
+<h4 id="2-request-processing-flow-detailed-steps">2. Request Processing Flow (Detailed Steps)<a class="headerlink" href="#2-request-processing-flow-detailed-steps" title="Permanent link">&para;</a></h4>
+<p><strong>Step 1: HTTP Request Reception</strong></p>
+<pre><code>Client → HTTP Request → FastAPI ASGI Server → Route Matching
+</code></pre>
+<p><strong>Step 2: Request Validation</strong></p>
+<pre><code class="language-python"># FastAPI automatic validation (based on Pydantic models)
+@app.get(&quot;/api/gene/symbol/search&quot;)
+async def search_gene_symbol(
+    gene_symbol: str = Query(..., description=&quot;...&quot;)  # Automatic parameter validation
+):
+    # If validation fails, automatically return 422 error
+</code></pre>
+<p><strong>Step 3: Business Logic Processing</strong></p>
+<pre><code class="language-python"># Call the corresponding API class method
+results = gene_api.search_gene_data(gene_symbol)
+</code></pre>
+<p><strong>Step 4: Response Generation</strong></p>
+<pre><code class="language-python"># Return JSON response (FastAPI automatic serialization)
+return {&quot;gene_symbol&quot;: gene_symbol, &quot;data&quot;: results}
+</code></pre>
+<p><strong>Step 5: Error Handling</strong></p>
+<pre><code class="language-python">try:
+    # Business logic
+except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
+</code></pre>
+<h4 id="3-api-class-detailed-design">3. API Class Detailed Design<a class="headerlink" href="#3-api-class-detailed-design" title="Permanent link">&para;</a></h4>
+<p><strong>GeneSearchAPI Class</strong>:</p>
+<pre><code class="language-python">class GeneSearchAPI:
+    def __init__(self):
+        # Execute during initialization
+        self.load_data_to_mongodb()  # Load data to MongoDB
+        self.all_genes = self.load_all_genes()  # Load all gene symbols
+
+    # Data loading process
+    def load_data_to_mongodb(self):
+        &quot;&quot;&quot;
+        Step 1: Scan Excel files in data directory
+        Step 2: For each file:
+            - Read Excel (pandas.read_excel)
+            - Extract organ name (file name)
+            - Iterate through each row:
+                - Extract gene symbol and expression data
+                - Build MongoDB document
+                - Add to bulk operations list
+        Step 3: Execute bulk write (bulk_write with upsert)
+        Step 4: Create indexes
+        &quot;&quot;&quot;
+        pass
+
+    # Search process
+    def search_gene_data(self, gene_symbol: str):
+        &quot;&quot;&quot;
+        Step 1: Build query (regular expression, case-insensitive)
+        Step 2: Execute MongoDB query (using index)
+        Step 3: Iterate through query results
+        Step 4: Format to response format
+        Step 5: Return result list
+        &quot;&quot;&quot;
+        pass
+
+    # Visualization generation process
+    def create_fold_change_plot(self, gene_symbol: str):
+        &quot;&quot;&quot;
+        Step 1: Query gene data (call search_gene_data)
+        Step 2: Extract organ and Fold Change values
+        Step 3: Create chart using matplotlib
+        Step 4: Convert to base64 encoding
+        Step 5: Return base64 string
+        &quot;&quot;&quot;
+        pass
+</code></pre>
+<p><strong>GeneOntologyAPI Class</strong>:</p>
+<pre><code class="language-python">class GeneOntologyAPI:
+    def __init__(self):
+        # Initialize GProfiler client
+        self.gp = GProfiler(return_dataframe=True)
+        # Define theme keyword mapping
+        self.themes = {
+            'Inflammation &amp; immune signaling': ['inflammatory', ...],
+            # ...
+        }
+
+    # Enrichment analysis process
+    def enrich(self, genes: List[str]):
+        &quot;&quot;&quot;
+        Step 1: Call GProfiler API
+            df = self.gp.profile(organism=&quot;mmusculus&quot;, query=genes)
+        Step 2: Filter P-values (p &lt; 0.01)
+        Step 3: Calculate Score = -log10(p_value)
+        Step 4: Return DataFrame
+        &quot;&quot;&quot;
+        pass
+
+    # Theme assignment process
+    def assign_theme(self, go_term_name: str):
+        &quot;&quot;&quot;
+        Step 1: Convert GO term name to lowercase
+        Step 2: Iterate through all theme keywords
+        Step 3: Check if keyword is in GO term name
+        Step 4: Return first matching theme
+        &quot;&quot;&quot;
+        pass
+
+    # Theme aggregation process
+    def aggregate(self, df: pd.DataFrame):
+        &quot;&quot;&quot;
+        Step 1: Assign theme to each GO term (apply assign_theme)
+        Step 2: Filter out GO terms without themes
+        Step 3: Group by theme
+        Step 4: Aggregate calculations:
+            - Score: Cumulative score (sum)
+            - Terms: Term count (count)
+        Step 5: Sort by Score descending
+        &quot;&quot;&quot;
+        pass
+</code></pre>
+<h4 id="4-ivcca-core-module-architecture">4. IVCCA Core Module Architecture<a class="headerlink" href="#4-ivcca-core-module-architecture" title="Permanent link">&para;</a></h4>
+<p><strong>IVCCAAnalyzer Class Structure</strong>:</p>
+<pre><code class="language-python">class IVCCAAnalyzer:
+    def __init__(self):
+        # Data state
+        self.data = None              # Raw data matrix (samples × genes)
+        self.gene_names = None        # Gene name list
+        self.sample_names = None      # Sample name list
+        self.correlation_matrix = None # Correlation matrix (genes × genes)
+
+        # Status flags
+        self.data_loaded = False
+        self.correlation_calculated = False
+
+    # Data loading process
+    def load_data(self, file_path: str):
+        &quot;&quot;&quot;
+        Step 1: Detect file type (.xlsx, .csv, .tsv)
+        Step 2: Read file using pandas
+        Step 3: Extract sample names (first column)
+        Step 4: Extract gene names (all columns except first)
+        Step 5: Extract numerical data (convert to numpy array)
+        Step 6: Handle missing values (NaN)
+        Step 7: Set status flags
+        &quot;&quot;&quot;
+        pass
+
+    # Correlation calculation process
+    def calculate_correlations(self, method: str = 'pearson'):
+        &quot;&quot;&quot;
+        Step 1: Check if data is loaded
+        Step 2: Convert data to DataFrame
+        Step 3: Call pandas.corr() method (according to method parameter)
+        Step 4: Handle NaN values (replace with 0)
+        Step 5: Calculate statistics (mean, standard deviation, etc.)
+        Step 6: Set status flags
+        &quot;&quot;&quot;
+        pass
+
+    # Sorting process
+    def sort_correlation_matrix(self):
+        &quot;&quot;&quot;
+        Step 1: Calculate average absolute correlation for each gene
+            Q_i = mean(|r_ij|) for j ≠ i
+        Step 2: Sort by Q_i descending, get sorted indices
+        Step 3: Use sorted indices to rearrange:
+            - Correlation matrix
+            - Gene name list
+        Step 4: Return sorted matrix and gene names
+        &quot;&quot;&quot;
+        pass
+</code></pre>
+<hr />
+<h2 id="data-flow-and-interaction-processes">Data Flow and Interaction Processes<a class="headerlink" href="#data-flow-and-interaction-processes" title="Permanent link">&para;</a></h2>
+<h3 id="complete-request-response-flow">Complete Request-Response Flow<a class="headerlink" href="#complete-request-response-flow" title="Permanent link">&para;</a></h3>
+<h4 id="process-1-gene-search-complete-flow">Process 1: Gene Search Complete Flow<a class="headerlink" href="#process-1-gene-search-complete-flow" title="Permanent link">&para;</a></h4>
+<pre><code>┌──────────┐
+│  User    │
+│(Browser) │
+└────┬─────┘
+     │ 1. Enter gene symbol &quot;GAPDH&quot;
+     │ 2. Click &quot;Search&quot; button
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: gene-search/page.tsx      │
+│                                      │
+│ handleSearch() function:            │
+│ 1. setIsLoading(true)               │
+│ 2. Build API URL                    │
+│ 3. fetch(`${API_URL}/api/gene/      │
+│          symbol/search?gene_symbol=  │
+│          GAPDH`)                     │
+└────┬────────────────────────────────┘
+     │ 3. HTTP GET Request
+     │    URL: /api/gene/symbol/search?gene_symbol=GAPDH
+     ▼
+┌─────────────────────────────────────┐
+│ FastAPI Route Handler               │
+│ @app.get(&quot;/api/gene/symbol/search&quot;) │
+│                                      │
+│ 1. Receive query parameter gene_symbol│
+│ 2. Pydantic validation (automatic)  │
+│ 3. Call gene_api.search_gene_data() │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ GeneSearchAPI.search_gene_data()    │
+│                                      │
+│ 1. Build MongoDB query:             │
+│    query = {&quot;gene_symbol&quot;: {        │
+│        &quot;$regex&quot;: &quot;^GAPDH$&quot;,         │
+│        &quot;$options&quot;: &quot;i&quot;              │
+│    }}                                │
+│ 2. collection.find(query)           │
+│    (using gene_symbol index, O(log n))│
+│ 3. Iterate through query results    │
+│ 4. Format data                      │
+│ 5. Return list                      │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ MongoDB Database                    │
+│                                      │
+│ 1. Use index for fast lookup        │
+│ 2. Return matching document list    │
+│    [                                │
+│      {organ: &quot;Heart&quot;, gene_symbol:  │
+│       &quot;GAPDH&quot;, ...},                │
+│      {organ: &quot;Liver&quot;, gene_symbol:  │
+│       &quot;GAPDH&quot;, ...},                │
+│      ...                            │
+│    ]                                │
+└────┬────────────────────────────────┘
+     │ 4. Return results
+     ▼
+┌─────────────────────────────────────┐
+│ FastAPI Response                    │
+│                                      │
+│ return {                            │
+│   &quot;gene_symbol&quot;: &quot;GAPDH&quot;,           │
+│   &quot;data&quot;: [...]                     │
+│ }                                   │
+│ (FastAPI automatic JSON serialization)│
+└────┬────────────────────────────────┘
+     │ 5. HTTP 200 Response
+     │    Content-Type: application/json
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: Process Response          │
+│                                      │
+│ 1. response.json() parse JSON       │
+│ 2. setSearchResults(data.data)      │
+│ 3. setIsLoading(false)              │
+│ 4. React re-render → Display results table│
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌──────────┐
+│  User    │
+│  sees    │
+│ Results  │
+│  Table   │
+└──────────┘
+</code></pre>
+<h4 id="process-2-theme-analysis-complete-flow">Process 2: Theme Analysis Complete Flow<a class="headerlink" href="#process-2-theme-analysis-complete-flow" title="Permanent link">&para;</a></h4>
+<pre><code>┌──────────┐
+│  User    │
+└────┬─────┘
+     │ 1. Upload gene list file (.txt)
+     │ 2. Select themes
+     │ 3. Click &quot;Analyze&quot;
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: customize-theme/page.tsx  │
+│                                      │
+│ handleAnalyze() function:           │
+│ 1. Read file content                │
+│ 2. Build FormData                   │
+│ 3. fetch(`${API_URL}/api/ontology/  │
+│          custom-analyze`, {          │
+│    method: 'POST',                   │
+│    body: formData                    │
+│  })                                  │
+└────┬────────────────────────────────┘
+     │ 2. HTTP POST Request
+     │    Content-Type: multipart/form-data
+     ▼
+┌─────────────────────────────────────┐
+│ FastAPI Route                       │
+│ @app.post(&quot;/api/ontology/custom-    │
+│          analyze&quot;)                   │
+│                                      │
+│ 1. Receive file (UploadFile)        │
+│ 2. Receive selected_themes (Form)   │
+│ 3. Receive custom_themes (Form, JSON)│
+│ 4. Call ontology_api methods        │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ GeneOntologyAPI                     │
+│                                      │
+│ Step 1: load_genes_from_file()      │
+│    - Read file content              │
+│    - Split by lines                 │
+│    - Remove whitespace              │
+│    - Return gene list               │
+│                                      │
+│ Step 2: Temporarily add custom themes│
+│    original_themes = self.themes    │
+│    for custom_theme in custom_themes:│
+│        self.themes[theme_name] =    │
+│            keywords                  │
+│                                      │
+│ Step 3: enrich(genes)               │
+│    - Call GProfiler API             │
+│    - Filter P-values                │
+│    - Calculate Score                │
+│                                      │
+│ Step 4: assign_theme()              │
+│    - Assign theme to each GO term   │
+│                                      │
+│ Step 5: aggregate()                 │
+│    - Aggregate by theme             │
+│                                      │
+│ Step 6: Restore original themes     │
+│    self.themes = original_themes    │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ GProfiler API (External Service)    │
+│                                      │
+│ 1. Receive gene list                │
+│ 2. Execute hypergeometric test      │
+│ 3. Return enrichment results (DataFrame)│
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Backend Processing Results          │
+│                                      │
+│ 1. Filter significant results       │
+│ 2. Assign themes                    │
+│ 3. Aggregate statistics             │
+│ 4. Generate charts (optional)       │
+│ 5. Return JSON response             │
+└────┬────────────────────────────────┘
+     │ 3. HTTP 200 Response
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: Display Results           │
+│                                      │
+│ 1. Parse response                   │
+│ 2. Display results table            │
+│ 3. Display summary chart            │
+│ 4. Display theme detailed chart     │
+└─────────────────────────────────────┘
+</code></pre>
+<h4 id="process-3-ivcca-analysis-complete-flow">Process 3: IVCCA Analysis Complete Flow<a class="headerlink" href="#process-3-ivcca-analysis-complete-flow" title="Permanent link">&para;</a></h4>
+<pre><code>┌──────────┐
+│  User    │
+└────┬─────┘
+     │ 1. Upload data file (.xlsx/.csv/.tsv)
+     │ 2. Click &quot;Load Data&quot;
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: ivcca/page.tsx            │
+│                                      │
+│ handleLoadData() function:          │
+│ 1. Read file                        │
+│ 2. Build FormData                   │
+│ 3. POST /api/ivcca/load-data        │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Backend: /api/ivcca/load-data       │
+│                                      │
+│ 1. Create IVCCAAnalyzer instance   │
+│    analyzer = IVCCAAnalyzer()       │
+│ 2. Call analyzer.load_data()        │
+│ 3. Generate unique ID (analyzer_id) │
+│ 4. Store in memory (dictionary)     │
+│    analyzers[analyzer_id] = analyzer│
+│ 5. Return analyzer_id               │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ User clicks &quot;Calculate Correlation&quot; │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: POST /api/ivcca/          │
+│       calculate-correlation          │
+│                                      │
+│ Body: {                             │
+│   analyzer_id: &quot;...&quot;,                │
+│   method: &quot;pearson&quot;                  │
+│ }                                   │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Backend Processing                  │
+│                                      │
+│ 1. Get analyzer from memory         │
+│    analyzer = analyzers[analyzer_id]│
+│ 2. analyzer.calculate_correlations()│
+│    - Calculate correlation matrix   │
+│    - Calculate statistics           │
+│ 3. Return statistics                │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ User selects &quot;Generate Heatmap&quot;     │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: POST /api/ivcca/heatmap   │
+│                                      │
+│ Body: {                             │
+│   analyzer_id: &quot;...&quot;,                │
+│   sorted: false                      │
+│ }                                   │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Backend: analyzer.create_correlation_│
+│       heatmap()                      │
+│                                      │
+│ 1. Get correlation matrix           │
+│ 2. Use seaborn to draw heatmap      │
+│ 3. Convert to base64                │
+│ 4. Or use Plotly to generate interactive chart│
+│ 5. Return JSON: {                   │
+│      type: &quot;plotly&quot;,                 │
+│      content: {...}                  │
+│    }                                │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ Frontend: Render Chart              │
+│                                      │
+│ if (type === &quot;plotly&quot;) {            │
+│    &lt;Plot data={content} /&gt;          │
+│ } else {                            │
+│    &lt;img src={`data:image/...`} /&gt;   │
+│ }                                   │
+└─────────────────────────────────────┘
+</code></pre>
+<h3 id="state-management-backend">State Management (Backend)<a class="headerlink" href="#state-management-backend" title="Permanent link">&para;</a></h3>
+<p><strong>In-Memory State Management</strong>:</p>
+<pre><code class="language-python"># IVCCA analyzer instance storage (in memory)
+analyzers: Dict[str, IVCCAAnalyzer] = {}
+
+# Use analyzer_id as key
+analyzer_id = str(uuid.uuid4())
+analyzers[analyzer_id] = IVCCAAnalyzer()
+</code></pre>
+<p><strong>MongoDB State</strong>:</p>
+<ul>
+<li>Gene expression data persistent storage</li>
+<li>Index-accelerated queries</li>
+<li>Support concurrent access</li>
+</ul>
+<p><strong>Stateless API Design</strong>:</p>
+<ul>
+<li>Each request processed independently</li>
+<li>Associate analysis sessions through analyzer_id</li>
+<li>Support multiple users analyzing simultaneously</li>
+</ul>
+<hr />
+<h2 id="core-module-architecture">Core Module Architecture<a class="headerlink" href="#core-module-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="module-1-gene-search-system-architecture">Module 1: Gene Search System Architecture<a class="headerlink" href="#module-1-gene-search-system-architecture" title="Permanent link">&para;</a></h3>
+<h4 id="data-flow-architecture">Data Flow Architecture<a class="headerlink" href="#data-flow-architecture" title="Permanent link">&para;</a></h4>
+<pre><code>Excel Files (data/*.xlsx)
+    │
+    ▼
+[Data Loading Phase]
+    ├─ pandas.read_excel()
+    ├─ Data cleaning (remove nulls, type conversion)
+    └─ Bulk write to MongoDB
+    │
+    ▼
+MongoDB (gene_data collection)
+    │
+    ▼
+[Query Phase]
+    ├─ User inputs gene symbol
+    ├─ MongoDB query (using index)
+    └─ Return matching documents
+    │
+    ▼
+[Visualization Phase]
+    ├─ Extract data (organ, fold_change, lsmean)
+    ├─ matplotlib generate chart
+    └─ Return base64 encoded
+</code></pre>
+<h4 id="component-interaction">Component Interaction<a class="headerlink" href="#component-interaction" title="Permanent link">&para;</a></h4>
+<pre><code>User Interface (React)
+    │
+    ├─→ SearchInput → handleSearch()
+    │                    │
+    │                    ▼
+    │              API Call (fetch)
+    │                    │
+    ├─→ ResultsTable ←─ API Response
+    │                    │
+    └─→ PlotDisplay ←─ Chart API Call
+</code></pre>
+<h3 id="module-2-theme-analysis-system-architecture">Module 2: Theme Analysis System Architecture<a class="headerlink" href="#module-2-theme-analysis-system-architecture" title="Permanent link">&para;</a></h3>
+<h4 id="data-flow-architecture_1">Data Flow Architecture<a class="headerlink" href="#data-flow-architecture_1" title="Permanent link">&para;</a></h4>
+<pre><code>User uploads gene list (.txt)
+    │
+    ▼
+[Parsing Phase]
+    ├─ Read line by line
+    ├─ Remove whitespace
+    └─ Generate gene list
+    │
+    ▼
+[Enrichment Analysis Phase]
+    ├─ Call GProfiler API
+    ├─ Hypergeometric test
+    └─ Return significant GO terms
+    │
+    ▼
+[Theme Assignment Phase]
+    ├─ Keyword matching
+    ├─ Theme mapping
+    └─ Tag each GO term with theme
+    │
+    ▼
+[Aggregation Phase]
+    ├─ Group by theme
+    ├─ Calculate cumulative score
+    └─ Sort
+    │
+    ▼
+[Visualization Phase]
+    ├─ Generate summary chart
+    ├─ Generate theme detailed chart
+    └─ Return base64 encoded
+</code></pre>
+<h4 id="theme-matching-algorithm-flow">Theme Matching Algorithm Flow<a class="headerlink" href="#theme-matching-algorithm-flow" title="Permanent link">&para;</a></h4>
+<pre><code>GO Term Name (&quot;inflammatory response&quot;)
+    │
+    ▼
+Convert to lowercase (&quot;inflammatory response&quot;)
+    │
+    ▼
+Iterate through theme keywords:
+    ├─ &quot;Inflammation &amp; immune signaling&quot;: 
+    │     [&quot;inflammatory&quot;, &quot;immune&quot;, ...]
+    │     │
+    │     ▼
+    │   Check &quot;inflammatory&quot; in &quot;inflammatory response&quot; → True
+    │     │
+    │     ▼
+    │   Return theme &quot;Inflammation &amp; immune signaling&quot;
+    │
+    └─ Other themes (skip)
+</code></pre>
+<h3 id="module-3-ivcca-analysis-system-architecture">Module 3: IVCCA Analysis System Architecture<a class="headerlink" href="#module-3-ivcca-analysis-system-architecture" title="Permanent link">&para;</a></h3>
+<h4 id="analysis-flow-architecture">Analysis Flow Architecture<a class="headerlink" href="#analysis-flow-architecture" title="Permanent link">&para;</a></h4>
+<pre><code>Data Loading
+    │
+    ├─→ File Reading → Data Matrix (samples × genes)
+    │
+    ▼
+Correlation Calculation
+    │
+    ├─→ Pearson/Spearman/Kendall → Correlation Matrix (genes × genes)
+    │
+    ▼
+Sorting/Clustering
+    │
+    ├─→ Sorting → Sort by correlation strength
+    ├─→ Clustering → Elbow/Silhouette → K-means/Hierarchical clustering
+    │
+    ▼
+Dimensionality Reduction Analysis
+    │
+    ├─→ PCA → Principal component scores
+    └─→ t-SNE → Low-dimensional embedding
+    │
+    ▼
+Pathway Analysis
+    │
+    ├─→ Single Pathway → PCI_A, PCI_B calculation
+    ├─→ Multi-Pathway → CECI, Z-score calculation
+    └─→ Pathway Comparison → Cosine similarity
+    │
+    ▼
+Network Analysis
+    │
+    └─→ Correlation threshold filtering → Network graph (2D/3D)
+</code></pre>
+<h4 id="ivcca-class-method-call-chain">IVCCA Class Method Call Chain<a class="headerlink" href="#ivcca-class-method-call-chain" title="Permanent link">&para;</a></h4>
+<pre><code>load_data()
+    │
+    ▼
+calculate_correlations()
+    │
+    ├─→ sort_correlation_matrix()
+    │       │
+    │       └─→ create_correlation_heatmap()
+    │
+    ├─→ calculate_optimal_clusters()
+    │       │
+    │       └─→ create_dendrogram()
+    │
+    ├─→ perform_pca()
+    │       │
+    │       └─→ create_pca_3d_plot()
+    │
+    ├─→ perform_tsne()
+    │       │
+    │       └─→ create_tsne_3d_plot()
+    │
+    ├─→ analyze_single_pathway()
+    │
+    ├─→ multi_pathway_analysis()
+    │
+    └─→ create_network_graph()
+</code></pre>
+<hr />
+<h2 id="api-interface-architecture">API Interface Architecture<a class="headerlink" href="#api-interface-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="restful-api-design-principles">RESTful API Design Principles<a class="headerlink" href="#restful-api-design-principles" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Resource-Oriented</strong>: URLs represent resources</li>
+<li><code>/api/gene/symbol/search</code> - Gene resource</li>
+<li><code>/api/ontology/analyze</code> - Ontology analysis resource</li>
+<li>
+<p><code>/api/ivcca/load-data</code> - IVCCA data resource</p>
+</li>
+<li>
+<p><strong>HTTP Method Semantics</strong>:</p>
+</li>
+<li>GET: Retrieve resources</li>
+<li>
+<p>POST: Create/Execute operations</p>
+</li>
+<li>
+<p><strong>Status Code Usage</strong>:</p>
+</li>
+<li>200: Success</li>
+<li>400: Client error</li>
+<li>401: Unauthenticated</li>
+<li>404: Resource not found</li>
+<li>500: Server error</li>
+</ol>
+<h3 id="api-endpoint-detailed-mapping">API Endpoint Detailed Mapping<a class="headerlink" href="#api-endpoint-detailed-mapping" title="Permanent link">&para;</a></h3>
+<h4 id="gene-search-api-endpoints">Gene Search API Endpoints<a class="headerlink" href="#gene-search-api-endpoints" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Input</th>
+<th>Output</th>
+<th>Related Components</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/gene/symbols</code></td>
+<td>GET</td>
+<td>-</td>
+<td><code>{gene_symbols: []}</code></td>
+<td>GeneSearch → MongoDB</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/search</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{gene_symbol, data: []}</code></td>
+<td>GeneSearch → MongoDB</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/showFoldChange</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{image_base64}</code></td>
+<td>GeneSearch → matplotlib</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/showLSMeanControl</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{image_base64}</code></td>
+<td>GeneSearch → matplotlib</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/showLSMeanTenMgKg</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{image_base64}</code></td>
+<td>GeneSearch → matplotlib</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Data Flow</strong>:</p>
+<pre><code>Frontend → FastAPI Route → GeneSearchAPI → MongoDB → Data Processing → Visualization → base64 → Frontend
+</code></pre>
+<h4 id="theme-analysis-api-endpoints">Theme Analysis API Endpoints<a class="headerlink" href="#theme-analysis-api-endpoints" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Input</th>
+<th>Output</th>
+<th>Related Components</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/ontology/analyze</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>selected_themes</code></td>
+<td><code>{results: []}</code></td>
+<td>ThemeAnalysis → GProfiler</td>
+</tr>
+<tr>
+<td><code>/api/ontology/custom-analyze</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>selected_themes</code>, <code>custom_themes</code></td>
+<td><code>{results: []}</code></td>
+<td>ThemeAnalysis → GProfiler</td>
+</tr>
+<tr>
+<td><code>/api/ontology/theme-chart</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>theme</code></td>
+<td><code>{image_base64}</code></td>
+<td>ThemeAnalysis → matplotlib</td>
+</tr>
+<tr>
+<td><code>/api/ontology/custom-summary-chart</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>selected_themes</code>, <code>custom_themes</code></td>
+<td><code>{image_base64}</code></td>
+<td>ThemeAnalysis → matplotlib</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Data Flow</strong>:</p>
+<pre><code>Frontend → FastAPI → GeneOntologyAPI → GProfiler API → Enrichment Results → Theme Assignment → Aggregation → Visualization → Frontend
+</code></pre>
+<h4 id="ivcca-analysis-api-endpoints">IVCCA Analysis API Endpoints<a class="headerlink" href="#ivcca-analysis-api-endpoints" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Input</th>
+<th>Output</th>
+<th>Related Components</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/ivcca/load-data</code></td>
+<td>POST</td>
+<td><code>file</code></td>
+<td><code>{analyzer_id, preview}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/calculate-correlation</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>method</code></td>
+<td><code>{statistics}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/sort-matrix</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code></td>
+<td><code>{sorted_matrix, sorted_genes}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/heatmap</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>sorted</code></td>
+<td><code>{type, content}</code></td>
+<td>IVCCA → IVCCAAnalyzer → Plotly</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/pca</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>n_components</code></td>
+<td><code>{scores, explained_variance, plots}</code></td>
+<td>IVCCA → IVCCAAnalyzer → sklearn</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/tsne</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>n_components</code>, <code>perplexity</code></td>
+<td><code>{scores, scatter_plot}</code></td>
+<td>IVCCA → IVCCAAnalyzer → sklearn</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/multi-pathway</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>pathway_files</code></td>
+<td><code>{pathways: [{ceci, z_score, ...}]}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Data Flow</strong>:</p>
+<pre><code>Frontend → FastAPI → In-Memory IVCCAAnalyzer Instance → Algorithm Calculation → Result Return → Frontend
+</code></pre>
+<h3 id="api-response-format">API Response Format<a class="headerlink" href="#api-response-format" title="Permanent link">&para;</a></h3>
+<p><strong>Success Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;data&quot;: {...},
+  &quot;message&quot;: &quot;Operation completed successfully&quot;
+}
+</code></pre>
+<p><strong>Error Response</strong>:</p>
+<pre><code class="language-json">{
+  &quot;detail&quot;: &quot;Error message here&quot;
+}
+</code></pre>
+<p><strong>Paginated Response</strong> (if needed):</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;data&quot;: [...],
+  &quot;total&quot;: 100,
+  &quot;page&quot;: 1,
+  &quot;page_size&quot;: 20
+}
+</code></pre>
+<hr />
+<h2 id="database-architecture">Database Architecture<a class="headerlink" href="#database-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="mongodb-data-model">MongoDB Data Model<a class="headerlink" href="#mongodb-data-model" title="Permanent link">&para;</a></h3>
+<h4 id="collection-gene_data">Collection: <code>gene_data</code><a class="headerlink" href="#collection-gene_data" title="Permanent link">&para;</a></h4>
+<p><strong>Document Structure</strong>:</p>
+<pre><code class="language-javascript">{
+  &quot;_id&quot;: ObjectId(&quot;...&quot;),                    // Auto-generated by MongoDB
+  &quot;organ&quot;: &quot;Heart&quot;,                          // Organ name (indexed field)
+  &quot;gene_symbol&quot;: &quot;GAPDH&quot;,                   // Gene symbol (indexed field)
+  &quot;gene_name&quot;: &quot;Glyceraldehyde-3-phosphate dehydrogenase&quot;,
+  &quot;p_value_10_mgkg_vs_control&quot;: &quot;0.001&quot;,
+  &quot;fdr_step_up_10_mgkg_vs_control&quot;: &quot;0.05&quot;,
+  &quot;ratio_10_mgkg_vs_control&quot;: &quot;1.5&quot;,
+  &quot;fold_change_10_mgkg_vs_control&quot;: &quot;0.5&quot;,
+  &quot;lsmean_10mgkg_10_mgkg_vs_control&quot;: &quot;10.5&quot;,
+  &quot;lsmean_control_10_mgkg_vs_control&quot;: &quot;8.5&quot;
+}
+</code></pre>
+<p><strong>Index Design</strong>:</p>
+<pre><code class="language-python"># 1. Single-field index (accelerate single-condition queries)
+collection.create_index([(&quot;gene_symbol&quot;, 1)])  # Ascending index
+# Query performance: O(log n)
+
+# 2. Single-field index (filter by organ)
+collection.create_index([(&quot;organ&quot;, 1)])
+# Query performance: O(log n)
+
+# 3. Composite unique index (prevent duplicate data)
+collection.create_index(
+    [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)], 
+    unique=True
+)
+# Ensure only one record per organ-gene combination
+</code></pre>
+<h4 id="data-loading-process-detailed-steps">Data Loading Process (Detailed Steps)<a class="headerlink" href="#data-loading-process-detailed-steps" title="Permanent link">&para;</a></h4>
+<p><strong>Step 1: File Scanning</strong></p>
+<pre><code class="language-python">excel_files = glob.glob(os.path.join(&quot;data&quot;, &quot;*.xlsx&quot;))
+# Result: ['data/BoneMarrow.xlsx', 'data/Cortex.xlsx', ...]
+</code></pre>
+<p><strong>Step 2: Process Each File</strong></p>
+<pre><code class="language-python">for file_path in excel_files:
+    # 2.1 Extract organ name
+    organ_name = os.path.splitext(os.path.basename(file_path))[0]
+    # Result: 'BoneMarrow'
+
+    # 2.2 Read Excel file
+    df = pd.read_excel(file_path)
+    # DataFrame structure:
+    # | Gene_symbol | Gene_name | P_value_... | ... |
+    # |-------------|-----------|-------------|-----|
+    # | GAPDH       | ...       | 0.001       | ... |
+    # | ACTB        | ...       | 0.002       | ... |
+
+    # 2.3 Iterate through each row
+    for _, row in df.iterrows():
+        gene_symbol = str(row.get('Gene_symbol', '')).strip()
+        if not gene_symbol:  # Skip empty gene symbols
+            continue
+
+        # 2.4 Build MongoDB document
+        record = {
+            'organ': organ_name,
+            'gene_symbol': gene_symbol,
+            'gene_name': str(row.get('Gene_name', '')),
+            # ... other fields
+        }
+        records.append(record)
+</code></pre>
+<p><strong>Step 3: Bulk Write</strong></p>
+<pre><code class="language-python"># 3.1 Build bulk operations list
+operations = []
+for record in records:
+    operations.append({
+        'replaceOne': {
+            'filter': {
+                'organ': record['organ'],
+                'gene_symbol': record['gene_symbol']
+            },
+            'replacement': record,
+            'upsert': True  # Insert if not exists, update if exists
+        }
+    })
+
+# 3.2 Execute bulk operations
+result = collection.bulk_write(operations)
+# Results:
+# - result.upserted_count: Number of newly inserted documents
+# - result.modified_count: Number of updated documents
+</code></pre>
+<p><strong>Step 4: Create Indexes</strong></p>
+<pre><code class="language-python"># 4.1 Create single-field indexes
+collection.create_index([(&quot;gene_symbol&quot;, 1)])
+collection.create_index([(&quot;organ&quot;, 1)])
+
+# 4.2 Create composite unique index
+collection.create_index(
+    [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)], 
+    unique=True
+)
+</code></pre>
+<h4 id="query-optimization">Query Optimization<a class="headerlink" href="#query-optimization" title="Permanent link">&para;</a></h4>
+<p><strong>Query 1: Exact Gene Symbol Search</strong></p>
+<pre><code class="language-python">query = {&quot;gene_symbol&quot;: {&quot;$regex&quot;: f&quot;^{gene_symbol}$&quot;, &quot;$options&quot;: &quot;i&quot;}}
+# Using index: gene_symbol index
+# Performance: O(log n)
+</code></pre>
+<p><strong>Query 2: Get All Unique Gene Symbols</strong></p>
+<pre><code class="language-python">pipeline = [
+    {&quot;$group&quot;: {&quot;_id&quot;: &quot;$gene_symbol&quot;}},  # Group and deduplicate
+    {&quot;$sort&quot;: {&quot;_id&quot;: 1}}                  # Sort
+]
+genes = [doc[&quot;_id&quot;] for doc in collection.aggregate(pipeline)]
+# Using index: gene_symbol index
+# Performance: O(n log n)
+</code></pre>
+<hr />
+<h2 id="deployment-architecture">Deployment Architecture<a class="headerlink" href="#deployment-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="docker-containerization-architecture">Docker Containerization Architecture<a class="headerlink" href="#docker-containerization-architecture" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────┐
+│         Docker Compose                  │
+│                                         │
+│  ┌──────────────┐    ┌──────────────┐  │
+│  │   Frontend   │    │   Backend    │  │
+│  │   Container  │◄──►│   Container  │  │
+│  │              │    │              │  │
+│  │ Next.js      │    │ FastAPI      │  │
+│  │ Port: 3000   │    │ Port: 8000   │  │
+│  └──────────────┘    └──────┬───────┘  │
+│                             │          │
+│                             ▼          │
+│                      ┌──────────────┐  │
+│                      │   MongoDB    │  │
+│                      │   Container  │  │
+│                      │   (Optional) │  │
+│                      └──────────────┘  │
+│                                         │
+│  ┌──────────────────────────────────┐  │
+│  │      gene-search-network         │  │
+│  │      (Bridge Network)            │  │
+│  └──────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+</code></pre>
+<h3 id="deployment-process">Deployment Process<a class="headerlink" href="#deployment-process" title="Permanent link">&para;</a></h3>
+<p><strong>1. Build Phase</strong></p>
+<pre><code class="language-bash"># Frontend build
+cd genegen
+npm install
+npm run build  # Generate .next directory
+
+# Backend preparation
+cd backend
+pip install -r requirements.txt
+</code></pre>
+<p><strong>2. Docker Image Build</strong></p>
+<pre><code class="language-dockerfile"># Dockerfile.backend
+FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD [&quot;uvicorn&quot;, &quot;server:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;]
+
+# Dockerfile.frontend
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+CMD [&quot;npm&quot;, &quot;start&quot;]
+</code></pre>
+<p><strong>3. Container Startup</strong></p>
+<pre><code class="language-bash">docker-compose up -d
+</code></pre>
+<hr />
+<h2 id="technology-stack-details">Technology Stack Details<a class="headerlink" href="#technology-stack-details" title="Permanent link">&para;</a></h2>
+<h3 id="frontend-technology-stack">Frontend Technology Stack<a class="headerlink" href="#frontend-technology-stack" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+<th>Relationships</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Next.js</td>
+<td>15.3.5</td>
+<td>React framework, routing, SSR</td>
+<td>Build frontend application</td>
+</tr>
+<tr>
+<td>React</td>
+<td>19.0.0</td>
+<td>UI component library</td>
+<td>Foundation of Next.js</td>
+</tr>
+<tr>
+<td>TypeScript</td>
+<td>5.x</td>
+<td>Type safety</td>
+<td>Compile to JavaScript</td>
+</tr>
+<tr>
+<td>Tailwind CSS</td>
+<td>4.x</td>
+<td>Styling framework</td>
+<td>Imported via globals.css</td>
+</tr>
+<tr>
+<td>Plotly.js</td>
+<td>2.35.3</td>
+<td>Interactive charts</td>
+<td>Used via react-plotly.js</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Dependencies</strong>:</p>
+<pre><code>Next.js → React → React DOM
+Next.js → TypeScript Compiler
+Next.js → Tailwind CSS
+React → Plotly.js (dynamic import)
+</code></pre>
+<h3 id="backend-technology-stack">Backend Technology Stack<a class="headerlink" href="#backend-technology-stack" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+<th>Relationships</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FastAPI</td>
+<td>0.68.0</td>
+<td>Web framework</td>
+<td>Build API service</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>3.9+</td>
+<td>Programming language</td>
+<td>Foundation of FastAPI</td>
+</tr>
+<tr>
+<td>pandas</td>
+<td>1.3.0+</td>
+<td>Data processing</td>
+<td>Read Excel/CSV</td>
+</tr>
+<tr>
+<td>NumPy</td>
+<td>1.21.0+</td>
+<td>Numerical computation</td>
+<td>Matrix operations</td>
+</tr>
+<tr>
+<td>SciPy</td>
+<td>-</td>
+<td>Scientific computing</td>
+<td>Statistical tests</td>
+</tr>
+<tr>
+<td>scikit-learn</td>
+<td>-</td>
+<td>Machine learning</td>
+<td>PCA, t-SNE, K-means</td>
+</tr>
+<tr>
+<td>matplotlib</td>
+<td>3.4.0+</td>
+<td>Chart generation</td>
+<td>Static images</td>
+</tr>
+<tr>
+<td>seaborn</td>
+<td>0.11.0+</td>
+<td>Advanced visualization</td>
+<td>Heatmaps</td>
+</tr>
+<tr>
+<td>GProfiler</td>
+<td>1.0.0+</td>
+<td>Enrichment analysis</td>
+<td>External API client</td>
+</tr>
+<tr>
+<td>pymongo</td>
+<td>-</td>
+<td>MongoDB driver</td>
+<td>Database connection</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Dependencies</strong>:</p>
+<pre><code>FastAPI → Pydantic (data validation)
+FastAPI → Uvicorn (ASGI server)
+pandas → NumPy (underlying arrays)
+scikit-learn → NumPy, SciPy
+matplotlib → NumPy
+seaborn → matplotlib, pandas
+</code></pre>
+<hr />
+<h2 id="inter-module-relationships">Inter-Module Relationships<a class="headerlink" href="#inter-module-relationships" title="Permanent link">&para;</a></h2>
+<h3 id="data-sharing">Data Sharing<a class="headerlink" href="#data-sharing" title="Permanent link">&para;</a></h3>
+<p><strong>1. Gene List Sharing</strong>:</p>
+<pre><code>MongoDB (gene_data)
+    │
+    ├─→ Gene Search Module: Query gene expression data
+    │
+    └─→ Other Modules: Can serve as reference data source
+</code></pre>
+<p><strong>2. Analysis Result Sharing</strong>:</p>
+<pre><code>IVCCA Analysis Results (correlation matrix)
+    │
+    └─→ Can be used for pathway analysis
+        └─→ Pathway analysis results can be used for theme analysis
+</code></pre>
+<h3 id="functional-dependencies">Functional Dependencies<a class="headerlink" href="#functional-dependencies" title="Permanent link">&para;</a></h3>
+<pre><code>Gene Search ←─ Independent module (only depends on MongoDB)
+    │
+Theme Analysis ←─ Depends on GProfiler API
+    │
+IVCCA Analysis ←─ Independent module (algorithm self-contained)
+</code></pre>
+<h3 id="api-endpoint-relationships">API Endpoint Relationships<a class="headerlink" href="#api-endpoint-relationships" title="Permanent link">&para;</a></h3>
+<p><strong>Endpoint Relationships Within Same Module</strong>:</p>
+<pre><code>/api/ivcca/load-data
+    ↓ (returns analyzer_id)
+/api/ivcca/calculate-correlation (requires analyzer_id)
+    ↓ (requires correlation calculation first)
+/api/ivcca/heatmap (requires analyzer_id)
+/api/ivcca/pca (requires analyzer_id)
+/api/ivcca/tsne (requires analyzer_id)
+</code></pre>
+<hr />
+<h2 id="performance-optimization-strategies">Performance Optimization Strategies<a class="headerlink" href="#performance-optimization-strategies" title="Permanent link">&para;</a></h2>
+<h3 id="frontend-optimization">Frontend Optimization<a class="headerlink" href="#frontend-optimization" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Code Splitting</strong>:</li>
+<li>Plotly.js dynamic import (<code>dynamic import</code>)</li>
+<li>
+<p>Page-level code splitting (Next.js automatic)</p>
+</li>
+<li>
+<p><strong>Caching Strategy</strong>:</p>
+</li>
+<li>Gene symbol list cache (localStorage)</li>
+<li>
+<p>API response cache (optional)</p>
+</li>
+<li>
+<p><strong>Lazy Loading</strong>:</p>
+</li>
+<li>Chart component lazy loading</li>
+<li>Image lazy loading</li>
+</ol>
+<h3 id="backend-optimization">Backend Optimization<a class="headerlink" href="#backend-optimization" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Database Optimization</strong>:</li>
+<li>Index-accelerated queries</li>
+<li>
+<p>Bulk operations to reduce IO</p>
+</li>
+<li>
+<p><strong>Computation Optimization</strong>:</p>
+</li>
+<li>NumPy vectorized operations</li>
+<li>
+<p>Correlation matrix cache (in memory)</p>
+</li>
+<li>
+<p><strong>Concurrent Processing</strong>:</p>
+</li>
+<li>FastAPI asynchronous processing</li>
+<li>Multiple analyzer instances independent</li>
+</ol>
+<hr />
+<h2 id="security-architecture">Security Architecture<a class="headerlink" href="#security-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="authentication-mechanism">Authentication Mechanism<a class="headerlink" href="#authentication-mechanism" title="Permanent link">&para;</a></h3>
+<p><strong>Token-based Authentication</strong>:</p>
+<pre><code class="language-python"># Store valid tokens in environment variables
+VALID_TOKENS = os.getenv('VALID_TOKENS', '').split(',')
+
+# Verification function
+def verify_token(token: str) -&gt; bool:
+    return token in VALID_TOKENS
+
+# Protect endpoint
+@app.post(&quot;/api/gene/add&quot;)
+async def add_gene(..., token: str = Query(...)):
+    if not verify_token(token):
+        raise HTTPException(status_code=401)
+</code></pre>
+<h3 id="cors-configuration">CORS Configuration<a class="headerlink" href="#cors-configuration" title="Permanent link">&para;</a></h3>
+<pre><code class="language-python">app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[&quot;*&quot;],  # Development environment, should restrict in production
+    allow_credentials=True,
+    allow_methods=[&quot;*&quot;],
+    allow_headers=[&quot;*&quot;],
+)
+</code></pre>
+<h3 id="data-validation">Data Validation<a class="headerlink" href="#data-validation" title="Permanent link">&para;</a></h3>
+<p><strong>Pydantic Model Validation</strong>:</p>
+<pre><code class="language-python">class GeneData(BaseModel):
+    gene_symbol: str
+    gene_name: str
+    # ... Automatic type validation and conversion
+</code></pre>
+<hr />
+<h2 id="error-handling-architecture">Error Handling Architecture<a class="headerlink" href="#error-handling-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="frontend-error-handling">Frontend Error Handling<a class="headerlink" href="#frontend-error-handling" title="Permanent link">&para;</a></h3>
+<pre><code class="language-typescript">try {
+  const response = await fetch(...);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const data = await response.json();
+} catch (error) {
+  setError(error.message);  // Display error message
+  console.error(error);     // Logging
+}
+</code></pre>
+<h3 id="backend-error-handling">Backend Error Handling<a class="headerlink" href="#backend-error-handling" title="Permanent link">&para;</a></h3>
+<pre><code class="language-python">try:
+    # Business logic
+    result = process_data()
+    return {&quot;status&quot;: &quot;success&quot;, &quot;data&quot;: result}
+except ValueError as e:
+    raise HTTPException(status_code=400, detail=str(e))
+except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
+</code></pre>
+<hr />
+<h2 id="scalability-design">Scalability Design<a class="headerlink" href="#scalability-design" title="Permanent link">&para;</a></h2>
+<h3 id="horizontal-scaling">Horizontal Scaling<a class="headerlink" href="#horizontal-scaling" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Frontend</strong>: Can deploy multiple instances, use load balancing</li>
+<li><strong>Backend</strong>: Stateless design, supports multi-instance deployment</li>
+<li><strong>Database</strong>: MongoDB supports sharding and replica sets</li>
+</ul>
+<h3 id="feature-extension">Feature Extension<a class="headerlink" href="#feature-extension" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>New Modules</strong>: Can add new API classes and new endpoints</li>
+<li><strong>New Algorithms</strong>: Can add new methods in <code>ivcca_core.py</code></li>
+<li><strong>New Visualizations</strong>: Can add new chart generation functions</li>
+</ul>
+<hr />
+<p><strong>Document Version</strong>: 1.0<br />
+<strong>Last Updated</strong>: 2024</p>
+    
+    <script>
+        // Print hint
+        window.onbeforeprint = function() {
+            console.log("Print hint: Please select 'Save as PDF' or 'Print to PDF'");
+        };
+    </script>
+</body>
+</html>

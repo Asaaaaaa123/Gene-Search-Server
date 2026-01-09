@@ -25,6 +25,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import seaborn as sns
 from gprofiler import GProfiler
+from ivcca_core import IVCCAAnalyzer, TwoSetCorrelation
 
 # Load environment variables
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -1319,6 +1320,528 @@ async def health_check():
 async def test_endpoint():
     """Test endpoint for debugging"""
     return {"message": "Test endpoint is working"}
+
+# IVCCA Analysis Endpoints
+# Store analyzer instances in app state (using simple dict for now)
+ivcca_analyzers = {}
+two_set_analyzers = {}
+
+@app.post("/api/ivcca/load-data")
+async def ivcca_load_data(
+    file: UploadFile = File(...), 
+    filter_genes: Optional[UploadFile] = File(None)
+):
+    """
+    Load data for IVCCA analysis
+    
+    Args:
+        file: Excel, CSV, or TSV file containing gene expression data
+        filter_genes: Optional text file with gene list to filter
+    """
+    try:
+        # Read main data file
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['xlsx', 'xls', 'csv', 'tsv']:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+        
+        # Save uploaded file temporarily
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        # Create analyzer instance
+        analyzer_id = secrets.token_hex(8)
+        analyzer = IVCCAAnalyzer()
+        
+        # Load filter genes if provided
+        filter_gene_list = None
+        if filter_genes:
+            filter_content = await filter_genes.read()
+            filter_gene_list = [g.strip() for g in filter_content.decode('utf-8').split('\n') if g.strip()]
+        
+        # Load data
+        result = analyzer.load_data(tmp_path, filter_gene_list)
+        
+        # Clean up temp file
+        os.unlink(tmp_path)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        # Store analyzer
+        ivcca_analyzers[analyzer_id] = analyzer
+        
+        return {
+            "analyzer_id": analyzer_id,
+            **result
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+@app.post("/api/ivcca/calculate-correlation")
+async def ivcca_calculate_correlation(
+    analyzer_id: str = Form(...),
+    method: str = Form("pearson")
+):
+    """Calculate correlation matrix"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    result = analyzer.calculate_correlations(method=method)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/api/ivcca/sort-matrix")
+async def ivcca_sort_matrix(
+    analyzer_id: str = Form(...),
+    sort_by: str = Form("magnitude")
+):
+    """Sort correlation matrix"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    result = analyzer.sort_correlation_matrix(sort_by=sort_by)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/api/ivcca/heatmap")
+async def ivcca_heatmap(
+    analyzer_id: str = Form(...),
+    sorted: bool = Form(False)
+):
+    """Generate correlation heatmap"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    try:
+        result = analyzer.create_correlation_heatmap(sorted=sorted)
+        return {
+            "plot_type": result["type"],
+            "content": result["content"],
+            "sorted": sorted
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating heatmap: {str(e)}")
+
+@app.post("/api/ivcca/histogram")
+async def ivcca_histogram(analyzer_id: str = Form(...)):
+    """Generate correlation histogram"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    try:
+        image_base64 = analyzer.create_correlation_histogram()
+        return {"image_base64": image_base64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating histogram: {str(e)}")
+
+@app.post("/api/ivcca/optimal-clusters")
+async def ivcca_optimal_clusters(
+    analyzer_id: str = Form(...),
+    max_k: int = Form(10)
+):
+    """Calculate optimal number of clusters with interactive visualization"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    result = analyzer.calculate_optimal_clusters(max_k=max_k)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    # Convert plot_image to proper format
+    if "plot_image" in result:
+        plot_result = result["plot_image"]
+        result["plot_image"] = plot_result
+    
+    return result
+
+@app.post("/api/ivcca/dendrogram")
+async def ivcca_dendrogram(
+    analyzer_id: str = Form(...),
+    threshold: Optional[float] = Form(None),
+    method: str = Form("ward")
+):
+    """Generate dendrogram"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    try:
+        image_base64 = analyzer.create_dendrogram(threshold=threshold, method=method)
+        return {"image_base64": image_base64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating dendrogram: {str(e)}")
+
+@app.post("/api/ivcca/pca")
+async def ivcca_pca(
+    analyzer_id: str = Form(...),
+    n_components: int = Form(3),
+    n_clusters: Optional[int] = Form(None)
+):
+    """Perform PCA analysis with optional clustering visualization"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    result = analyzer.perform_pca(n_components=n_components, n_clusters=n_clusters)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/api/ivcca/tsne")
+async def ivcca_tsne(
+    analyzer_id: str = Form(...),
+    n_components: int = Form(2),
+    perplexity: float = Form(30.0),
+    n_clusters: Optional[int] = Form(None)
+):
+    """Perform t-SNE analysis with optional clustering visualization"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    result = analyzer.perform_tsne(n_components=n_components, perplexity=perplexity, n_clusters=n_clusters)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/api/ivcca/single-pathway")
+async def ivcca_single_pathway(
+    analyzer_id: str = Form(...),
+    pathway_file: UploadFile = File(...)
+):
+    """Analyze single pathway"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    # Read pathway genes
+    content = await pathway_file.read()
+    pathway_genes = [g.strip() for g in content.decode('utf-8').split('\n') if g.strip()]
+    
+    result = analyzer.analyze_single_pathway(pathway_genes)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/api/ivcca/compare-pathways")
+async def ivcca_compare_pathways(
+    analyzer_id: str = Form(...),
+    pathway1_file: UploadFile = File(...),
+    pathway2_file: UploadFile = File(...)
+):
+    """Compare two pathways"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    # Read pathway genes
+    content1 = await pathway1_file.read()
+    content2 = await pathway2_file.read()
+    
+    pathway1_genes = [g.strip() for g in content1.decode('utf-8').split('\n') if g.strip()]
+    pathway2_genes = [g.strip() for g in content2.decode('utf-8').split('\n') if g.strip()]
+    
+    result = analyzer.compare_pathways(pathway1_genes, pathway2_genes)
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+# Two-Set Correlation Endpoints
+@app.post("/api/ivcca/two-set/load-data-a")
+async def two_set_load_data_a(file: UploadFile = File(...)):
+    """Load first dataset for two-set correlation analysis"""
+    try:
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['xlsx', 'xls', 'csv']:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+        
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        analyzer_id = secrets.token_hex(8)
+        analyzer = TwoSetCorrelation()
+        
+        result = analyzer.load_data_a(tmp_path)
+        os.unlink(tmp_path)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        two_set_analyzers[analyzer_id] = analyzer
+        
+        return {
+            "analyzer_id": analyzer_id,
+            **result
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+@app.post("/api/ivcca/two-set/load-data-b")
+async def two_set_load_data_b(
+    analyzer_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """Load second dataset for two-set correlation analysis"""
+    if analyzer_id not in two_set_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = two_set_analyzers[analyzer_id]
+    
+    try:
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['xlsx', 'xls', 'csv']:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+        
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        result = analyzer.load_data_b(tmp_path)
+        os.unlink(tmp_path)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return {
+            "analyzer_id": analyzer_id,
+            **result
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading data: {str(e)}")
+
+@app.post("/api/ivcca/two-set/calculate")
+async def two_set_calculate(analyzer_id: str = Form(...)):
+    """Calculate correlation between two datasets"""
+    if analyzer_id not in two_set_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = two_set_analyzers[analyzer_id]
+    result = analyzer.calculate_correlation()
+    
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    
+    return result
+
+@app.post("/api/ivcca/two-set/heatmap")
+async def two_set_heatmap(
+    analyzer_id: str = Form(...),
+    sorted: bool = Form(False)
+):
+    """Generate heatmap for two-set correlation"""
+    if analyzer_id not in two_set_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = two_set_analyzers[analyzer_id]
+    try:
+        image_base64 = analyzer.create_heatmap(sorted=sorted)
+        return {"image_base64": image_base64}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating heatmap: {str(e)}")
+
+@app.post("/api/ivcca/gene-to-genes")
+async def ivcca_gene_to_genes(
+    analyzer_id: str = Form(...),
+    single_gene: str = Form(...),
+    target_genes_file: UploadFile = File(...)
+):
+    """Calculate correlation between a single gene and a group of genes"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    try:
+        # Read target genes from file
+        content = await target_genes_file.read()
+        target_genes = [g.strip() for g in content.decode('utf-8').split('\n') if g.strip()]
+        
+        result = analyzer.gene_to_genes(single_gene, target_genes)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/api/ivcca/gene-to-pathways")
+async def ivcca_gene_to_pathways(
+    analyzer_id: str = Form(...),
+    single_gene: str = Form(...),
+    pathway_files: List[UploadFile] = File(...)
+):
+    """Calculate correlation between a single gene and multiple pathways"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    try:
+        pathway_files_list = []
+        pathway_genes_list = []
+        
+        for pathway_file in pathway_files:
+            pathway_files_list.append(pathway_file.filename)
+            content = await pathway_file.read()
+            pathway_genes = [g.strip() for g in content.decode('utf-8').split('\n') if g.strip()]
+            pathway_genes_list.append(pathway_genes)
+        
+        result = analyzer.gene_to_pathways(single_gene, pathway_files_list, pathway_genes_list)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/api/ivcca/multi-pathway")
+async def ivcca_multi_pathway(
+    analyzer_id: str = Form(...),
+    pathway_files: List[UploadFile] = File(...),
+    min_genes_threshold: int = Form(5),
+    sorted_matrix: Optional[str] = Form(None)
+):
+    """Multi-pathway analysis with CECI calculation"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    try:
+        pathway_files_list = []
+        pathway_genes_list = []
+        
+        for pathway_file in pathway_files:
+            pathway_files_list.append(pathway_file.filename)
+            content = await pathway_file.read()
+            pathway_genes = [g.strip() for g in content.decode('utf-8').split('\n') if g.strip()]
+            pathway_genes_list.append(pathway_genes)
+        
+        # Get sorted data if provided
+        sorted_genes = None
+        sorted_correlations = None
+        if sorted_matrix == "true":
+            sort_result = analyzer.sort_correlation_matrix()
+            if sort_result["status"] == "success":
+                sorted_genes = sort_result["sorted_gene_names"]
+                sorted_correlations = sort_result["sorted_scores"]
+        
+        result = analyzer.multi_pathway_analysis(
+            pathway_files_list, 
+            pathway_genes_list,
+            sorted_genes=sorted_genes,
+            sorted_correlations=sorted_correlations,
+            min_genes_threshold=min_genes_threshold
+        )
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/api/ivcca/venn-diagram")
+async def ivcca_venn_diagram(
+    analyzer_id: str = Form(...),
+    pathway1_file: UploadFile = File(...),
+    pathway2_file: UploadFile = File(...)
+):
+    """Create Venn diagram for two pathways"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    try:
+        # Read pathway genes
+        content1 = await pathway1_file.read()
+        pathway1_genes = [g.strip() for g in content1.decode('utf-8').split('\n') if g.strip()]
+        
+        content2 = await pathway2_file.read()
+        pathway2_genes = [g.strip() for g in content2.decode('utf-8').split('\n') if g.strip()]
+        
+        result = analyzer.create_venn_diagram(pathway1_genes, pathway2_genes)
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/api/ivcca/network-analysis")
+async def ivcca_network_analysis(
+    analyzer_id: str = Form(...),
+    pathway_file: Optional[UploadFile] = File(None),
+    threshold: float = Form(0.75),
+    plot_type: str = Form("2D")
+):
+    """Create network graph from correlation matrix"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+    
+    analyzer = ivcca_analyzers[analyzer_id]
+    
+    try:
+        pathway_genes = None
+        if pathway_file:
+            content = await pathway_file.read()
+            pathway_genes = [g.strip() for g in content.decode('utf-8').split('\n') if g.strip()]
+        
+        if plot_type not in ['2D', '3D']:
+            raise HTTPException(status_code=400, detail="plot_type must be '2D' or '3D'")
+        
+        result = analyzer.create_network_graph(
+            pathway_genes=pathway_genes,
+            threshold=threshold,
+            plot_type=plot_type
+        )
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 def install_requirements():
     """安装依赖项"""

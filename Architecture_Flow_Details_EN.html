@@ -1,0 +1,2097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appendix 2. System Architecture Detailed Flow Diagrams and Component Interactions - GenoCorr Platform System Architecture</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 2.5cm 2cm;
+            }
+            
+            body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            
+            .no-print {
+                display: none;
+            }
+            
+            h1, h2, h3, h4, h5, h6 {
+                page-break-after: avoid;
+            }
+            
+            pre, blockquote, table {
+                page-break-inside: avoid;
+            }
+            
+            .flow-diagram {
+                page-break-inside: avoid;
+            }
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 12pt;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14pt;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        .print-button:hover {
+            background-color: #2980b9;
+        }
+        
+        h1 {
+            font-size: 28pt;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 0.5em;
+        }
+        
+        h2 {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+            border-bottom: 2px solid #95a5a6;
+            padding-bottom: 0.3em;
+        }
+        
+        h3 {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.3em;
+            margin-bottom: 0.5em;
+        }
+        
+        h4 {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+        }
+        
+        h5, h6 {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+        }
+        
+        p {
+            margin: 0.8em 0;
+            text-align: justify;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10.5pt;
+            color: #c7254e;
+            border: 1px solid #e1e1e1;
+        }
+        
+        pre {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+            margin: 1em 0;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10pt;
+            line-height: 1.5;
+        }
+        
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            border: none;
+            color: #333;
+            font-size: 10pt;
+            display: block;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5em 0;
+            font-size: 11pt;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        ul, ol {
+            margin: 0.8em 0;
+            padding-left: 2em;
+        }
+        
+        li {
+            margin: 0.4em 0;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3498db;
+            margin: 1.5em 0;
+            padding-left: 1.5em;
+            padding-right: 1em;
+            color: #555;
+            font-style: italic;
+            background-color: #f9f9f9;
+            padding-top: 0.5em;
+            padding-bottom: 0.5em;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #ddd;
+            margin: 2em 0;
+        }
+        
+        strong {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        em {
+            font-style: italic;
+            color: #555;
+        }
+        
+        .toc {
+            background-color: #f9f9f9;
+            padding: 1.5em;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .toc ul {
+            list-style-type: none;
+            padding-left: 1em;
+        }
+        
+        .toc li {
+            margin: 0.3em 0;
+        }
+        
+        .toc a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Flow diagram styles */
+        .flow-diagram {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10pt;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        /* Special characters in code blocks */
+        pre.highlight, pre code {
+            white-space: pre;
+            word-wrap: normal;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button no-print" onclick="window.print()">
+        🖨️ Print to PDF
+    </button>
+    
+    <h1 id="system-architecture-detailed-flow-diagrams-and-component-interactions">Appendix 2. System Architecture Detailed Flow Diagrams and Component Interactions<a class="headerlink" href="#system-architecture-detailed-flow-diagrams-and-component-interactions" title="Permanent link">&para;</a></h1>
+<p>This document provides detailed flow diagrams for each step of the system architecture and the interactions between components.</p>
+<hr />
+<h2 id="i-system-startup-flow">I. System Startup Flow<a class="headerlink" href="#i-system-startup-flow" title="Permanent link">&para;</a></h2>
+<h3 id="11-backend-startup-flow">1.1 Backend Startup Flow<a class="headerlink" href="#11-backend-startup-flow" title="Permanent link">&para;</a></h3>
+<pre><code>Step 1: Load Environment Variables
+    │
+    ├─→ Read .env file
+    ├─→ MONGODB_URI
+    ├─→ VALID_TOKENS
+    └─→ Other configurations
+    │
+Step 2: Connect to MongoDB
+    │
+    ├─→ MongoClient(MONGODB_URI)
+    ├─→ client.admin.command('ping')  # Test connection
+    ├─→ db = client.gene_search_db
+    └─→ collection = db.gene_data
+    │
+Step 3: Initialize API Classes
+    │
+    ├─→ gene_api = GeneSearchAPI()
+    │     │
+    │     ├─→ load_data_to_mongodb()
+    │     │     │
+    │     │     ├─→ Scan data/*.xlsx files
+    │     │     ├─→ Read each file
+    │     │     ├─→ Data cleaning and transformation
+    │     │     ├─→ Batch write to MongoDB
+    │     │     └─→ Create indexes
+    │     │
+    │     └─→ load_all_genes()
+    │           │
+    │           ├─→ MongoDB aggregation query
+    │           ├─→ $group deduplication
+    │           └─→ Return gene symbol list
+    │
+    ├─→ ontology_api = GeneOntologyAPI()
+    │     │
+    │     ├─→ gp = GProfiler(return_dataframe=True)
+    │     └─→ themes = {...}  # Define theme keywords
+    │
+Step 4: Create FastAPI Application
+    │
+    ├─→ app = FastAPI(...)
+    ├─→ app.add_middleware(CORSMiddleware, ...)
+    └─→ Define all API routes
+    │
+Step 5: Start Uvicorn Server
+    │
+    └─→ uvicorn.run(app, host=&quot;0.0.0.0&quot;, port=8000)
+</code></pre>
+<h3 id="12-frontend-startup-flow">1.2 Frontend Startup Flow<a class="headerlink" href="#12-frontend-startup-flow" title="Permanent link">&para;</a></h3>
+<pre><code>Step 1: Load Environment Variables
+    │
+    └─→ NEXT_PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL
+    │
+Step 2: Compile TypeScript
+    │
+    └─→ TypeScript → JavaScript
+    │
+Step 3: Next.js Startup
+    │
+    ├─→ Initialize React application
+    ├─→ Load routing configuration
+    └─→ Start development server (port 3000)
+    │
+Step 4: Page Loading
+    │
+    ├─→ layout.tsx (root layout)
+    └─→ page.tsx (home page)
+</code></pre>
+<hr />
+<h2 id="ii-gene-search-module-detailed-flow">II. Gene Search Module Detailed Flow<a class="headerlink" href="#ii-gene-search-module-detailed-flow" title="Permanent link">&para;</a></h2>
+<h3 id="21-complete-flow-of-data-loading-to-mongodb">2.1 Complete Flow of Data Loading to MongoDB<a class="headerlink" href="#21-complete-flow-of-data-loading-to-mongodb" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ Automatically executed on startup: GeneSearchAPI.__init__() │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Check if MongoDB already has data          │
+│                                                      │
+│ existing_count = collection.count_documents({})     │
+│ if existing_count &gt; 0:                              │
+│     print(&quot;Data already exists, skip loading&quot;)      │
+│     return                                          │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Scan data file directory                   │
+│                                                      │
+│ excel_files = glob.glob(&quot;data/*.xlsx&quot;)              │
+│ # Result: ['data/BoneMarrow.xlsx', ...]            │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Iterate through each Excel file            │
+│                                                      │
+│ for file_path in excel_files:                       │
+│     # Process single file                           │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Read Excel file                            │
+│                                                      │
+│ df = pd.read_excel(file_path)                       │
+│ # DataFrame structure:                              │
+│ # Columns: Gene_symbol, Gene_name, P_value_...,   │
+│ #          FDR_..., Ratio_..., Fold_change_...,   │
+│ #          LSMean10mgkg_..., LSMeancontrol_...     │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Extract organ name                         │
+│                                                      │
+│ organ_name = os.path.splitext(                      │
+│     os.path.basename(file_path)                     │
+│ )[0]                                                │
+│ # Result: 'BoneMarrow', 'Cortex', etc.            │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Iterate through each row of DataFrame      │
+│                                                      │
+│ for index, row in df.iterrows():                    │
+│     # Process single row data                       │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 7: Extract and validate gene symbol           │
+│                                                      │
+│ gene_symbol = str(row.get('Gene_symbol', '')).strip()│
+│ if not gene_symbol:                                 │
+│     continue  # Skip empty gene symbols             │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 8: Build MongoDB document                     │
+│                                                      │
+│ record = {                                          │
+│     'organ': organ_name,                            │
+│     'gene_symbol': gene_symbol,                     │
+│     'gene_name': str(row.get('Gene_name', '')),    │
+│     'p_value_10_mgkg_vs_control':                   │
+│         str(row.get('P_value_10_mgkg_vs_control', '')),│
+│     # ... 7 other fields                            │
+│ }                                                   │
+│ records.append(record)                              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 9: Build batch write operations               │
+│                                                      │
+│ operations = []                                     │
+│ for record in records:                              │
+│     operations.append({                             │
+│         'replaceOne': {                             │
+│             'filter': {                             │
+│                 'organ': record['organ'],           │
+│                 'gene_symbol': record['gene_symbol']│
+│             },                                      │
+│             'replacement': record,                  │
+│             'upsert': True  # Insert if not exists, update if exists │
+│         }                                           │
+│     })                                              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 10: Execute batch write                       │
+│                                                      │
+│ result = collection.bulk_write(operations)          │
+│ # Result statistics:                                │
+│ # - result.upserted_count: number of new insertions │
+│ # - result.modified_count: number of updates        │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 11: Create indexes                            │
+│                                                      │
+│ collection.create_index([(&quot;gene_symbol&quot;, 1)])       │
+│ collection.create_index([(&quot;organ&quot;, 1)])             │
+│ collection.create_index(                            │
+│     [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)],             │
+│     unique=True                                     │
+│ )                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Complete: Data loaded to MongoDB                   │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="22-gene-search-query-flow">2.2 Gene Search Query Flow<a class="headerlink" href="#22-gene-search-query-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User enters &quot;GAPDH&quot; in frontend and clicks search   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: gene-search/page.tsx                     │
+│                                                      │
+│ const handleSearch = async () =&gt; {                  │
+│     setIsLoading(true)                              │
+│     setError('')                                    │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Build API request                                   │
+│                                                      │
+│ const url = `${API_BASE_URL}/api/gene/             │
+│              symbol/search?gene_symbol=GAPDH`       │
+│                                                      │
+│ fetch(url, {                                        │
+│     method: 'GET',                                  │
+│     headers: {'Content-Type': 'application/json'}   │
+│ })                                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    │ HTTP GET Request
+    │ URL: http://localhost:8000/api/gene/symbol/search?gene_symbol=GAPDH
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ FastAPI Route: @app.get(&quot;/api/gene/symbol/search&quot;) │
+│                                                      │
+│ async def search_gene_symbol(                       │
+│     gene_symbol: str = Query(...)                   │
+│ ):                                                  │
+│     # FastAPI automatically parses query parameters │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Call business logic: gene_api.search_gene_data()   │
+│                                                      │
+│ def search_gene_data(self, gene_symbol: str):       │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Build MongoDB query                        │
+│                                                      │
+│ query = {                                           │
+│     &quot;gene_symbol&quot;: {                                │
+│         &quot;$regex&quot;: &quot;^GAPDH$&quot;,  # Exact match         │
+│         &quot;$options&quot;: &quot;i&quot;          # Case insensitive  │
+│     }                                               │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Execute MongoDB query                      │
+│                                                      │
+│ cursor = collection.find(query)                     │
+│ # MongoDB uses gene_symbol index to speed up query  │
+│ # Query complexity: O(log n)                        │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Iterate through query results              │
+│                                                      │
+│ results = []                                        │
+│ for doc in cursor:                                  │
+│     # doc is a MongoDB document                     │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Format data                                 │
+│                                                      │
+│ results.append({                                    │
+│     'organ': doc.get('organ', ''),                  │
+│     'gene_symbol': doc.get('gene_symbol', ''),      │
+│     'gene_name': doc.get('gene_name', ''),          │
+│     'p_value': doc.get('p_value_10_mgkg_vs_control', ''),│
+│     # ... other fields                              │
+│ })                                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Return result list                          │
+│                                                      │
+│ return results  # List[Dict]                       │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ FastAPI automatically serializes to JSON            │
+│                                                      │
+│ return {                                            │
+│     &quot;gene_symbol&quot;: &quot;GAPDH&quot;,                         │
+│     &quot;data&quot;: [                                       │
+│         {                                           │
+│             &quot;organ&quot;: &quot;Heart&quot;,                       │
+│             &quot;gene_symbol&quot;: &quot;GAPDH&quot;,                 │
+│             ...                                     │
+│         },                                          │
+│         {                                           │
+│             &quot;organ&quot;: &quot;Liver&quot;,                       │
+│             &quot;gene_symbol&quot;: &quot;GAPDH&quot;,                 │
+│             ...                                     │
+│         }                                           │
+│     ]                                               │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    │ HTTP 200 Response
+    │ Content-Type: application/json
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: Process response                          │
+│                                                      │
+│ const data = await response.json()                  │
+│ setSearchResults(data.data)  # Update state         │
+│ setIsLoading(false)                                 │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ React re-renders                                    │
+│                                                      │
+│ ResultsTable component displays data                 │
+│ - Iterate through searchResults                     │
+│ - Render table rows                                 │
+│ - Display expression data for each organ            │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="23-visualization-generation-flow">2.3 Visualization Generation Flow<a class="headerlink" href="#23-visualization-generation-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User clicks &quot;Show Fold Change Chart&quot; button         │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: Call API                                  │
+│                                                      │
+│ fetch(`${API_BASE_URL}/api/gene/symbol/            │
+│       showFoldChange?gene_symbol=GAPDH`)            │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend: create_fold_change_plot()                 │
+│                                                      │
+│ Step 1: Query gene data                             │
+│     results = search_gene_data(gene_symbol)         │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Extract data                                │
+│                                                      │
+│ organs = []                                         │
+│ fold_changes = []                                   │
+│ colors = []                                         │
+│                                                      │
+│ for doc in results:                                 │
+│     fold_change = float(doc['fold_change_...'])     │
+│     organs.append(doc['organ'])                     │
+│     fold_changes.append(fold_change)                │
+│     colors.append('blue' if fold_change &gt;= 0        │
+│                    else 'red')                      │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Create matplotlib chart                    │
+│                                                      │
+│ fig, ax = plt.subplots(figsize=(10, 6))            │
+│ ax.bar(organs, fold_changes, color=colors)         │
+│ ax.set_title(f'Fold Change for {gene_symbol}')     │
+│ ax.set_xlabel('Organ')                              │
+│ ax.set_ylabel('Fold Change')                        │
+│ plt.tight_layout()                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Convert to base64                           │
+│                                                      │
+│ buffer = io.BytesIO()                               │
+│ plt.savefig(buffer, format='jpg', dpi=300)         │
+│ buffer.seek(0)                                      │
+│ image_base64 = base64.b64encode(                    │
+│     buffer.getvalue()                               │
+│ ).decode()                                          │
+│ plt.close()                                         │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Return response                             │
+│                                                      │
+│ return {                                            │
+│     &quot;gene_symbol&quot;: &quot;GAPDH&quot;,                         │
+│     &quot;image_base64&quot;: &quot;iVBORw0KGgoAAAANSUhEUg...&quot;    │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: Display image                             │
+│                                                      │
+│ &lt;img src={`data:image/jpeg;base64,${image_base64}`} │
+│      alt=&quot;Fold Change Chart&quot; /&gt;                     │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="iii-theme-analysis-module-detailed-flow">III. Theme Analysis Module Detailed Flow<a class="headerlink" href="#iii-theme-analysis-module-detailed-flow" title="Permanent link">&para;</a></h2>
+<h3 id="31-complete-analysis-flow">3.1 Complete Analysis Flow<a class="headerlink" href="#31-complete-analysis-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User uploads gene list file (.txt)                  │
+│                                                      │
+│ File content example:                               │
+│ GAPDH                                               │
+│ ACTB                                                │
+│ TUBB                                                │
+│ ...                                                 │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: Read file content                         │
+│                                                      │
+│ const fileContent = await file.text()               │
+│ # Result: &quot;GAPDH\nACTB\nTUBB\n...&quot;                 │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Build FormData                                      │
+│                                                      │
+│ const formData = new FormData()                     │
+│ formData.append('file', file)                       │
+│ formData.append('selected_themes', JSON.stringify(  │
+│     ['Inflammation &amp; immune signaling', ...]        │
+│ ))                                                  │
+│ formData.append('custom_themes', JSON.stringify([   │
+│     {name: 'DNA Repair', keywords: [...]}           │
+│ ]))                                                 │
+└─────────────────────────────────────────────────────┘
+    │
+    │ HTTP POST
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend: /api/ontology/custom-analyze              │
+│                                                      │
+│ async def custom_analyze(                           │
+│     file: UploadFile,                               │
+│     selected_themes: str = Form(...),               │
+│     custom_themes: str = Form(None)                 │
+│ ):                                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Parse request parameters                    │
+│                                                      │
+│ file_content = await file.read()                    │
+│ file_content = file_content.decode('utf-8')         │
+│                                                      │
+│ selected_theme_names = json.loads(selected_themes)  │
+│ custom_theme_data = json.loads(custom_themes) if custom_themes else []│
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Load gene list                              │
+│                                                      │
+│ genes = ontology_api.load_genes_from_file(          │
+│     file_content                                    │
+│ )                                                   │
+│ # Implementation:                                   │
+│ # genes = []                                        │
+│ # for line in file_content.strip().split('\n'):    │
+│ #     gene = line.strip()                           │
+│ #     if gene:                                      │
+│ #         genes.append(gene)                        │
+│ # return genes                                      │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Temporarily add custom themes               │
+│                                                      │
+│ original_themes = ontology_api.themes.copy()        │
+│                                                      │
+│ for custom_theme in custom_theme_data:              │
+│     theme_name = custom_theme.get('name')           │
+│     keywords = custom_theme.get('keywords', [])     │
+│     ontology_api.themes[theme_name] = keywords      │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Execute enrichment analysis                 │
+│                                                      │
+│ enr_df = ontology_api.enrich(genes, p_thresh=1e-2) │
+│                                                      │
+│ # enrich() internal flow:                           │
+│ # 1. Call GProfiler API:                            │
+│ #    df = self.gp.profile(                          │
+│ #        organism=&quot;mmusculus&quot;,                      │
+│ #        query=genes                                │
+│ #    )                                              │
+│ # 2. Filter P-value:                                │
+│ #    df = df[df[&quot;p_value&quot;] &lt; p_thresh]             │
+│ # 3. Calculate Score:                               │
+│ #    df[&quot;Score&quot;] = -np.log10(df[&quot;p_value&quot;])        │
+│ # 4. Sort:                                          │
+│ #    df = df.sort_values(&quot;p_value&quot;)                │
+└─────────────────────────────────────────────────────┘
+    │
+    │ GProfiler API call (external service)
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ GProfiler server processing                         │
+│                                                      │
+│ 1. Receive gene list                                │
+│ 2. Query GO database                                │
+│ 3. Execute hypergeometric test for each GO term:    │
+│    P(X ≥ k) = Σ C(M,i) × C(N-M,n-i) / C(N,n)      │
+│    (i from k to min(n,M))                           │
+│ 4. Calculate FDR correction                         │
+│ 5. Return DataFrame                                 │
+│    Columns: name, p_value, term_size, ...          │
+└─────────────────────────────────────────────────────┘
+    │
+    │ Return DataFrame
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Assign themes                               │
+│                                                      │
+│ enr_df[&quot;Theme&quot;] = enr_df[&quot;name&quot;].apply(             │
+│     ontology_api.assign_theme                       │
+│ )                                                   │
+│                                                      │
+│ # assign_theme() internal:                          │
+│ # 1. go_term_lower = name.lower()                   │
+│ # 2. for theme, keywords in themes.items():         │
+│ #    for keyword in keywords:                       │
+│ #        if keyword.lower() in go_term_lower:       │
+│ #            return theme                           │
+│ # 3. return None                                    │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Filter selected themes                      │
+│                                                      │
+│ if selected_theme_names:                            │
+│     enr_df = enr_df[                                │
+│         enr_df[&quot;Theme&quot;].isin(selected_theme_names)  │
+│     ]                                               │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 7: Aggregate themes                            │
+│                                                      │
+│ themed_df = ontology_api.aggregate(enr_df)          │
+│                                                      │
+│ # aggregate() internal:                             │
+│ # 1. Remove GO terms without themes:                │
+│ #    themed = df.dropna(subset=[&quot;Theme&quot;])           │
+│ # 2. Group by theme:                                │
+│ #    grouped = themed.groupby(&quot;Theme&quot;)              │
+│ # 3. Aggregate calculation:                         │
+│ #    aggregated = grouped.agg(                      │
+│ #        Score=(&quot;Score&quot;, &quot;sum&quot;),                    │
+│ #        Terms=(&quot;Theme&quot;, &quot;count&quot;)                   │
+│ #    )                                              │
+│ # 4. Sort:                                          │
+│ #    aggregated = aggregated.sort_values(           │
+│ #        &quot;Score&quot;, ascending=False                   │
+│ #    )                                              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 8: Restore original themes                     │
+│                                                      │
+│ ontology_api.themes = original_themes               │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 9: Prepare response data                       │
+│                                                      │
+│ results = []                                        │
+│ for theme_name, row in themed_df.iterrows():        │
+│     theme_go_terms = enr_df[                        │
+│         enr_df[&quot;Theme&quot;] == theme_name               │
+│     ]                                               │
+│     results.append({                                │
+│         &quot;theme&quot;: theme_name,                        │
+│         &quot;score&quot;: float(row[&quot;Score&quot;]),               │
+│         &quot;terms_count&quot;: int(row[&quot;Terms&quot;]),           │
+│         &quot;go_terms&quot;: theme_go_terms.to_dict('records')│
+│     })                                              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 10: Return JSON response                       │
+│                                                      │
+│ return {                                            │
+│     &quot;results&quot;: results,                             │
+│     &quot;message&quot;: &quot;Analysis completed&quot;                 │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    │ HTTP 200 Response
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: Display results                           │
+│                                                      │
+│ setResults(data.results)                            │
+│ # Render results table                              │
+│ # Display theme, score, GO term count               │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="32-theme-matching-algorithm-detailed-flow">3.2 Theme Matching Algorithm Detailed Flow<a class="headerlink" href="#32-theme-matching-algorithm-detailed-flow" title="Permanent link">&para;</a></h3>
+<pre><code>Input: GO term name &quot;inflammatory response&quot;
+
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Convert to lowercase                        │
+│                                                      │
+│ go_term_lower = &quot;inflammatory response&quot;             │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Iterate through all themes                  │
+│                                                      │
+│ for theme_name, keywords in themes.items():         │
+│     # theme_name: &quot;Inflammation &amp; immune signaling&quot; │
+│     # keywords: [&quot;inflammatory&quot;, &quot;immune&quot;, ...]     │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Iterate through theme keywords              │
+│                                                      │
+│ for keyword in keywords:                            │
+│     # keyword: &quot;inflammatory&quot;                        │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Check if keyword is in GO term name         │
+│                                                      │
+│ if keyword.lower() in go_term_lower:                │
+│     # &quot;inflammatory&quot; in &quot;inflammatory response&quot;      │
+│     # → True                                        │
+│     return theme_name  # Return first matching theme│
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Return: &quot;Inflammation &amp; immune signaling&quot;           │
+└─────────────────────────────────────────────────────┘
+
+If no match:
+┌─────────────────────────────────────────────────────┐
+│ Return: None                                        │
+│ (This GO term will be filtered out in aggregation) │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="iv-ivcca-analysis-module-detailed-flow">IV. IVCCA Analysis Module Detailed Flow<a class="headerlink" href="#iv-ivcca-analysis-module-detailed-flow" title="Permanent link">&para;</a></h2>
+<h3 id="41-data-loading-flow">4.1 Data Loading Flow<a class="headerlink" href="#41-data-loading-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User uploads data file (.xlsx/.csv/.tsv)            │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: POST /api/ivcca/load-data                │
+│                                                      │
+│ const formData = new FormData()                     │
+│ formData.append('file', file)                       │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend Processing                                  │
+│                                                      │
+│ Step 1: Create IVCCAAnalyzer instance               │
+│     analyzer = IVCCAAnalyzer()                      │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Call analyzer.load_data(file_path)          │
+│                                                      │
+│ def load_data(self, file_path: str):                │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Detect file type                            │
+│                                                      │
+│ if file_path.endswith('.xlsx'):                     │
+│     df = pd.read_excel(file_path)                   │
+│ elif file_path.endswith('.csv'):                    │
+│     df = pd.read_csv(file_path)                     │
+│ elif file_path.endswith('.tsv'):                    │
+│     df = pd.read_csv(file_path, sep='\t')           │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Extract data structure                      │
+│                                                      │
+│ sample_col = df.columns[0]                          │
+│ self.sample_names = df[sample_col].tolist()         │
+│ # Result: ['Sample1', 'Sample2', ...]              │
+│                                                      │
+│ self.gene_names = [col for col in df.columns[1:]]   │
+│ # Result: ['Gene1', 'Gene2', ...]                  │
+│                                                      │
+│ self.data = df.iloc[:, 1:].values                   │
+│ # Result: numpy array (samples × genes)             │
+│ # [[val11, val12, ...],                            │
+│ #  [val21, val22, ...],                             │
+│ #  ...]                                             │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Data type conversion and validation         │
+│                                                      │
+│ self.data = pd.DataFrame(self.data).apply(          │
+│     pd.to_numeric, errors='coerce'                  │
+│ ).values                                            │
+│                                                      │
+│ # Check NaN values:                                 │
+│ nan_count = np.isnan(self.data).sum()               │
+│ if nan_count &gt; 0:                                   │
+│     print(f&quot;Warning: {nan_count} NaN values&quot;)       │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Set status flags                            │
+│                                                      │
+│ self.data_loaded = True                             │
+│ self.correlation_calculated = False                 │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 7: Generate data preview                       │
+│                                                      │
+│ preview = {                                         │
+│     &quot;columns&quot;: [sample_col] + self.gene_names,      │
+│     &quot;rows&quot;: [...]  # First few rows of data         │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 8: Store analyzer in memory                    │
+│                                                      │
+│ analyzer_id = str(uuid.uuid4())                     │
+│ analyzers[analyzer_id] = analyzer                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 9: Return response                             │
+│                                                      │
+│ return {                                            │
+│     &quot;status&quot;: &quot;success&quot;,                            │
+│     &quot;analyzer_id&quot;: analyzer_id,                     │
+│     &quot;n_samples&quot;: self.data.shape[0],                │
+│     &quot;n_genes&quot;: self.data.shape[1],                  │
+│     &quot;preview&quot;: preview                              │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="42-correlation-calculation-flow">4.2 Correlation Calculation Flow<a class="headerlink" href="#42-correlation-calculation-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User clicks &quot;Calculate Correlation&quot; button          │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: POST /api/ivcca/calculate-correlation    │
+│                                                      │
+│ Body: {                                             │
+│     &quot;analyzer_id&quot;: &quot;uuid-string&quot;,                   │
+│     &quot;method&quot;: &quot;pearson&quot;                             │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend: Get analyzer from memory                   │
+│                                                      │
+│ analyzer = analyzers.get(analyzer_id)               │
+│ if not analyzer:                                    │
+│     raise HTTPException(404, &quot;Analyzer not found&quot;)  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Call: analyzer.calculate_correlations(method)       │
+│                                                      │
+│ def calculate_correlations(self, method='pearson'): │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Check if data is loaded                     │
+│                                                      │
+│ if not self.data_loaded:                            │
+│     return {&quot;status&quot;: &quot;error&quot;, ...}                 │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Convert to DataFrame                        │
+│                                                      │
+│ data_df = pd.DataFrame(                             │
+│     self.data,                                      │
+│     columns=self.gene_names                         │
+│ )                                                   │
+│ # Shape: (samples, genes)                           │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Calculate correlation matrix                │
+│                                                      │
+│ if method == 'pearson':                             │
+│     self.correlation_matrix = data_df.corr(         │
+│         method='pearson'                            │
+│     ).values                                        │
+│ # pandas.corr() internal:                           │
+│ # - Calculate Pearson correlation coefficient for each gene pair │
+│ # - Return correlation matrix (genes × genes)        │
+│ # - Diagonal is 1 (autocorrelation)                  │
+│ # - Matrix is symmetric                              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Handle NaN values                           │
+│                                                      │
+│ self.correlation_matrix = np.nan_to_num(            │
+│     self.correlation_matrix,                        │
+│     nan=0.0                                         │
+│ )                                                   │
+│ # Replace NaN with 0 (usually due to constant values)│
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Calculate statistics                        │
+│                                                      │
+│ # Extract upper triangle matrix (exclude diagonal and lower triangle) │
+│ corr_values = self.correlation_matrix[              │
+│     np.triu_indices_from(                           │
+│         self.correlation_matrix,                    │
+│         k=1                                         │
+│     )                                               │
+│ ]                                                   │
+│                                                      │
+│ stats = {                                           │
+│     &quot;mean&quot;: float(np.mean(corr_values)),            │
+│     &quot;std&quot;: float(np.std(corr_values)),              │
+│     &quot;min&quot;: float(np.min(corr_values)),              │
+│     &quot;max&quot;: float(np.max(corr_values)),              │
+│     &quot;median&quot;: float(np.median(corr_values))         │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Set status flag                             │
+│                                                      │
+│ self.correlation_calculated = True                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 7: Return response                             │
+│                                                      │
+│ return {                                            │
+│     &quot;status&quot;: &quot;success&quot;,                            │
+│     &quot;matrix_size&quot;: self.correlation_matrix.shape,   │
+│     &quot;statistics&quot;: stats                             │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="43-matrix-sorting-flow">4.3 Matrix Sorting Flow<a class="headerlink" href="#43-matrix-sorting-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User clicks &quot;Sort&quot; button                           │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend: analyzer.sort_correlation_matrix()         │
+│                                                      │
+│ def sort_correlation_matrix(self):                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Calculate mean absolute correlation for each gene │
+│                                                      │
+│ abs_corr = np.abs(self.correlation_matrix)          │
+│ # Take absolute value: both positive and negative correlations considered │
+│                                                      │
+│ np.fill_diagonal(abs_corr, 0)                       │
+│ # Set diagonal to 0 (exclude autocorrelation)       │
+│                                                      │
+│ gene_scores = np.mean(abs_corr, axis=1)             │
+│ # Calculate mean for each row, get mean absolute correlation for each gene │
+│ # gene_scores[i] = mean(|r_ij|) for j ≠ i          │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Sort indices                                │
+│                                                      │
+│ sorted_indices = np.argsort(gene_scores)[::-1]      │
+│ # argsort returns indices in ascending order        │
+│ # [::-1] reverses to get descending order           │
+│ # Result: [5, 12, 3, ...]  # Gene 5 has highest correlation │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Rearrange using sorted indices              │
+│                                                      │
+│ sorted_matrix = self.correlation_matrix[            │
+│     sorted_indices[:, None],                        │
+│     sorted_indices                                  │
+│ ]                                                   │
+│ # Rearrange both rows and columns                   │
+│                                                      │
+│ sorted_gene_names = [                               │
+│     self.gene_names[i]                              │
+│     for i in sorted_indices                         │
+│ ]                                                   │
+│                                                      │
+│ sorted_scores = gene_scores[sorted_indices]         │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Return sorted results                       │
+│                                                      │
+│ return {                                            │
+│     &quot;status&quot;: &quot;success&quot;,                            │
+│     &quot;sorted_matrix&quot;: sorted_matrix.tolist(),        │
+│     &quot;sorted_gene_names&quot;: sorted_gene_names,         │
+│     &quot;sorted_scores&quot;: sorted_scores.tolist()         │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="44-pca-analysis-flow">4.4 PCA Analysis Flow<a class="headerlink" href="#44-pca-analysis-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User clicks &quot;Perform PCA&quot; button                    │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend: analyzer.perform_pca(n_components=3)       │
+│                                                      │
+│ def perform_pca(self, n_components=3):              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Use correlation matrix as input             │
+│                                                      │
+│ data = np.abs(self.correlation_matrix)              │
+│ # Use absolute correlation matrix                   │
+│ # Shape: (genes, genes)                             │
+│ # Each gene is a &quot;sample&quot;, correlations between genes are &quot;features&quot; │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Fill NaN values                             │
+│                                                      │
+│ data_filled = np.nan_to_num(data, nan=0.0)          │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Execute PCA (using sklearn)                 │
+│                                                      │
+│ from sklearn.decomposition import PCA               │
+│                                                      │
+│ pca = PCA(n_components=25)  # Calculate 25 principal components │
+│ pca.fit(data_filled)                                │
+│                                                      │
+│ # PCA internal steps:                               │
+│ # 1. Standardize data (if needed)                   │
+│ # 2. Calculate covariance matrix                     │
+│ # 3. Eigendecomposition: C = Q × Λ × Q^T            │
+│ # 4. Select top k principal components               │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Calculate principal component scores        │
+│                                                      │
+│ pca_scores = pca.transform(data_filled)             │
+│ # Shape: (genes, n_components)                      │
+│ # Coordinates of each gene in principal component space │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Calculate explained variance                │
+│                                                      │
+│ explained_variance = pca.explained_variance_ratio_  │
+│ # Variance proportion explained by each principal component │
+│ # Example: [0.25, 0.15, 0.10, ...]                 │
+│ # PC1 explains 25% variance, PC2 explains 15%, etc. │
+│                                                      │
+│ cumulative_variance = np.cumsum(explained_variance) │
+│ # Cumulative variance: [0.25, 0.40, 0.50, ...]     │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Generate visualizations                     │
+│                                                      │
+│ # 6.1 Scree plot (cumulative variance)              │
+│ fig = go.Figure()                                   │
+│ fig.add_trace(go.Scatter(                           │
+│     x=components,                                   │
+│     y=cumulative_variance * 100,  # Convert to percentage │
+│     mode='lines+markers'                            │
+│ ))                                                  │
+│                                                      │
+│ # 6.2 3D scatter plot                               │
+│ fig = go.Figure()                                   │
+│ fig.add_trace(go.Scatter3d(                         │
+│     x=pca_scores[:, 0],  # PC1                      │
+│     y=pca_scores[:, 1],  # PC2                      │
+│     z=pca_scores[:, 2],  # PC3                      │
+│     text=gene_names,                                │
+│     mode='markers'                                  │
+│ ))                                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 7: Convert to JSON (Plotly)                    │
+│                                                      │
+│ plot_data = fig.to_json()                           │
+│ # Plotly chart configuration (JSON format)          │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 8: Return response                             │
+│                                                      │
+│ return {                                            │
+│     &quot;status&quot;: &quot;success&quot;,                            │
+│     &quot;scores&quot;: pca_scores.tolist(),                  │
+│     &quot;explained_variance&quot;: explained_variance.tolist(),│
+│     &quot;cumulative_variance&quot;: cumulative_variance.tolist(),│
+│     &quot;scree_plot&quot;: {&quot;type&quot;: &quot;plotly&quot;, &quot;content&quot;: ...},│
+│     &quot;scatter_plot&quot;: {&quot;type&quot;: &quot;plotly&quot;, &quot;content&quot;: ...}│
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Frontend: Render Plotly chart                       │
+│                                                      │
+│ &lt;Plot                                               │
+│     data={JSON.parse(plot_data.content)}            │
+│     layout={...}                                    │
+│ /&gt;                                                  │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="45-multi-pathway-analysis-flow">4.5 Multi-Pathway Analysis Flow<a class="headerlink" href="#45-multi-pathway-analysis-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│ User selects multiple pathway files and clicks &quot;Analyze&quot; │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Backend: analyzer.multi_pathway_analysis()          │
+│                                                      │
+│ def multi_pathway_analysis(                         │
+│     self,                                           │
+│     pathway_files: List[str],                       │
+│     pathway_genes_list: List[List[str]],            │
+│     sorted_genes: List[str] = None,                 │
+│     sorted_correlations: List[float] = None         │
+│ ):                                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Iterate through each pathway                        │
+│                                                      │
+│ for pathway_file, pathway_genes in                  │
+│     zip(pathway_files, pathway_genes_list):         │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Find indices of pathway genes in dataset    │
+│                                                      │
+│ pathway_indices = []                                │
+│ for gene in pathway_genes:                          │
+│     gene_lower = gene.lower()                       │
+│     if gene_lower in gene_names_lower:              │
+│         idx = gene_names_lower.index(gene_lower)    │
+│         pathway_indices.append(idx)                 │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Check minimum gene count threshold          │
+│                                                      │
+│ if len(pathway_indices) &lt; min_genes_threshold:      │
+│     continue  # Skip this pathway                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Calculate PCI_A (within-pathway correlation) │
+│                                                      │
+│ # Extract pathway correlation submatrix             │
+│ pathway_corr = self.correlation_matrix[             │
+│     np.ix_(pathway_indices, pathway_indices)        │
+│ ]                                                   │
+│ # Shape: (k, k) where k = len(pathway_indices)      │
+│                                                      │
+│ # Calculate absolute correlation                    │
+│ abs_pathway_corr = np.abs(pathway_corr)             │
+│ np.fill_diagonal(abs_pathway_corr, 0)               │
+│                                                      │
+│ # Calculate mean absolute correlation for each gene │
+│ sum_abs_correlations = np.sum(                      │
+│     abs_pathway_corr, axis=1                        │
+│ )                                                   │
+│ avg_abs_correlation = sum_abs_correlations / (      │
+│     len(pathway_indices) - 1                        │
+│ )                                                   │
+│                                                      │
+│ # Calculate PCI_A (within-pathway average)          │
+│ pci_a = float(np.mean(avg_abs_correlation))         │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Calculate PCI_B (extract from global sort)  │
+│                                                      │
+│ if sorted_genes and sorted_correlations:            │
+│     pci_b_values = []                               │
+│     for gene in pathway_genes:                      │
+│         if gene in sorted_genes:                    │
+│             idx = sorted_genes.index(gene)          │
+│             pci_b_values.append(                    │
+│                 sorted_correlations[idx]             │
+│             )                                       │
+│     pci_b = float(np.mean(pci_b_values))            │
+│ else:                                               │
+│     pci_b = None                                    │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Calculate PAI (Pathway Activation Index)    │
+│                                                      │
+│ pai = len(pathway_indices) / len(pathway_genes)     │
+│ # Number of genes found in dataset / Total genes in pathway │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Calculate CECI (Correlation-Expression Composite Index) │
+│                                                      │
+│ if pci_b is not None:                               │
+│     ceci = pai * pci_b * 100                        │
+│ else:                                               │
+│     ceci = pai * pci_a * 100                        │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 7: Calculate Z-score                           │
+│                                                      │
+│ z_score = (ceci - 7.908) / 2.0605                  │
+│ # 7.908: Mean CECI of random gene sets              │
+│ # 2.0605: Standard deviation of CECI for random gene sets │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 8: Store results                               │
+│                                                      │
+│ results.append({                                    │
+│     &quot;pathway_file&quot;: pathway_file,                   │
+│     &quot;total_genes_in_pathway&quot;: len(pathway_genes),   │
+│     &quot;genes_found_in_set&quot;: len(pathway_indices),     │
+│     &quot;pai&quot;: float(pai),                              │
+│     &quot;pci_a&quot;: pci_a,                                 │
+│     &quot;pci_b&quot;: pci_b,                                 │
+│     &quot;ceci&quot;: float(ceci),                            │
+│     &quot;z_score&quot;: float(z_score)                       │
+│ })                                                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 9: Sort by CECI                                │
+│                                                      │
+│ results.sort(                                       │
+│     key=lambda x: x[&quot;ceci&quot;]                         │
+│     if x[&quot;ceci&quot;] is not None                        │
+│     else -float('inf'),                             │
+│     reverse=True                                    │
+│ )                                                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 10: Return results                             │
+│                                                      │
+│ return {                                            │
+│     &quot;status&quot;: &quot;success&quot;,                            │
+│     &quot;pathways&quot;: results,                            │
+│     &quot;n_pathways&quot;: len(results)                      │
+│ }                                                   │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="v-component-interaction-relationships">V. Component Interaction Relationships<a class="headerlink" href="#v-component-interaction-relationships" title="Permanent link">&para;</a></h2>
+<h3 id="51-frontend-component-interactions">5.1 Frontend Component Interactions<a class="headerlink" href="#51-frontend-component-interactions" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────┐
+│   RootLayout    │
+│  (layout.tsx)   │
+└────────┬────────┘
+         │
+         ├──────────────────────────────────────────┐
+         │                                          │
+    ┌────▼─────┐                            ┌──────▼──────┐
+    │  Page    │                            │  Navigation │
+    │ Component│                            │  Component  │
+    └────┬─────┘                            └─────────────┘
+         │
+         ├──────────────────┬───────────────────┬─────────────┐
+         │                  │                   │             │
+    ┌────▼─────────┐  ┌─────▼─────────┐  ┌─────▼──────────┐
+    │ GeneSearch   │  │ ThemeAnalysis │  │ IVCCA Analysis │
+    │ Page         │  │ Page          │  │ Page           │
+    └────┬─────────┘  └─────┬─────────┘  └─────┬──────────┘
+         │                  │                   │
+    ┌────▼─────────┐  ┌─────▼─────────┐  ┌─────▼──────────┐
+    │ SearchInput  │  │ FileUpload    │  │ DataUpload     │
+    │ Component    │  │ Component     │  │ Component      │
+    └────┬─────────┘  └─────┬─────────┘  └─────┬──────────┘
+         │                  │                   │
+    ┌────▼─────────┐  ┌─────▼─────────┐  ┌─────▼──────────┐
+    │ ResultsTable │  │ ThemeSelector │  │ AnalysisControls│
+    │ Component    │  │ Component     │  │ Component       │
+    └────┬─────────┘  └─────┬─────────┘  └─────┬──────────┘
+         │                  │                   │
+    ┌────▼─────────┐  ┌─────▼─────────┐  ┌─────▼──────────┐
+    │ PlotDisplay  │  │ ChartDisplay  │  │ Visualization  │
+    │ Component    │  │ Component     │  │ Panel          │
+    └──────────────┘  └───────────────┘  └────────────────┘
+
+All components communicate via:
+├─→ Props passing (parent → child)
+├─→ State lifting (child → parent via callback functions)
+└─→ API calls (component → backend)
+</code></pre>
+<h3 id="52-backend-class-interactions">5.2 Backend Class Interactions<a class="headerlink" href="#52-backend-class-interactions" title="Permanent link">&para;</a></h3>
+<pre><code>┌──────────────────────────────────────┐
+│         FastAPI App                  │
+│         (server.py)                  │
+└──────────┬───────────────────────────┘
+           │
+           ├──────────────────┬──────────────────┬──────────────┐
+           │                  │                  │              │
+    ┌──────▼──────┐   ┌───────▼──────┐   ┌──────▼──────────┐
+    │GeneSearchAPI│   │GeneOntologyAPI│   │IVCCAAnalyzer    │
+    │             │   │               │   │(ivcca_core.py)  │
+    └──────┬──────┘   └───────┬───────┘   └──────┬──────────┘
+           │                  │                  │
+    ┌──────▼──────┐   ┌───────▼──────┐   ┌──────▼──────────┐
+    │   MongoDB   │   │ GProfiler    │   │  NumPy/SciPy    │
+    │  Collection │   │    API       │   │  scikit-learn   │
+    └─────────────┘   └──────────────┘   └─────────────────┘
+
+Data flow:
+├─→ GeneSearchAPI ←→ MongoDB
+├─→ GeneOntologyAPI → GProfiler API → Enrichment results
+└─→ IVCCAAnalyzer → Algorithm libraries → Analysis results
+</code></pre>
+<h3 id="53-data-flow-overview">5.3 Data Flow Overview<a class="headerlink" href="#53-data-flow-overview" title="Permanent link">&para;</a></h3>
+<pre><code>┌──────────────┐
+│ User Actions │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────────────────────────┐
+│        Frontend Components           │
+│        (React State)                 │
+└──────┬───────────────────────────────┘
+       │ HTTP Request (JSON)
+       ▼
+┌──────────────────────────────────────┐
+│      FastAPI Routes                  │
+│      (Request Validation)            │
+└──────┬───────────────────────────────┘
+       │
+       ├──────────────┬──────────────┬──────────────┐
+       │              │              │              │
+       ▼              ▼              ▼              ▼
+┌──────────┐  ┌─────────────┐  ┌──────────┐  ┌──────────┐
+│MongoDB   │  │GProfiler API│  │Algorithm │  │File      │
+│Query/Write│  │Enrichment   │  │Computing │  │System    │
+│          │  │             │  │(NumPy etc)│  │(Excel)   │
+└────┬─────┘  └─────┬───────┘  └────┬─────┘  └────┬─────┘
+     │              │               │             │
+     └──────────────┴───────────────┴─────────────┘
+                     │
+                     ▼
+          ┌──────────────────────┐
+          │  Data Processing and │
+          │     Computation      │
+          │   (Business Logic)   │
+          └──────────┬───────────┘
+                     │
+                     ▼
+          ┌──────────────────────┐
+          │   Response Generation │
+          │    (JSON/Base64)     │
+          └──────────┬───────────┘
+                     │ HTTP Response
+                     ▼
+          ┌──────────────────────┐
+          │  Frontend State Update│
+          │    (React Re-render) │
+          └──────────┬───────────┘
+                     │
+                     ▼
+          ┌──────────────────────┐
+          │  User Sees Results   │
+          └──────────────────────┘
+</code></pre>
+<hr />
+<h2 id="vi-key-algorithm-execution-flow">VI. Key Algorithm Execution Flow<a class="headerlink" href="#vi-key-algorithm-execution-flow" title="Permanent link">&para;</a></h2>
+<h3 id="61-pearson-correlation-coefficient-calculation-detailed">6.1 Pearson Correlation Coefficient Calculation (Detailed)<a class="headerlink" href="#61-pearson-correlation-coefficient-calculation-detailed" title="Permanent link">&para;</a></h3>
+<pre><code>Input: Two gene expression vectors
+X = [x1, x2, ..., xn]  (n samples)
+Y = [y1, y2, ..., yn]
+
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Calculate mean                              │
+│                                                      │
+│ x_mean = (x1 + x2 + ... + xn) / n                   │
+│ y_mean = (y1 + y2 + ... + yn) / n                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Calculate covariance numerator              │
+│                                                      │
+│ numerator = Σ(xi - x_mean) × (yi - y_mean)         │
+│           = (x1-x_mean)(y1-y_mean) +                │
+│             (x2-x_mean)(y2-y_mean) +                │
+│             ... +                                   │
+│             (xn-x_mean)(yn-y_mean)                  │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Calculate standard deviation                │
+│                                                      │
+│ x_var = Σ(xi - x_mean)²                            │
+│       = (x1-x_mean)² + (x2-x_mean)² + ...          │
+│                                                      │
+│ y_var = Σ(yi - y_mean)²                            │
+│       = (y1-y_mean)² + (y2-y_mean)² + ...          │
+│                                                      │
+│ x_std = √x_var                                      │
+│ y_std = √y_var                                      │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Calculate correlation coefficient           │
+│                                                      │
+│ r = numerator / (x_std × y_std)                     │
+│                                                      │
+│ If denominator == 0:                                │
+│     r = NaN  # One of the genes has no variation    │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Output: r ∈ [-1, 1]                                 │
+│                                                      │
+│ r = 1:  Perfect positive correlation                │
+│ r = 0:  No linear correlation                       │
+│ r = -1: Perfect negative correlation                │
+└─────────────────────────────────────────────────────┘
+
+Vectorized implementation (pandas):
+┌─────────────────────────────────────────────────────┐
+│ data_df.corr(method='pearson')                      │
+│                                                      │
+│ Internally performs above calculation for each gene pair, building correlation matrix │
+│ Time complexity: O(n × m²) where n=sample count, m=gene count │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<h3 id="62-ceci-calculation-flow-detailed">6.2 CECI Calculation Flow (Detailed)<a class="headerlink" href="#62-ceci-calculation-flow-detailed" title="Permanent link">&para;</a></h3>
+<pre><code>Input:
+- pathway_genes: ['Gene1', 'Gene2', ...]  # Pathway gene list
+- sorted_genes: ['Gene5', 'Gene12', ...]  # Globally sorted genes
+- sorted_correlations: [0.85, 0.82, ...]  # Corresponding correlation scores
+
+┌─────────────────────────────────────────────────────┐
+│ Step 1: Match pathway genes to dataset              │
+│                                                      │
+│ pathway_indices = []                                │
+│ for gene in pathway_genes:                          │
+│     if gene in dataset_genes:                       │
+│         idx = find_index(gene)                      │
+│         pathway_indices.append(idx)                 │
+│                                                      │
+│ # Example:                                          │
+│ # pathway_genes = ['GAPDH', 'ACTB', 'TUBB']        │
+│ # pathway_indices = [5, 12, 23]  # Indices in dataset │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 2: Calculate PCI_A (within-pathway correlation) │
+│                                                      │
+│ # 2.1 Extract pathway correlation submatrix         │
+│ pathway_corr = correlation_matrix[                  │
+│     pathway_indices, :][:, pathway_indices]         │
+│ # Shape: (k, k) where k = len(pathway_indices)      │
+│                                                      │
+│ # 2.2 Calculate absolute correlation                │
+│ abs_pathway_corr = |pathway_corr|                   │
+│ abs_pathway_corr[diagonal] = 0  # Exclude autocorrelation │
+│                                                      │
+│ # 2.3 Calculate mean absolute correlation for each gene │
+│ for i in range(k):                                  │
+│     Q_i = mean(abs_pathway_corr[i, :])              │
+│     # Exclude diagonal, so divide by (k-1)          │
+│                                                      │
+│ # 2.4 Calculate PCI_A                               │
+│ PCI_A = mean([Q_1, Q_2, ..., Q_k])                  │
+│       = mean(Q_i) for all i in pathway              │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 3: Calculate PCI_B (global correlation)        │
+│                                                      │
+│ if sorted_genes provided:                           │
+│     pci_b_values = []                               │
+│     for gene in pathway_genes:                      │
+│         if gene in sorted_genes:                    │
+│             idx = sorted_genes.index(gene)          │
+│             Q_global = sorted_correlations[idx]     │
+│             pci_b_values.append(Q_global)           │
+│                                                      │
+│     PCI_B = mean(pci_b_values)                      │
+│ else:                                               │
+│     PCI_B = None                                    │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 4: Calculate PAI (Pathway Activation Index)    │
+│                                                      │
+│ PAI = genes_found / total_genes                     │
+│     = len(pathway_indices) / len(pathway_genes)     │
+│                                                      │
+│ # Example:                                          │
+│ # pathway_genes has 100 genes                       │
+│ # 45 found in dataset                               │
+│ # PAI = 45/100 = 0.45                               │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 5: Calculate CECI                              │
+│                                                      │
+│ if PCI_B is not None:                               │
+│     CECI = PAI × PCI_B × 100                        │
+│ else:                                               │
+│     CECI = PAI × PCI_A × 100                        │
+│                                                      │
+│ # Example:                                          │
+│ # PAI = 0.45                                        │
+│ # PCI_B = 0.72                                      │
+│ # CECI = 0.45 × 0.72 × 100 = 32.4                   │
+└─────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│ Step 6: Calculate Z-score                           │
+│                                                      │
+│ # Background distribution parameters (calculated from random gene sets) │
+│ background_mean = 7.908                             │
+│ background_std = 2.0605                             │
+│                                                      │
+│ Z = (CECI - background_mean) / background_std       │
+│   = (32.4 - 7.908) / 2.0605                         │
+│   = 11.87                                           │
+│                                                      │
+│ # Critical Z-value (α=0.05):                        │
+│ Z_critical = 1.96                                   │
+│                                                      │
+│ # Judgment:                                         │
+│ if |Z| &gt; Z_critical:                                │
+│     Pathway significantly activated (or suppressed)  │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="vii-memory-management-and-state-persistence">VII. Memory Management and State Persistence<a class="headerlink" href="#vii-memory-management-and-state-persistence" title="Permanent link">&para;</a></h2>
+<h3 id="71-backend-memory-management">7.1 Backend Memory Management<a class="headerlink" href="#71-backend-memory-management" title="Permanent link">&para;</a></h3>
+<p><strong>IVCCA Analyzer Instance Storage</strong>:</p>
+<pre><code class="language-python"># Global dictionary (in memory)
+analyzers: Dict[str, IVCCAAnalyzer] = {}
+
+# Create new instance
+analyzer_id = str(uuid.uuid4())
+analyzers[analyzer_id] = IVCCAAnalyzer()
+
+# Get instance
+analyzer = analyzers.get(analyzer_id)
+</code></pre>
+<p><strong>Memory Usage</strong>:</p>
+<pre><code>Memory usage per analyzer instance:
+├─ self.data: (samples, genes) × 8 bytes (float64)
+├─ self.correlation_matrix: (genes, genes) × 8 bytes
+└─ Other variables: ~few MB
+
+Example: 1000 genes, 100 samples
+├─ data: 100 × 1000 × 8 = 800 KB
+└─ correlation_matrix: 1000 × 1000 × 8 = 8 MB
+Total: ~10 MB per analyzer
+</code></pre>
+<p><strong>Lifecycle Management</strong>:</p>
+<ul>
+<li>Instances remain in memory until server restart</li>
+<li>No automatic cleanup mechanism (can add TTL)</li>
+<li>Supports multiple users analyzing simultaneously (each user has independent analyzer_id)</li>
+</ul>
+<h3 id="72-frontend-state-management">7.2 Frontend State Management<a class="headerlink" href="#72-frontend-state-management" title="Permanent link">&para;</a></h3>
+<p><strong>State Lifecycle</strong>:</p>
+<pre><code>Component mount
+    │
+    ├─→ useState initialization
+    ├─→ useEffect execution
+    └─→ Initial render
+    │
+User action
+    │
+    ├─→ State update (setState)
+    └─→ React re-render
+    │
+Component unmount
+    │
+    └─→ State cleanup
+</code></pre>
+<p><strong>Persistent Storage</strong>:</p>
+<pre><code class="language-typescript">// localStorage (browser storage)
+localStorage.setItem('authToken', token);      // Authentication token
+localStorage.setItem('isLoggedIn', 'true');    // Login status
+
+// Session-level storage (lost after page refresh)
+// - All useState states
+// - API response data
+// - UI states
+</code></pre>
+<hr />
+<h2 id="viii-error-handling-and-exception-flow">VIII. Error Handling and Exception Flow<a class="headerlink" href="#viii-error-handling-and-exception-flow" title="Permanent link">&para;</a></h2>
+<h3 id="81-frontend-error-handling-flow">8.1 Frontend Error Handling Flow<a class="headerlink" href="#81-frontend-error-handling-flow" title="Permanent link">&para;</a></h3>
+<pre><code>API call
+    │
+    ├─→ Success (response.ok === true)
+    │     │
+    │     └─→ Parse JSON → Update state → Display results
+    │
+    └─→ Failure
+          │
+          ├─→ Network error (fetch error)
+          │     │
+          │     └─→ catch block → setError() → Display error message
+          │
+          └─→ HTTP error (response.ok === false)
+                │
+                ├─→ 400: Client error → Display error details
+                ├─→ 401: Unauthorized → Redirect to login page
+                ├─→ 404: Resource not found → Display &quot;Not found&quot;
+                └─→ 500: Server error → Display &quot;Server error&quot;
+</code></pre>
+<h3 id="82-backend-error-handling-flow">8.2 Backend Error Handling Flow<a class="headerlink" href="#82-backend-error-handling-flow" title="Permanent link">&para;</a></h3>
+<pre><code>Request received
+    │
+    ├─→ Parameter validation failed (Pydantic)
+    │     │
+    │     └─→ Automatically return 422 (Unprocessable Entity)
+    │
+    ├─→ Business logic error
+    │     │
+    │     ├─→ ValueError → HTTPException(400)
+    │     ├─→ KeyError → HTTPException(404)
+    │     └─→ Exception → HTTPException(500)
+    │
+    └─→ Success
+          │
+          └─→ Return JSON response (200)
+</code></pre>
+<hr />
+<h2 id="ix-performance-optimization-details">IX. Performance Optimization Details<a class="headerlink" href="#ix-performance-optimization-details" title="Permanent link">&para;</a></h2>
+<h3 id="91-database-query-optimization">9.1 Database Query Optimization<a class="headerlink" href="#91-database-query-optimization" title="Permanent link">&para;</a></h3>
+<p><strong>Index Usage</strong>:</p>
+<pre><code>Query: {&quot;gene_symbol&quot;: {&quot;$regex&quot;: &quot;^GAPDH$&quot;, &quot;$options&quot;: &quot;i&quot;}}
+
+Without index:
+├─ Full table scan: O(n)
+└─ Time complexity: High
+
+With index:
+├─ Index lookup: O(log n)
+└─ Time complexity: Low (logarithmic)
+
+Index structure (B-Tree):
+┌─────────────┐
+│ ACTB → doc1 │
+│ ACTB → doc2 │
+│ ACTB → doc3 │
+│ ...         │
+│ GAPDH → doc5│  ← Quick positioning
+│ GAPDH → doc6│
+│ ...         │
+└─────────────┘
+</code></pre>
+<h3 id="92-correlation-calculation-optimization">9.2 Correlation Calculation Optimization<a class="headerlink" href="#92-correlation-calculation-optimization" title="Permanent link">&para;</a></h3>
+<p><strong>Vectorized Calculation</strong>:</p>
+<pre><code>Traditional loop approach:
+for i in range(n_genes):
+    for j in range(i+1, n_genes):
+        r[i,j] = calculate_correlation(data[:,i], data[:,j])
+Time complexity: O(n² × m) where m=sample count
+
+Vectorized approach (pandas):
+correlation_matrix = data_df.corr()
+Time complexity: O(n² × m) but actually faster (underlying optimization)
+
+NumPy optimization:
+- Use BLAS library (linear algebra library)
+- Multi-threaded computation
+- SIMD instruction set acceleration
+</code></pre>
+<h3 id="93-frontend-rendering-optimization">9.3 Frontend Rendering Optimization<a class="headerlink" href="#93-frontend-rendering-optimization" title="Permanent link">&para;</a></h3>
+<p><strong>React Optimization</strong>:</p>
+<pre><code>1. Use useMemo to cache computation results
+   const filteredResults = useMemo(() =&gt; {
+       return results.filter(...);
+   }, [results]);
+
+2. Use useCallback to cache functions
+   const handleClick = useCallback(() =&gt; {
+       // ...
+   }, [dependencies]);
+
+3. Code splitting (dynamic imports)
+   const Plot = dynamic(() =&gt; import('react-plotly.js'));
+</code></pre>
+<hr />
+<h2 id="x-deployment-and-runtime-flow">X. Deployment and Runtime Flow<a class="headerlink" href="#x-deployment-and-runtime-flow" title="Permanent link">&para;</a></h2>
+<h3 id="101-development-environment-startup-flow">10.1 Development Environment Startup Flow<a class="headerlink" href="#101-development-environment-startup-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────┐
+│ Step 1: Start Backend               │
+│                                     │
+│ cd backend                          │
+│ python server.py                    │
+│                                     │
+│ Or:                                 │
+│ uvicorn server:app --reload         │
+└─────────────────────────────────────┘
+    │
+    ├─→ Load environment variables
+    ├─→ Connect to MongoDB
+    ├─→ Initialize API classes
+    ├─→ Start FastAPI server
+    └─→ Listen on port 8000
+    │
+┌─────────────────────────────────────┐
+│ Step 2: Start Frontend              │
+│                                     │
+│ cd genegen                          │
+│ npm run dev                         │
+└─────────────────────────────────────┘
+    │
+    ├─→ Compile TypeScript
+    ├─→ Start Next.js development server
+    └─→ Listen on port 3000
+    │
+┌─────────────────────────────────────┐
+│ Step 3: Browser Access              │
+│                                     │
+│ http://localhost:3000               │
+└─────────────────────────────────────┘
+</code></pre>
+<h3 id="102-production-environment-deployment-flow">10.2 Production Environment Deployment Flow<a class="headerlink" href="#102-production-environment-deployment-flow" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────┐
+│ Step 1: Build Frontend              │
+│                                     │
+│ cd genegen                          │
+│ npm run build                       │
+│ # Generate .next directory          │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ Step 2: Docker Build                │
+│                                     │
+│ docker-compose build                │
+│ # Build backend and frontend images │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ Step 3: Start Containers            │
+│                                     │
+│ docker-compose up -d                │
+│ # Run all services in background    │
+└─────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────┐
+│ Step 4: Nginx Reverse Proxy (Optional) │
+│                                     │
+│ Configure Nginx to forward requests │
+│ /api/* → backend:8000              │
+│ /* → frontend:3000                 │
+└─────────────────────────────────────┘
+</code></pre>
+<hr />
+<h2 id="xi-key-technical-decision-explanations">XI. Key Technical Decision Explanations<a class="headerlink" href="#xi-key-technical-decision-explanations" title="Permanent link">&para;</a></h2>
+<h3 id="111-why-choose-mongodb">11.1 Why Choose MongoDB?<a class="headerlink" href="#111-why-choose-mongodb" title="Permanent link">&para;</a></h3>
+<p><strong>Reasons</strong>:<br />
+1. <strong>Flexible data model</strong>: Different organs may have different numbers of genes, document model is more flexible<br />
+2. <strong>Rapid development</strong>: No need to predefine schema<br />
+3. <strong>Horizontal scaling</strong>: Supports sharding and replica sets<br />
+4. <strong>Index support</strong>: B-tree indexes accelerate queries</p>
+<p><strong>Alternatives</strong>:<br />
+- PostgreSQL: Requires predefined table structure, but supports SQL queries<br />
+- SQLite: Lightweight, but not suitable for concurrency</p>
+<h3 id="112-why-choose-fastapi">11.2 Why Choose FastAPI?<a class="headerlink" href="#112-why-choose-fastapi" title="Permanent link">&para;</a></h3>
+<p><strong>Reasons</strong>:<br />
+1. <strong>Performance</strong>: Based on Starlette, async support, performance close to Node.js<br />
+2. <strong>Auto documentation</strong>: OpenAPI/Swagger auto-generation<br />
+3. <strong>Type safety</strong>: Pydantic models automatically validate<br />
+4. <strong>Python ecosystem</strong>: Can use all Python scientific computing libraries</p>
+<p><strong>Alternatives</strong>:<br />
+- Django: Too heavy, suitable for full-stack applications<br />
+- Flask: Lightweight but lacks auto documentation and type validation</p>
+<h3 id="113-why-choose-nextjs">11.3 Why Choose Next.js?<a class="headerlink" href="#113-why-choose-nextjs" title="Permanent link">&para;</a></h3>
+<p><strong>Reasons</strong>:<br />
+1. <strong>Server-side rendering</strong>: SEO friendly<br />
+2. <strong>File system routing</strong>: Simple and intuitive<br />
+3. <strong>Automatic code splitting</strong>: Optimizes loading performance<br />
+4. <strong>React ecosystem</strong>: Can use all React libraries</p>
+<p><strong>Alternatives</strong>:<br />
+- Create React App: Lacks SSR and routing<br />
+- Vue.js: Different technology stack</p>
+<hr />
+<h2 id="xii-system-extension-points">XII. System Extension Points<a class="headerlink" href="#xii-system-extension-points" title="Permanent link">&para;</a></h2>
+<h3 id="121-data-extension">12.1 Data Extension<a class="headerlink" href="#121-data-extension" title="Permanent link">&para;</a></h3>
+<p><strong>Adding New Organs</strong>:</p>
+<pre><code>1. Place new Excel file in backend/data/
+2. Restart backend server
+3. GeneSearchAPI.__init__() automatically loads new data
+</code></pre>
+<p><strong>Adding New Fields</strong>:</p>
+<pre><code>1. Modify Excel file, add new columns
+2. Modify GeneData model (server.py)
+3. Modify data loading logic
+4. Modify frontend display components
+</code></pre>
+<h3 id="122-feature-extension">12.2 Feature Extension<a class="headerlink" href="#122-feature-extension" title="Permanent link">&para;</a></h3>
+<p><strong>Adding New Analysis Algorithms</strong>:</p>
+<pre><code>1. Add new method in ivcca_core.py
+2. Add new API endpoint in server.py
+3. Add new UI component in frontend
+</code></pre>
+<p><strong>Adding New Visualization Types</strong>:</p>
+<pre><code>1. Create new chart generation function in backend
+2. Use matplotlib/Plotly to generate charts
+3. Return base64 or Plotly JSON
+4. Frontend renders charts
+</code></pre>
+<hr />
+<p><strong>Document Version</strong>: 1.0<br />
+<strong>Last Updated</strong>: 2024</p>
+    
+    <script>
+        // Print hint
+        window.onbeforeprint = function() {
+            console.log("Print hint: Please select 'Save as PDF' or 'Print to PDF'");
+        };
+    </script>
+</body>
+</html>

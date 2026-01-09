@@ -34,6 +34,9 @@ export default function Home() {
               <Link href="/gene-ontology" className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
                 Ontology Analysis
               </Link>
+              <Link href="/ivcca" className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                IVCCA Analysis
+              </Link>
               <Link href="/upload-csv" className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
                 Data Upload
               </Link>
@@ -68,6 +71,9 @@ export default function Home() {
               </Link>
               <Link href="/gene-ontology" className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">
                 Ontology Analysis
+              </Link>
+              <Link href="/ivcca" className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">
+                IVCCA Analysis
               </Link>
               <Link href="/upload-csv" className="block px-3 py-2 text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md">
                 Data Upload
@@ -128,6 +134,15 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </Link>
+              <Link 
+                href="/ivcca"
+                className="inline-flex items-center px-8 py-4 bg-indigo-50 text-indigo-700 text-lg font-semibold rounded-xl border-2 border-indigo-200 hover:border-indigo-300 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
+              >
+                Launch IVCCA Suite
+                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </Link>
             </div>
           </div>
         </div>
@@ -184,19 +199,18 @@ export default function Home() {
               </Link>
             </div>
 
-            {/* Feature 3 */}
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-8 rounded-2xl border border-purple-200">
               <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center mb-6">
                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c1.657 0 3-1.343 3-3S13.657 2 12 2 9 3.343 9 5s1.343 3 3 3zm0 14c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm9-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm-18 0c1.657 0 3-1.343 3-3S4.657 9 3 9 0 10.343 0 12s1.343 3 3 3z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Data Visualization</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">IVCCA Analytics</h3>
               <p className="text-gray-600 mb-6">
-                Publication-ready charts and graphs with customizable themes and export capabilities.
+                Inter-Variability Cross Correlation Analysis with clustering, dimensionality reduction, and rich visual outputs.
               </p>
-              <Link href="/gene-ontology" className="text-purple-600 hover:text-purple-700 font-semibold inline-flex items-center">
-                Learn More
+              <Link href="/ivcca" className="text-purple-600 hover:text-purple-700 font-semibold inline-flex items-center">
+                Explore IVCCA
                 <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -273,6 +287,7 @@ export default function Home() {
               <ul className="space-y-2">
                 <li><Link href="/gene-search" className="text-gray-400 hover:text-white transition-colors">Gene Search</Link></li>
                 <li><Link href="/gene-ontology" className="text-gray-400 hover:text-white transition-colors">Ontology Analysis</Link></li>
+                <li><Link href="/ivcca" className="text-gray-400 hover:text-white transition-colors">IVCCA Suite</Link></li>
                 <li><Link href="/upload-csv" className="text-gray-400 hover:text-white transition-colors">Data Upload</Link></li>
                 <li><Link href="/login" className="text-gray-400 hover:text-white transition-colors">API Access</Link></li>
               </ul>
