@@ -7,7 +7,6 @@ import dynamic from 'next/dynamic';
 
 // Dynamically import Plotly to avoid SSR issues and improve initial page load
 // Lazy load only when charts are needed
-// @ts-expect-error - react-plotly.js may not have types
 const Plot = dynamic(
   () => import('react-plotly.js'),
   { 

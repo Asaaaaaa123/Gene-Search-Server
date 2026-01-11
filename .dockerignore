@@ -1,64 +1,85 @@
-# Dependencies
-node_modules/
-__pycache__/
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+*.html
+*.pdf
+*.docx
+
+# Python
+__pycache__
 *.pyc
 *.pyo
 *.pyd
 .Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Testing
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
 .coverage
-.pytest_cache/
-.tox/
-.nox/
-htmlcov/
-.coverage.*
-coverage.xml
-*.cover
-.hypothesis/
+htmlcov
 
-# Production
-build/
-dist/
-.next/
-out/
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+.next
+out
 
-# Misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Environment files
 .env
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+.env.local
+.env.*.local
+*.env
 
 # IDE
-.vscode/
-.idea/
+.vscode
+.idea
 *.swp
 *.swo
+*~
 
-# Git
-.git/
-.gitignore
+# OS
+.DS_Store
+Thumbs.db
 
-# Docker
-Dockerfile*
-docker-compose*
+# Docker compose files (not needed in image)
+docker-compose.yml
+docker-compose.prod.yml
 .dockerignore
 
-# Documentation
-README.md
-*.md
-
 # Deprecated
-deprecated/ 
+deprecated/
+
+# Test files
+test_*
+*_test.py
+*.test.*
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Architecture diagrams
+*.png
+*.jpg
+*.jpeg
+!backend/data/**/*.xlsx
+
+# Thesis and academic files
+thesis_charts/
+*.tex
+
+# Nginx (if not used)
+nginx/

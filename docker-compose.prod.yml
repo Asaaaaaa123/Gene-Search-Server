@@ -1,3 +1,6 @@
+# Production-optimized Docker Compose configuration
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+
 services:
   backend:
     build:
@@ -7,11 +10,10 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/data:/app/data:ro  # Read-only for security
-    env_file:
-      - .env
     environment:
-      - MONGODB_URI=${MONGODB_URI:-}
-      - VALID_TOKENS=${VALID_TOKENS:-}
+      - MONGODB_URI=${MONGODB_URI}
+      - VALID_TOKENS=${VALID_TOKENS}
+      - WORKERS=4  # Adjust based on CPU cores (2-4x CPU cores recommended)
     networks:
       - gene-search-network
     restart: unless-stopped
@@ -24,25 +26,30 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 2G
+          cpus: '4'
+          memory: 4G
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        # IMPORTANT: Set this to your backend's public URL
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     ports:
       - "3000:3000"
-    env_file:
-      - .env
     environment:
       - PORT=3000
       - HOSTNAME=0.0.0.0
+      - NODE_ENV=production
     depends_on:
       backend:
         condition: service_healthy
@@ -58,12 +65,18 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
-          memory: 1G
+          cpus: '2'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 256M
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   gene-search-network:
-    driver: bridge 
+    driver: bridge
+
