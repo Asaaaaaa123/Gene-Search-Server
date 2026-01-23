@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 interface GeneData {
@@ -204,7 +204,7 @@ export default function GeneSearch() {
             }
             return null;
           })
-          .filter((gene: any) => gene !== null);
+          .filter((gene: any): gene is GeneSymbol => gene !== null);
         setGeneSymbols(validGeneSymbols);
       } else if (Array.isArray(data)) {
         // Fallback for direct array response
@@ -229,7 +229,7 @@ export default function GeneSearch() {
             }
             return null;
           })
-          .filter((gene: any) => gene !== null);
+          .filter((gene: any): gene is GeneSymbol => gene !== null);
         setGeneSymbols(validGeneSymbols);
       } else {
         console.log('Unexpected API response format:', data);
