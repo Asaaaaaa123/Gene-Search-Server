@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { findGeneBySymbol } from './gene-utils';
 
 interface GeneData {
   organ: string;
@@ -282,11 +283,11 @@ export default function GeneSearch() {
   };
 
   const handlePopularGeneSelect = (gene: { symbol: string; name: string; category: string }) => {
-    // Find the gene in our actual data
-    const foundGene = geneSymbols.find(g => g.symbol === gene.symbol);
+    // Find the gene in our actual data (case-insensitive)
+    const foundGene = findGeneBySymbol(geneSymbols, gene.symbol);
     if (foundGene) {
       setSelectedGene(foundGene);
-      setSearchTerm(gene.symbol);
+      setSearchTerm(foundGene.symbol); // Use the actual symbol from data
     } else {
       // If not found in actual data, create a placeholder
       setSelectedGene({
