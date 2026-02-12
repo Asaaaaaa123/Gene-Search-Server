@@ -120,11 +120,15 @@ class GeneSearchAPI:
     
     def load_data_to_mongodb(self):
         """Load data from Excel files into MongoDB with duplicate prevention"""
+        if not MONGODB_AVAILABLE:
+            print("MongoDB not available, skipping data load")
+            return
+
         data_dir = "data"
         if not os.path.exists(data_dir):
             print(f"Data directory {data_dir} not found")
             return
-        
+
         # Check if data already exists
         existing_count = collection.count_documents({})
         if existing_count > 0:
@@ -198,6 +202,10 @@ class GeneSearchAPI:
     
     def load_all_genes(self) -> List[str]:
         """Load all unique gene symbols from MongoDB"""
+        if not MONGODB_AVAILABLE:
+            print("MongoDB not available, returning empty gene list")
+            return []
+
         pipeline = [
             {"$group": {"_id": "$gene_symbol"}},
             {"$sort": {"_id": 1}}
@@ -207,6 +215,9 @@ class GeneSearchAPI:
     
     def search_gene_data(self, gene_symbol: str) -> List[Dict]:
         """Search for a gene and return results from MongoDB"""
+        if not MONGODB_AVAILABLE:
+            return []
+
         query = {"gene_symbol": {"$regex": f"^{gene_symbol}$", "$options": "i"}}
         cursor = collection.find(query)
         results = []
