@@ -431,7 +431,6 @@ async def login(login_request: TokenLoginRequest):
 @app.get("/api/gene/symbols")
 async def get_gene_symbols():
     """Get all available gene symbols"""
-    gene_api.load_all_genes()
     return {"gene_symbols": gene_api.all_genes}
 
 @app.get("/api/gene/symbol/search")

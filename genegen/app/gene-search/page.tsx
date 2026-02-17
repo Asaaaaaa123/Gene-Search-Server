@@ -113,11 +113,11 @@ export default function GeneSearch() {
       setConnectionDetails('Testing API connection...');
       
       // Try multiple endpoints to determine connection status
+      // Try fast endpoints first to avoid blocking on slow data endpoints
       const endpoints = [
-        '/api/gene/symbols',
+        '/',
         '/api/health',
-        '/docs',
-        '/'
+        '/docs'
       ];
       
       let connected = false;
