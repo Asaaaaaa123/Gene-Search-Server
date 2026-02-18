@@ -1001,7 +1001,7 @@ export default function GeneSearch() {
         )}
 
         {/* Gene Browser Results */}
-        {geneSymbols.length > 0 && (
+        {geneSymbols.length > 0 && (searchTerm.trim() || selectedTissue !== 'all' || selectedGene) && (
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
               <h3 className="text-lg font-semibold text-gray-900">Gene Browser Results</h3>
@@ -1072,6 +1072,22 @@ export default function GeneSearch() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+        
+        {/* Prompt to search when no search term and no results */}
+        {geneSymbols.length > 0 && !searchTerm.trim() && selectedTissue === 'all' && !selectedGene && (
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-12 mb-8 text-center">
+            <svg className="w-16 h-16 text-blue-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <h3 className="text-lg font-medium text-blue-900 mb-2">Start Searching for Genes</h3>
+            <p className="text-blue-700 mb-4">
+              Enter a gene symbol or name in the search box above, or select from popular genes to start searching
+            </p>
+            <p className="text-sm text-blue-600">
+              System has loaded {geneSymbols.length} genes, waiting for your search query
+            </p>
           </div>
         )}
 
