@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { findGeneBySymbol } from './gene-utils';
 
 interface GeneData {
   organ: string;
@@ -112,11 +113,11 @@ export default function GeneSearch() {
       setConnectionDetails('Testing API connection...');
       
       // Try multiple endpoints to determine connection status
+      // Try fast endpoints first to avoid blocking on slow data endpoints
       const endpoints = [
-        '/api/gene/symbols',
+        '/',
         '/api/health',
-        '/docs',
-        '/'
+        '/docs'
       ];
       
       let connected = false;
@@ -180,26 +181,56 @@ export default function GeneSearch() {
       const data = await response.json();
       // Handle the API response format: {"gene_symbols": [...]}
       if (data.gene_symbols && Array.isArray(data.gene_symbols)) {
-        // Validate and filter the gene symbols data
-        const validGeneSymbols = data.gene_symbols.filter((gene: any) => 
-          gene && 
-          typeof gene === 'object' &&
-          gene.symbol &&
-          gene.name &&
-          gene.tissue &&
-          (gene.expression === 0 || gene.expression)
-        );
+        // Convert to GeneSymbol objects - handle both string and object formats
+        const validGeneSymbols = data.gene_symbols
+          .filter((gene: any) => gene)
+          .map((gene: any) => {
+            // If it's a string, convert to object format
+            if (typeof gene === 'string') {
+              return {
+                symbol: gene,
+                name: gene,
+                tissue: 'Unknown',
+                expression: 0
+              };
+            }
+            // If it's already an object with required fields, use it
+            if (typeof gene === 'object' && gene.symbol) {
+              return {
+                symbol: gene.symbol,
+                name: gene.name || gene.symbol,
+                tissue: gene.tissue || 'Unknown',
+                expression: gene.expression || 0
+              };
+            }
+            return null;
+          })
+          .filter((gene: any): gene is GeneSymbol => gene !== null);
         setGeneSymbols(validGeneSymbols);
       } else if (Array.isArray(data)) {
-        // Fallback for direct array response - validate the data
-        const validGeneSymbols = data.filter((gene: any) => 
-          gene && 
-          typeof gene === 'object' &&
-          gene.symbol &&
-          gene.name &&
-          gene.tissue &&
-          (gene.expression === 0 || gene.expression)
-        );
+        // Fallback for direct array response
+        const validGeneSymbols = data
+          .filter((gene: any) => gene)
+          .map((gene: any) => {
+            if (typeof gene === 'string') {
+              return {
+                symbol: gene,
+                name: gene,
+                tissue: 'Unknown',
+                expression: 0
+              };
+            }
+            if (typeof gene === 'object' && gene.symbol) {
+              return {
+                symbol: gene.symbol,
+                name: gene.name || gene.symbol,
+                tissue: gene.tissue || 'Unknown',
+                expression: gene.expression || 0
+              };
+            }
+            return null;
+          })
+          .filter((gene: any): gene is GeneSymbol => gene !== null);
         setGeneSymbols(validGeneSymbols);
       } else {
         console.log('Unexpected API response format:', data);
@@ -252,11 +283,11 @@ export default function GeneSearch() {
   };
 
   const handlePopularGeneSelect = (gene: { symbol: string; name: string; category: string }) => {
-    // Find the gene in our actual data
-    const foundGene = geneSymbols.find(g => g.symbol === gene.symbol);
+    // Find the gene in our actual data (case-insensitive)
+    const foundGene = findGeneBySymbol(geneSymbols, gene.symbol);
     if (foundGene) {
       setSelectedGene(foundGene);
-      setSearchTerm(gene.symbol);
+      setSearchTerm(foundGene.symbol); // Use the actual symbol from data
     } else {
       // If not found in actual data, create a placeholder
       setSelectedGene({
