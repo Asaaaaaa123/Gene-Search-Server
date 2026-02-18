@@ -676,6 +676,8 @@ class IVCCAAnalyzer:
             raise ValueError(f"Error creating dendrogram: {str(e)}")
     
     def perform_pca(self, n_components: int = 3, n_clusters: Optional[int] = None) -> Dict:
+        import sys
+        print(f"DEBUG perform_pca: n_components={n_components}, n_clusters={n_clusters}, type(n_clusters)={type(n_clusters)}", file=sys.stderr, flush=True)
         """
         Perform Principal Component Analysis on correlation matrix
         Each gene is a point in the PCA space (as in MATLAB IVCCA)
@@ -726,12 +728,21 @@ class IVCCAAnalyzer:
             
             # Create 3D scatter plot - always create if n_components >= 3
             scatter_image = None
+            cluster_assignments = None
             if n_components >= 3 and pca_scores.shape[1] >= 3:
                 # Use first 3 components for 3D plot
                 scatter_image = self._create_pca_3d_plot(pca_scores[:, :3], n_clusters=n_clusters, gene_names=self.gene_names)
+                if isinstance(scatter_image, dict) and "cluster_assignments" in scatter_image:
+                    cluster_assignments = scatter_image["cluster_assignments"]
+                    print(f"DEBUG: Extracted cluster_assignments from 3D plot: {len(cluster_assignments) if cluster_assignments else 0} clusters")
             elif pca_scores.shape[1] >= 2:
                 # Use first 2 components for 2D plot
                 scatter_image = self._create_pca_2d_plot(pca_scores[:, :2], n_clusters=n_clusters, gene_names=self.gene_names)
+                if isinstance(scatter_image, dict) and "cluster_assignments" in scatter_image:
+                    cluster_assignments = scatter_image["cluster_assignments"]
+                    print(f"DEBUG: Extracted cluster_assignments from 2D plot: {len(cluster_assignments) if cluster_assignments else 0} clusters")
+            
+            print(f"DEBUG: n_clusters={n_clusters}, cluster_assignments={cluster_assignments is not None}, type={type(cluster_assignments)}")
             
             # Get components from the appropriate PCA object
             if max_components_for_scatter < max_components_for_scree:
@@ -752,6 +763,18 @@ class IVCCAAnalyzer:
             
             if scatter_image:
                 result["scatter_plot"] = scatter_image
+            
+            if cluster_assignments:
+                result["cluster_assignments"] = cluster_assignments
+                print(f"DEBUG: Added cluster_assignments to result: {len(cluster_assignments)} clusters")
+                print(f"DEBUG: Cluster keys: {list(cluster_assignments.keys())}")
+                print(f"DEBUG: First cluster has {len(cluster_assignments[list(cluster_assignments.keys())[0]])} genes")
+            else:
+                print(f"DEBUG: No cluster_assignments to add (n_clusters={n_clusters})")
+            
+            # Debug: print result keys before returning
+            print(f"DEBUG: Result keys before return: {list(result.keys())}")
+            print(f"DEBUG: cluster_assignments in result? {'cluster_assignments' in result}")
             
             return result
             
@@ -833,13 +856,37 @@ class IVCCAAnalyzer:
         """Create interactive 3D scatter plot for PCA - each point is a gene"""
         n_points = pca_scores.shape[0]
         
+        # Calculate adaptive marker size to prevent overlapping
+        # Smaller markers for more points, larger for fewer points
+        # More aggressive size reduction for 3D to prevent overlap
+        base_size = max(2, min(5, 300 / n_points))
+        
+        # Add small random jitter to prevent exact overlaps (very small to preserve structure)
+        # Only add jitter if there are many points
+        if n_points > 50:
+            jitter_scale = np.std(pca_scores, axis=0) * 0.008  # 0.8% of standard deviation
+            jitter = np.random.RandomState(42).normal(0, jitter_scale, pca_scores.shape)
+            pca_scores_jittered = pca_scores + jitter
+        else:
+            pca_scores_jittered = pca_scores
+        
         if PLOTLY_AVAILABLE:
             # Perform clustering if requested
             labels = None
+            cluster_assignments = None
             if n_clusters and n_clusters > 1:
                 from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                labels = kmeans.fit_predict(pca_scores)
+                labels = kmeans.fit_predict(pca_scores_jittered)
+                
+                # Create cluster assignments dictionary
+                cluster_assignments = {}
+                for i in range(n_clusters):
+                    mask = labels == i
+                    if np.any(mask):
+                        cluster_indices = np.where(mask)[0]
+                        cluster_genes = [gene_names[j] if gene_names and j < len(gene_names) else f'Gene_{j}' for j in cluster_indices]
+                        cluster_assignments[i+1] = cluster_genes
             
             # Create interactive 3D plot
             fig = go.Figure()
@@ -852,16 +899,17 @@ class IVCCAAnalyzer:
                         cluster_indices = np.where(mask)[0]
                         cluster_genes = [gene_names[j] if gene_names and j < len(gene_names) else f'Gene_{j}' for j in cluster_indices]
                         fig.add_trace(go.Scatter3d(
-                            x=pca_scores[mask, 0],
-                            y=pca_scores[mask, 1],
-                            z=pca_scores[mask, 2],
+                            x=pca_scores_jittered[mask, 0],
+                            y=pca_scores_jittered[mask, 1],
+                            z=pca_scores_jittered[mask, 2],
                             mode='markers',
                             name=f'Cluster {i+1}',
                             marker=dict(
-                                size=4,
+                                size=base_size,
                                 color=colors_list[i],
-                                opacity=0.7,
-                                line=dict(width=0.5, color='black')
+                                opacity=0.6,
+                                line=dict(width=0.3, color='black'),
+                                symbol='circle'
                             ),
                             text=cluster_genes,
                             hovertemplate='<b>%{text}</b><br>PC1: %{x:.3f}<br>PC2: %{y:.3f}<br>PC3: %{z:.3f}<extra></extra>'
@@ -873,16 +921,17 @@ class IVCCAAnalyzer:
                     gene_labels = [f'Gene_{i}' for i in range(n_points)]
                 
                 fig.add_trace(go.Scatter3d(
-                    x=pca_scores[:, 0],
-                    y=pca_scores[:, 1],
-                    z=pca_scores[:, 2],
+                    x=pca_scores_jittered[:, 0],
+                    y=pca_scores_jittered[:, 1],
+                    z=pca_scores_jittered[:, 2],
                     mode='markers',
                     name='Genes',
                     marker=dict(
-                        size=4,
+                        size=base_size,
                         color='blue',
-                        opacity=0.7,
-                        line=dict(width=0.5, color='black')
+                        opacity=0.6,
+                        line=dict(width=0.3, color='black'),
+                        symbol='circle'
                     ),
                     text=gene_labels,
                     hovertemplate='<b>%{text}</b><br>PC1: %{x:.3f}<br>PC2: %{y:.3f}<br>PC3: %{z:.3f}<extra></extra>'
@@ -894,37 +943,46 @@ class IVCCAAnalyzer:
                     xaxis_title='PC1',
                     yaxis_title='PC2',
                     zaxis_title='PC3',
-                    bgcolor='white'
+                    bgcolor='white',
+                    camera=dict(
+                        eye=dict(x=1.5, y=1.5, z=1.5)
+                    ),
+                    aspectmode='cube'  # Ensures equal scaling on all axes
                 ),
-                height=800,
-                width=1000,
+                height=600,
+                width=900,
                 template='plotly_white'
             )
             
             # Return plotly JSON data instead of HTML for React rendering
             plot_data = fig.to_json()
-            return {"type": "plotly", "content": plot_data, "div_id": "pca_3d_plot"}
+            result = {"type": "plotly", "content": plot_data, "div_id": "pca_3d_plot"}
+            if cluster_assignments:
+                result["cluster_assignments"] = cluster_assignments
+            return result
         else:
             # Fallback to static image
             from mpl_toolkits.mplot3d import Axes3D
             fig = plt.figure(figsize=(14, 12), dpi=150)
             ax = fig.add_subplot(111, projection='3d')
+            # Use smaller marker size for matplotlib too
+            marker_size = max(20, min(40, 3000 / n_points))
             if n_clusters and n_clusters > 1:
                 from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                labels = kmeans.fit_predict(pca_scores)
+                labels = kmeans.fit_predict(pca_scores_jittered)
                 colors_list = plt.cm.tab20(np.linspace(0, 1, min(n_clusters, 20)))
                 if n_clusters > 20:
                     colors_list = plt.cm.Set3(np.linspace(0, 1, n_clusters))
                 for i in range(n_clusters):
                     mask = labels == i
                     if np.any(mask):
-                        ax.scatter(pca_scores[mask, 0], pca_scores[mask, 1], pca_scores[mask, 2],
-                                  c=[colors_list[i]], label=f'Cluster {i+1}', alpha=0.7, s=60, edgecolors='black', linewidths=0.5)
+                        ax.scatter(pca_scores_jittered[mask, 0], pca_scores_jittered[mask, 1], pca_scores_jittered[mask, 2],
+                                  c=[colors_list[i]], label=f'Cluster {i+1}', alpha=0.6, s=marker_size, edgecolors='black', linewidths=0.3)
                 ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
             else:
-                ax.scatter(pca_scores[:, 0], pca_scores[:, 1], pca_scores[:, 2],
-                          c='blue', alpha=0.7, s=60, edgecolors='black', linewidths=0.5)
+                ax.scatter(pca_scores_jittered[:, 0], pca_scores_jittered[:, 1], pca_scores_jittered[:, 2],
+                          c='blue', alpha=0.6, s=marker_size, edgecolors='black', linewidths=0.3)
             ax.set_xlabel('PC1', fontsize=14, fontweight='bold')
             ax.set_ylabel('PC2', fontsize=14, fontweight='bold')
             ax.set_zlabel('PC3', fontsize=14, fontweight='bold')
@@ -947,10 +1005,20 @@ class IVCCAAnalyzer:
         if PLOTLY_AVAILABLE:
             # Perform clustering if requested
             labels = None
+            cluster_assignments = None
             if n_clusters and n_clusters > 1:
                 from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
                 labels = kmeans.fit_predict(pca_scores)
+                
+                # Create cluster assignments dictionary
+                cluster_assignments = {}
+                for i in range(n_clusters):
+                    mask = labels == i
+                    if np.any(mask):
+                        cluster_indices = np.where(mask)[0]
+                        cluster_genes = [gene_names[j] if gene_names and j < len(gene_names) else f'Gene_{j}' for j in cluster_indices]
+                        cluster_assignments[i+1] = cluster_genes
             
             # Create interactive 2D plot
             fig = go.Figure()
@@ -1009,7 +1077,10 @@ class IVCCAAnalyzer:
             
             # Return plotly JSON data instead of HTML for React rendering
             plot_data = fig.to_json()
-            return {"type": "plotly", "content": plot_data, "div_id": "pca_2d_plot"}
+            result = {"type": "plotly", "content": plot_data, "div_id": "pca_2d_plot"}
+            if cluster_assignments:
+                result["cluster_assignments"] = cluster_assignments
+            return result
         else:
             # Fallback to static image
             fig, ax = plt.subplots(figsize=(12, 10), dpi=150)
@@ -1358,15 +1429,24 @@ class IVCCAAnalyzer:
             return {"status": "error", "message": "Correlation matrix not calculated"}
         
         try:
-            # Find indices of pathway genes
-            gene_indices = [i for i, gene in enumerate(self.gene_names) if gene in pathway_genes]
+            # Find indices of pathway genes (case-insensitive matching)
+            gene_names_lower = [g.lower() for g in self.gene_names]
+            gene_indices = []
+            pathway_gene_names = []
+            
+            for gene in pathway_genes:
+                gene_lower = gene.strip().lower()
+                if gene_lower in gene_names_lower:
+                    idx = gene_names_lower.index(gene_lower)
+                    if idx not in gene_indices:  # Avoid duplicates
+                        gene_indices.append(idx)
+                        pathway_gene_names.append(self.gene_names[idx])
             
             if not gene_indices:
-                return {"status": "error", "message": "No matching genes found in pathway"}
+                return {"status": "error", "message": "No matching genes found in pathway. Please check gene names match your data."}
             
             # Extract pathway correlation submatrix
             pathway_corr = self.correlation_matrix[np.ix_(gene_indices, gene_indices)]
-            pathway_gene_names = [self.gene_names[i] for i in gene_indices]
             
             # Calculate average correlation for each gene in pathway
             abs_pathway_corr = np.abs(pathway_corr)
@@ -1408,12 +1488,27 @@ class IVCCAAnalyzer:
             return {"status": "error", "message": "Correlation matrix not calculated"}
         
         try:
-            # Find gene indices
-            indices1 = [i for i, gene in enumerate(self.gene_names) if gene in pathway1_genes]
-            indices2 = [i for i, gene in enumerate(self.gene_names) if gene in pathway2_genes]
+            # Find gene indices (case-insensitive matching)
+            gene_names_lower = [g.lower() for g in self.gene_names]
+            indices1 = []
+            indices2 = []
+            
+            for gene in pathway1_genes:
+                gene_lower = gene.strip().lower()
+                if gene_lower in gene_names_lower:
+                    idx = gene_names_lower.index(gene_lower)
+                    if idx not in indices1:
+                        indices1.append(idx)
+            
+            for gene in pathway2_genes:
+                gene_lower = gene.strip().lower()
+                if gene_lower in gene_names_lower:
+                    idx = gene_names_lower.index(gene_lower)
+                    if idx not in indices2:
+                        indices2.append(idx)
             
             if not indices1 or not indices2:
-                return {"status": "error", "message": "Genes not found in data"}
+                return {"status": "error", "message": "Genes not found in data. Please check gene names match your data."}
             
             # Extract pathway correlation matrices
             pathway1_corr = self.correlation_matrix[np.ix_(indices1, indices1)]

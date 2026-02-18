@@ -52,6 +52,10 @@ type PCAInfo = {
   n_components: number;
 };
 
+type ClusterAssignments = {
+  [clusterId: number]: string[];
+};
+
 type TSNEInfo = {
   n_components: number;
 };
@@ -89,6 +93,7 @@ export default function IVCCAPage() {
     useState<CorrelationStats | null>(null);
   const [clusterInfo, setClusterInfo] = useState<ClusterInfo | null>(null);
   const [pcaInfo, setPcaInfo] = useState<PCAInfo | null>(null);
+  const [pcaClusterAssignments, setPcaClusterAssignments] = useState<ClusterAssignments | null>(null);
   const [tsneInfo, setTsneInfo] = useState<TSNEInfo | null>(null);
 
   const [heatmapImage, setHeatmapImage] = useState<string | null>(null);
@@ -106,6 +111,7 @@ export default function IVCCAPage() {
   const [tsneComponents, setTsneComponents] = useState(2);
   const [tsnePerplexity, setTsnePerplexity] = useState(30);
   const [pcaClusters, setPcaClusters] = useState<number | null>(null);
+  const [pcaDimensions, setPcaDimensions] = useState<2 | 3>(3);
   const [tsneClusters, setTsneClusters] = useState<number | null>(null);
   
   const [pcaScreeImage, setPcaScreeImage] = useState<string | null>(null);
@@ -117,6 +123,25 @@ export default function IVCCAPage() {
   const [elbowSilhouetteImage, setElbowSilhouetteImage] = useState<string | null>(null);
   const [elbowSilhouettePlotData, setElbowSilhouettePlotData] = useState<any>(null);
 
+  // Advanced Analysis states
+  const [singlePathwayFile, setSinglePathwayFile] = useState<File | null>(null);
+  const [singlePathwayResult, setSinglePathwayResult] = useState<any>(null);
+  const [singleGene, setSingleGene] = useState('');
+  const [targetGenesFile, setTargetGenesFile] = useState<File | null>(null);
+  const [geneToGenesResult, setGeneToGenesResult] = useState<any>(null);
+  const [pathwayFiles, setPathwayFiles] = useState<File[]>([]);
+  const [geneToPathwaysResult, setGeneToPathwaysResult] = useState<any>(null);
+  const [multiPathwayFiles, setMultiPathwayFiles] = useState<File[]>([]);
+  const [multiPathwayResult, setMultiPathwayResult] = useState<any>(null);
+  const [pathway1File, setPathway1File] = useState<File | null>(null);
+  const [pathway2File, setPathway2File] = useState<File | null>(null);
+  const [comparePathwaysResult, setComparePathwaysResult] = useState<any>(null);
+  const [vennResult, setVennResult] = useState<any>(null);
+  const [networkPathwayFile, setNetworkPathwayFile] = useState<File | null>(null);
+  const [networkThreshold, setNetworkThreshold] = useState(0.75);
+  const [networkDimensions, setNetworkDimensions] = useState<2 | 3>(2);
+  const [networkResult, setNetworkResult] = useState<any>(null);
+
   const isDatasetLoaded = Boolean(analyzerId);
   const isCorrelationReady = Boolean(correlationStats);
 
@@ -124,6 +149,7 @@ export default function IVCCAPage() {
     setCorrelationStats(null);
     setClusterInfo(null);
     setPcaInfo(null);
+    setPcaClusterAssignments(null);
     setTsneInfo(null);
     setHeatmapImage(null);
     setHeatmapPlotData(null);
@@ -141,7 +167,22 @@ export default function IVCCAPage() {
     setTsneScatterPlotData(null);
     setElbowSilhouetteImage(null);
     setElbowSilhouettePlotData(null);
-    setElbowSilhouetteImage(null);
+    // Reset advanced analysis states
+    setSinglePathwayFile(null);
+    setSinglePathwayResult(null);
+    setSingleGene('');
+    setTargetGenesFile(null);
+    setGeneToGenesResult(null);
+    setPathwayFiles([]);
+    setGeneToPathwaysResult(null);
+    setMultiPathwayFiles([]);
+    setMultiPathwayResult(null);
+    setPathway1File(null);
+    setPathway2File(null);
+    setComparePathwaysResult(null);
+    setVennResult(null);
+    setNetworkPathwayFile(null);
+    setNetworkResult(null);
   };
 
   const formatPreviewCell = (value: string | number | null) => {
@@ -535,13 +576,17 @@ export default function IVCCAPage() {
     try {
       const formData: Record<string, string> = {
         analyzer_id: analyzerId,
-        n_components: '3',
+        n_components: String(pcaDimensions),
       };
       
       if (pcaClusters !== null && pcaClusters > 0) {
         formData.n_clusters = String(pcaClusters);
+        console.log('Sending n_clusters:', pcaClusters, 'as string:', String(pcaClusters));
+      } else {
+        console.log('NOT sending n_clusters, pcaClusters value:', pcaClusters);
       }
 
+      console.log('FormData being sent:', formData);
       const payload = await postForm('/api/ivcca/pca', formData);
 
       if (payload.status !== 'success') {
@@ -553,6 +598,49 @@ export default function IVCCAPage() {
         cumulative_variance: payload.cumulative_variance,
         n_components: payload.n_components,
       });
+      
+      // Store cluster assignments if available
+      console.log('Full PCA payload:', payload);
+      console.log('pcaClusters value:', pcaClusters);
+      console.log('cluster_assignments in payload?', 'cluster_assignments' in payload);
+      
+      // Check if cluster_assignments is in the top level
+      let clusterAssignments = null;
+      if (payload.cluster_assignments) {
+        clusterAssignments = payload.cluster_assignments;
+        console.log('Found cluster_assignments in payload top level');
+      } 
+      // Check if cluster_assignments is nested in scatter_plot
+      else if (payload.scatter_plot && typeof payload.scatter_plot === 'object' && 'cluster_assignments' in payload.scatter_plot) {
+        clusterAssignments = payload.scatter_plot.cluster_assignments;
+        console.log('Found cluster_assignments in scatter_plot');
+      }
+      // Check if scatter_plot content is a string that might contain cluster_assignments
+      else if (payload.scatter_plot && payload.scatter_plot.content) {
+        try {
+          const scatterContent = typeof payload.scatter_plot.content === 'string' 
+            ? JSON.parse(payload.scatter_plot.content) 
+            : payload.scatter_plot.content;
+          if (scatterContent && scatterContent.cluster_assignments) {
+            clusterAssignments = scatterContent.cluster_assignments;
+            console.log('Found cluster_assignments in scatter_plot.content');
+          }
+        } catch (e) {
+          console.log('Could not parse scatter_plot.content:', e);
+        }
+      }
+      
+      if (clusterAssignments) {
+        console.log('PCA Cluster Assignments received:', clusterAssignments);
+        console.log('Number of clusters:', Object.keys(clusterAssignments).length);
+        console.log('First cluster sample:', clusterAssignments[Object.keys(clusterAssignments)[0]]);
+        setPcaClusterAssignments(clusterAssignments);
+      } else {
+        console.log('No cluster_assignments found. Available keys:', Object.keys(payload));
+        console.log('Payload scatter_plot:', payload.scatter_plot);
+        console.log('Payload scatter_plot keys:', payload.scatter_plot ? Object.keys(payload.scatter_plot) : 'No scatter_plot');
+        setPcaClusterAssignments(null);
+      }
       
       // Display visualizations
       if (payload.scree_plot) {
@@ -678,6 +766,266 @@ export default function IVCCAPage() {
       cumulative: pcaInfo.cumulative_variance[index],
     }));
   }, [pcaInfo]);
+
+  // Advanced Analysis Handlers
+  const handleSinglePathway = async () => {
+    if (!analyzerId || !singlePathwayFile) return;
+    setLoading(true);
+    setStatus('Analyzing single pathway…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('pathway_file', singlePathwayFile);
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/single-pathway`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Single pathway analysis failed');
+      }
+
+      setSinglePathwayResult(payload);
+      setStatus('Single pathway analysis ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze single pathway');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGeneToGenes = async () => {
+    if (!analyzerId || !singleGene || !targetGenesFile) return;
+    setLoading(true);
+    setStatus('Calculating gene to genes correlations…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('single_gene', singleGene);
+      formData.append('target_genes_file', targetGenesFile);
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/gene-to-genes`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Gene to genes analysis failed');
+      }
+
+      setGeneToGenesResult(payload);
+      setStatus('Gene to genes analysis ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze gene to genes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGeneToPathways = async () => {
+    if (!analyzerId || !singleGene || pathwayFiles.length === 0) return;
+    setLoading(true);
+    setStatus('Calculating gene to pathways correlations…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('single_gene', singleGene);
+      pathwayFiles.forEach((file) => {
+        formData.append('pathway_files', file);
+      });
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/gene-to-pathways`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Gene to pathways analysis failed');
+      }
+
+      setGeneToPathwaysResult(payload);
+      setStatus('Gene to pathways analysis ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze gene to pathways');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMultiPathway = async () => {
+    if (!analyzerId || multiPathwayFiles.length === 0) return;
+    setLoading(true);
+    setStatus('Running multi-pathway analysis…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('min_genes_threshold', '5');
+      formData.append('sorted_matrix', 'false');
+      multiPathwayFiles.forEach((file) => {
+        formData.append('pathway_files', file);
+      });
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/multi-pathway`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Multi-pathway analysis failed');
+      }
+
+      setMultiPathwayResult(payload);
+      setStatus('Multi-pathway analysis ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze multi-pathway');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleComparePathways = async () => {
+    if (!analyzerId || !pathway1File || !pathway2File) return;
+    setLoading(true);
+    setStatus('Comparing pathways…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('pathway1_file', pathway1File);
+      formData.append('pathway2_file', pathway2File);
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/compare-pathways`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Pathway comparison failed');
+      }
+
+      setComparePathwaysResult(payload);
+      setStatus('Pathway comparison ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to compare pathways');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVennDiagram = async () => {
+    if (!analyzerId || !pathway1File || !pathway2File) return;
+    setLoading(true);
+    setStatus('Generating Venn diagram…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('pathway1_file', pathway1File);
+      formData.append('pathway2_file', pathway2File);
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/venn-diagram`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Venn diagram generation failed');
+      }
+
+      setVennResult(payload);
+      setStatus('Venn diagram ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate Venn diagram');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNetworkAnalysis = async () => {
+    if (!analyzerId) return;
+    setLoading(true);
+    setStatus('Generating network analysis…');
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('analyzer_id', analyzerId);
+      formData.append('threshold', String(networkThreshold));
+      formData.append('plot_type', networkDimensions === 3 ? '3D' : '2D');
+      if (networkPathwayFile) {
+        formData.append('pathway_file', networkPathwayFile);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/ivcca/network-analysis`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with status ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (payload.status !== 'success') {
+        throw new Error(payload.message || 'Network analysis failed');
+      }
+
+      setNetworkResult(payload);
+      setStatus('Network analysis ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate network analysis');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50">
@@ -1013,6 +1361,20 @@ export default function IVCCAPage() {
                 />
               </label>
               <label className="flex items-center gap-2 text-sm text-gray-600">
+                PCA Dimensions:
+                <select
+                  value={pcaDimensions}
+                  onChange={(event) =>
+                    setPcaDimensions(Number(event.target.value) as 2 | 3)
+                  }
+                  disabled={!isCorrelationReady}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-100"
+                >
+                  <option value={2}>2D</option>
+                  <option value={3}>3D</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
                 PCA Clusters:
                 <input
                   type="number"
@@ -1183,55 +1545,6 @@ export default function IVCCAPage() {
             </div>
           )}
           
-          {/* PCA Visualizations */}
-          {(pcaScreeImage || pcaScreePlotData || pcaScatterImage || pcaScatterPlotData) && (
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
-              {(pcaScreeImage || pcaScreePlotData) && (
-                <figure className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  {pcaScreePlotData ? (
-                    <Plot
-                      data={pcaScreePlotData.data}
-                      layout={pcaScreePlotData.layout}
-                      config={{ responsive: true, displayModeBar: true }}
-                      style={{ width: '100%', height: '500px' }}
-                    />
-                  ) : pcaScreeImage && pcaScreeImage.startsWith('data:image') ? (
-                    <img
-                      src={pcaScreeImage}
-                      alt="PCA Scree Plot"
-                      className="w-full rounded-xl border border-gray-100 shadow"
-                    />
-                  ) : null}
-                  <figcaption className="mt-2 text-sm text-gray-600">
-                    PCA Scree Plot: Cumulative variance explained by the first 25 principal components.
-                  </figcaption>
-                </figure>
-              )}
-              {(pcaScatterImage || pcaScatterPlotData) && (
-                <figure className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
-                  {pcaScatterPlotData ? (
-                    <Plot
-                      data={pcaScatterPlotData.data}
-                      layout={pcaScatterPlotData.layout}
-                      config={{ responsive: true, displayModeBar: true }}
-                      style={{ width: '100%', height: '600px' }}
-                    />
-                  ) : pcaScatterImage && pcaScatterImage.startsWith('data:image') ? (
-                    <img
-                      src={pcaScatterImage}
-                      alt="PCA Scatter Plot"
-                      className="w-full rounded-xl border border-gray-100 shadow"
-                    />
-                  ) : null}
-                  <figcaption className="mt-2 text-sm text-gray-600">
-                    PCA {pcaInfo?.n_components === 3 ? '3D' : '2D'} Scatter Plot
-                    {pcaClusters && ` with ${pcaClusters} clusters`}. Click and drag to rotate (3D) or zoom.
-                  </figcaption>
-                </figure>
-              )}
-            </div>
-          )}
-          
           {/* t-SNE Visualization */}
           {(tsneScatterImage || tsneScatterPlotData) && (
             <div className="mt-6">
@@ -1258,6 +1571,158 @@ export default function IVCCAPage() {
             </div>
           )}
         </section>
+
+        {/* PCA Visualizations - Dedicated Section */}
+        {(pcaScreeImage || pcaScreePlotData || pcaScatterImage || pcaScatterPlotData) && (
+          <section className="mt-10 rounded-3xl bg-white p-10 md:p-12 shadow-lg ring-1 ring-gray-100">
+            <h2 className="text-xl font-semibold text-gray-900">
+              PCA Visualization
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Principal Component Analysis results showing variance explained and gene distribution in PCA space.
+            </p>
+            <div className="mt-8 space-y-8">
+              {(pcaScreeImage || pcaScreePlotData) && (
+                <div className="w-full">
+                  <figure className="rounded-2xl border border-gray-200 bg-gray-50 p-6 md:p-8">
+                    {pcaScreePlotData ? (
+                      <Plot
+                        data={pcaScreePlotData.data}
+                        layout={pcaScreePlotData.layout}
+                        config={{ responsive: true, displayModeBar: true }}
+                        style={{ width: '100%', height: '450px' }}
+                      />
+                    ) : pcaScreeImage && pcaScreeImage.startsWith('data:image') ? (
+                      <img
+                        src={pcaScreeImage}
+                        alt="PCA Scree Plot"
+                        className="w-full rounded-xl border border-gray-100 shadow"
+                      />
+                    ) : null}
+                    <figcaption className="mt-2 text-sm text-gray-600">
+                      PCA Scree Plot: Cumulative variance explained by the first 25 principal components.
+                    </figcaption>
+                  </figure>
+                </div>
+              )}
+              {(pcaScatterImage || pcaScatterPlotData) && (
+                <div className="w-full overflow-auto">
+                  <figure className="rounded-2xl border border-gray-200 bg-gray-50 p-6 md:p-8 min-w-full">
+                    {pcaScatterPlotData ? (
+                      <div className="w-full" style={{ minHeight: pcaDimensions === 3 ? '600px' : '700px' }}>
+                        <Plot
+                          data={pcaScatterPlotData.data}
+                          layout={pcaScatterPlotData.layout}
+                          config={{ responsive: true, displayModeBar: true }}
+                          style={{ width: '100%', height: '100%', minHeight: pcaDimensions === 3 ? '600px' : '700px' }}
+                        />
+                      </div>
+                    ) : pcaScatterImage && pcaScatterImage.startsWith('data:image') ? (
+                      <img
+                        src={pcaScatterImage}
+                        alt="PCA Scatter Plot"
+                        className="w-full rounded-xl border border-gray-100 shadow"
+                      />
+                    ) : null}
+                    <figcaption className="mt-2 text-sm text-gray-600">
+                      PCA {pcaDimensions === 3 ? '3D' : '2D'} Scatter Plot
+                      {pcaClusters && ` with ${pcaClusters} clusters`}. Click and drag to rotate (3D) or zoom.
+                    </figcaption>
+                  </figure>
+                </div>
+              )}
+              
+              {/* PCA Cluster Assignments - Always show if clusters were requested */}
+              {pcaClusters && pcaClusters > 0 && (
+                <div className="w-full mt-8">
+                  <div className="rounded-2xl border-2 border-blue-400 bg-blue-100 p-6 md:p-8 shadow-xl">
+                    <div className="mb-6 flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-blue-900">
+                        PCA Cluster Assignments
+                        {pcaClusterAssignments ? ` (${Object.keys(pcaClusterAssignments).length} clusters)` : ' (Loading...)'}
+                      </h3>
+                      {pcaClusterAssignments && Object.keys(pcaClusterAssignments).length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Convert cluster assignments to CSV format
+                            const csvRows: string[] = ['Cluster ID,Gene Name'];
+                            Object.entries(pcaClusterAssignments)
+                              .sort(([a], [b]) => Number(a) - Number(b))
+                              .forEach(([clusterId, genes]) => {
+                                genes.forEach((gene) => {
+                                  csvRows.push(`${clusterId},"${gene}"`);
+                                });
+                              });
+                            const csvContent = csvRows.join('\n');
+                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                            const link = document.createElement('a');
+                            const url = URL.createObjectURL(blob);
+                            link.setAttribute('href', url);
+                            link.setAttribute('download', `pca_clusters_${new Date().toISOString().split('T')[0]}.csv`);
+                            link.style.visibility = 'hidden';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+                        >
+                          <svg
+                            className="h-5 w-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                            />
+                          </svg>
+                          Download CSV
+                        </button>
+                      )}
+                    </div>
+                    {pcaClusterAssignments && Object.keys(pcaClusterAssignments).length > 0 ? (
+                      <div className="space-y-6">
+                        {Object.entries(pcaClusterAssignments)
+                          .sort(([a], [b]) => Number(a) - Number(b))
+                          .map(([clusterId, genes]) => (
+                            <div
+                              key={clusterId}
+                              className="rounded-lg bg-white p-6 shadow-md border-2 border-blue-300"
+                            >
+                              <h4 className="mb-4 text-lg font-bold text-blue-900 border-b-2 border-blue-200 pb-2">
+                                Cluster {clusterId} ({genes.length} genes)
+                              </h4>
+                              <div className="max-h-96 overflow-y-auto">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                  {genes.map((gene, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="font-mono py-2 px-3 bg-blue-50 rounded border border-blue-200 text-sm text-blue-800 hover:bg-blue-100 transition"
+                                    >
+                                      {gene}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-blue-700">
+                        <p className="text-lg">No cluster assignments available.</p>
+                        <p className="text-sm mt-2">Please check the browser console for debugging information.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {((heatmapImage || heatmapPlotData) ||
           (sortedHeatmapImage || sortedHeatmapPlotData) ||
@@ -1368,53 +1833,453 @@ export default function IVCCAPage() {
             Gene-to-gene, gene-to-pathway, multi-pathway, Venn diagram, and network analysis.
           </p>
           
-          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <button
-              type="button"
-              onClick={() => setStatus('Gene to Genes: Upload target genes file and enter gene name')}
-              disabled={!isCorrelationReady || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-purple-200 bg-white px-4 py-3 text-sm font-semibold text-purple-700 shadow-sm transition hover:border-purple-300 hover:bg-purple-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-            >
-              Gene to Genes
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatus('Gene to Pathways: Upload pathway files and enter gene name')}
-              disabled={!isCorrelationReady || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-semibold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-            >
-              Gene to Pathways
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatus('Multi-Pathway: Upload multiple pathway files for CECI analysis')}
-              disabled={!isCorrelationReady || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm font-semibold text-teal-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-            >
-              Multi-Pathway
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatus('Venn Diagram: Upload two pathway files')}
-              disabled={!isCorrelationReady || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-pink-200 bg-white px-4 py-3 text-sm font-semibold text-pink-700 shadow-sm transition hover:border-pink-300 hover:bg-pink-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-            >
-              Venn Diagram
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatus('Network Analysis: Optional pathway file, correlation threshold, 2D/3D')}
-              disabled={!isCorrelationReady || loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-4 py-3 text-sm font-semibold text-cyan-700 shadow-sm transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-            >
-              Network Analysis
-            </button>
+          {/* Single Pathway Analysis */}
+          <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Single Pathway Analysis</h3>
+            <p className="text-sm text-gray-600 mb-4">Analyze correlations within a single pathway (set of genes).</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway File (.txt, one gene per line)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setSinglePathwayFile(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-100"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSinglePathway}
+                disabled={!isCorrelationReady || !singlePathwayFile || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                Analyze Pathway
+              </button>
+            </div>
+            {singlePathwayResult && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-indigo-200">
+                <p className="text-sm font-semibold text-indigo-900 mb-2">
+                  Pathway Size: {singlePathwayResult.pathway_size} genes
+                </p>
+                <p className="text-sm text-indigo-700 mb-3">
+                  Mean Correlation: {numberFormatter.format(singlePathwayResult.mean_correlation)}
+                </p>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-indigo-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Gene</th>
+                        <th className="px-2 py-1 text-right">Avg Correlation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {singlePathwayResult.sorted_genes?.slice(0, 50).map((gene: string, idx: number) => (
+                        <tr key={idx} className="border-b border-gray-100">
+                          <td className="px-2 py-1 font-mono">{gene}</td>
+                          <td className="px-2 py-1 text-right">{numberFormatter.format(singlePathwayResult.sorted_scores[idx])}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
-          
-          <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600">
-            <p className="font-semibold mb-2">Note:</p>
-            <p>These advanced features require additional file uploads and parameters. Use the API endpoints directly or implement full UI forms for these features.</p>
-            <p className="mt-2">API endpoints: /api/ivcca/gene-to-genes, /api/ivcca/gene-to-pathways, /api/ivcca/multi-pathway, /api/ivcca/venn-diagram, /api/ivcca/network-analysis</p>
+
+          {/* Gene to Genes */}
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gene to Genes</h3>
+            <p className="text-sm text-gray-600 mb-4">Calculate correlation between a single gene and a group of target genes.</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[150px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Single Gene Name
+                </label>
+                <input
+                  type="text"
+                  value={singleGene}
+                  onChange={(e) => setSingleGene(e.target.value)}
+                  disabled={!isCorrelationReady}
+                  placeholder="Enter gene name"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Target Genes File (.txt)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setTargetGenesFile(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200 disabled:bg-gray-100"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleGeneToGenes}
+                disabled={!isCorrelationReady || !singleGene || !targetGenesFile || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-purple-300"
+              >
+                Analyze
+              </button>
+            </div>
+            {geneToGenesResult && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-purple-200">
+                <p className="text-sm font-semibold text-purple-900 mb-2">
+                  Gene: {geneToGenesResult.single_gene} | Target Genes: {geneToGenesResult.n_targets}
+                </p>
+                <p className="text-sm text-purple-700 mb-3">
+                  Average Absolute Correlation: {numberFormatter.format(geneToGenesResult.avg_abs_correlation)}
+                </p>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-purple-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Target Gene</th>
+                        <th className="px-2 py-1 text-right">Correlation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {geneToGenesResult.target_genes?.slice(0, 50).map((gene: string, idx: number) => (
+                        <tr key={idx} className="border-b border-gray-100">
+                          <td className="px-2 py-1 font-mono">{gene}</td>
+                          <td className="px-2 py-1 text-right">{numberFormatter.format(geneToGenesResult.correlations[idx])}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Gene to Pathways */}
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gene to Pathways</h3>
+            <p className="text-sm text-gray-600 mb-4">Calculate correlation between a single gene and multiple pathways.</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[150px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Single Gene Name
+                </label>
+                <input
+                  type="text"
+                  value={singleGene}
+                  onChange={(e) => setSingleGene(e.target.value)}
+                  disabled={!isCorrelationReady}
+                  placeholder="Enter gene name"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway Files (.txt, multiple files)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  multiple
+                  onChange={(e) => setPathwayFiles(Array.from(e.target.files || []))}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-gray-100"
+                />
+                {pathwayFiles.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">{pathwayFiles.length} file(s) selected</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleGeneToPathways}
+                disabled={!isCorrelationReady || !singleGene || pathwayFiles.length === 0 || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                Analyze
+              </button>
+            </div>
+            {geneToPathwaysResult && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-indigo-200">
+                <p className="text-sm font-semibold text-indigo-900 mb-3">
+                  Gene: {geneToPathwaysResult.single_gene} | Pathways: {geneToPathwaysResult.n_pathways}
+                </p>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {geneToPathwaysResult.pathways?.map((pathway: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-indigo-50 rounded-lg">
+                      <p className="text-sm font-semibold text-indigo-900">{pathway.pathway_file}</p>
+                      <p className="text-xs text-indigo-700">
+                        Size: {pathway.pathway_size} | Found: {pathway.genes_found} | 
+                        Avg Correlation: {numberFormatter.format(pathway.avg_correlation)} | 
+                        Avg Abs: {numberFormatter.format(pathway.avg_abs_correlation)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Multi-Pathway */}
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Multi-Pathway Analysis (CECI)</h3>
+            <p className="text-sm text-gray-600 mb-4">Calculate CECI (Cross-Enrichment Correlation Index) for multiple pathways.</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway Files (.txt, multiple files)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  multiple
+                  onChange={(e) => setMultiPathwayFiles(Array.from(e.target.files || []))}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200 disabled:bg-gray-100"
+                />
+                {multiPathwayFiles.length > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">{multiPathwayFiles.length} file(s) selected</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleMultiPathway}
+                disabled={!isCorrelationReady || multiPathwayFiles.length === 0 || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-teal-300"
+              >
+                Analyze
+              </button>
+            </div>
+            {multiPathwayResult && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-teal-200">
+                <p className="text-sm font-semibold text-teal-900 mb-3">
+                  Pathways Analyzed: {multiPathwayResult.n_pathways}
+                </p>
+                <div className="max-h-96 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-teal-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Pathway</th>
+                        <th className="px-2 py-1 text-right">PAI</th>
+                        <th className="px-2 py-1 text-right">PCI-A</th>
+                        <th className="px-2 py-1 text-right">PCI-B</th>
+                        <th className="px-2 py-1 text-right">CECI</th>
+                        <th className="px-2 py-1 text-right">Z-Score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {multiPathwayResult.pathways?.map((pathway: any, idx: number) => (
+                        <tr key={idx} className="border-b border-gray-100">
+                          <td className="px-2 py-1 font-mono text-xs">{pathway.pathway_file}</td>
+                          <td className="px-2 py-1 text-right">{numberFormatter.format(pathway.pai)}</td>
+                          <td className="px-2 py-1 text-right">{numberFormatter.format(pathway.pci_a)}</td>
+                          <td className="px-2 py-1 text-right">{numberFormatter.format(pathway.pci_b)}</td>
+                          <td className="px-2 py-1 text-right font-semibold">{numberFormatter.format(pathway.ceci)}</td>
+                          <td className="px-2 py-1 text-right">{numberFormatter.format(pathway.z_score)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Compare Pathways */}
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Compare Pathways</h3>
+            <p className="text-sm text-gray-600 mb-4">Calculate cosine similarity between two pathways.</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway 1 File (.txt)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setPathway1File(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway 2 File (.txt)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setPathway2File(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleComparePathways}
+                disabled={!isCorrelationReady || !pathway1File || !pathway2File || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+              >
+                Compare
+              </button>
+            </div>
+            {comparePathwaysResult && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-blue-200">
+                <p className="text-sm font-semibold text-blue-900 mb-2">
+                  Cosine Similarity: {numberFormatter.format(comparePathwaysResult.cosine_similarity)}
+                </p>
+                <p className="text-xs text-blue-700">
+                  Pathway 1: {comparePathwaysResult.pathway1_size} genes | 
+                  Pathway 2: {comparePathwaysResult.pathway2_size} genes | 
+                  Intersection: {comparePathwaysResult.intersection_size} genes
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Venn Diagram */}
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Venn Diagram</h3>
+            <p className="text-sm text-gray-600 mb-4">Generate Venn diagram for two pathways.</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway 1 File (.txt)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setPathway1File(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-200 disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway 2 File (.txt)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setPathway2File(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-200 disabled:bg-gray-100"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleVennDiagram}
+                disabled={!isCorrelationReady || !pathway1File || !pathway2File || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-pink-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:bg-pink-300"
+              >
+                Generate
+              </button>
+            </div>
+            {vennResult && vennResult.image_base64 && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-pink-200">
+                <img
+                  src={`data:image/png;base64,${vennResult.image_base64}`}
+                  alt="Venn Diagram"
+                  className="w-full rounded-xl border border-gray-100 shadow"
+                />
+                <div className="mt-3 text-xs text-pink-700">
+                  <p>Pathway 1: {vennResult.pathway1_size} genes</p>
+                  <p>Pathway 2: {vennResult.pathway2_size} genes</p>
+                  <p>Intersection: {vennResult.intersection_size} genes</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Network Analysis */}
+          <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Network Analysis</h3>
+            <p className="text-sm text-gray-600 mb-4">Generate 2D or 3D network graph based on correlation threshold.</p>
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-[150px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Pathway File (Optional, .txt)
+                </label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => setNetworkPathwayFile(e.target.files?.[0] || null)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[120px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Threshold
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={networkThreshold}
+                  onChange={(e) => setNetworkThreshold(Number(e.target.value))}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex-1 min-w-[100px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Dimensions
+                </label>
+                <select
+                  value={networkDimensions}
+                  onChange={(e) => setNetworkDimensions(Number(e.target.value) as 2 | 3)}
+                  disabled={!isCorrelationReady}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200 disabled:bg-gray-100"
+                >
+                  <option value={2}>2D</option>
+                  <option value={3}>3D</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={handleNetworkAnalysis}
+                disabled={!isCorrelationReady || loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-cyan-300"
+              >
+                Generate Network
+              </button>
+            </div>
+            {networkResult && (
+              <div className="mt-4 rounded-lg bg-white p-4 border border-cyan-200">
+                {networkResult.image_base64 ? (
+                  <img
+                    src={`data:image/png;base64,${networkResult.image_base64}`}
+                    alt="Network Analysis"
+                    className="w-full rounded-xl border border-gray-100 shadow"
+                  />
+                ) : networkResult.plot_type === 'plotly' && networkResult.content ? (
+                  (() => {
+                    try {
+                      const plotData = typeof networkResult.content === 'string' 
+                        ? JSON.parse(networkResult.content) 
+                        : networkResult.content;
+                      return (
+                        <Plot
+                          data={plotData.data}
+                          layout={plotData.layout}
+                          config={{ responsive: true, displayModeBar: true }}
+                          style={{ width: '100%', height: networkDimensions === 3 ? '700px' : '600px' }}
+                        />
+                      );
+                    } catch (e) {
+                      return <p className="text-red-600">Error parsing network plot data</p>;
+                    }
+                  })()
+                ) : null}
+                <div className="mt-3 text-xs text-cyan-700">
+                  <p>Nodes: {networkResult.n_nodes} | Edges: {networkResult.n_edges} | Threshold: {networkResult.threshold}</p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

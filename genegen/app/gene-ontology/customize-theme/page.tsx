@@ -243,6 +243,18 @@ export default function CustomizeTheme() {
       formData.append('file', selectedFile);
       formData.append('theme', themeName);
 
+      // Check if this is a custom theme and include custom_themes if needed
+      const customTheme = customThemes.find(theme => theme.name === themeName);
+      if (customTheme) {
+        const customThemeData = [{
+          id: customTheme.id,
+          name: customTheme.name,
+          keywords: customTheme.keywords || []
+        }];
+        formData.append('custom_themes', JSON.stringify(customThemeData));
+        console.log(`Including custom theme data for: ${themeName}`);
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/ontology/theme-chart`, {
         method: 'POST',
         body: formData,

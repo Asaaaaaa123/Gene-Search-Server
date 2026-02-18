@@ -827,12 +827,35 @@ async def analyze_ontology(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Error analyzing genes: {str(e)}")
 
 @app.post("/api/ontology/theme-chart")
-async def generate_theme_chart(file: UploadFile = File(...), theme: str = Form(...)):
+async def generate_theme_chart(
+    file: UploadFile = File(...), 
+    theme: str = Form(...),
+    custom_themes: str = Form(None)
+):
     """Generate chart for a specific theme"""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
     
+    # Parse custom themes if provided
+    custom_theme_data = []
+    if custom_themes:
+        try:
+            import json
+            custom_theme_data = json.loads(custom_themes)
+            print(f"Custom themes received for theme-chart: {custom_theme_data}")
+        except json.JSONDecodeError:
+            print("Warning: Failed to parse custom themes in theme-chart")
+    
+    # Temporarily add custom themes to the ontology API
+    original_themes = ontology_api.themes.copy()
     try:
+        for custom_theme in custom_theme_data:
+            theme_name = custom_theme.get('name')
+            keywords = custom_theme.get('keywords', [])
+            if theme_name and keywords:
+                ontology_api.themes[theme_name] = keywords
+                print(f"Added custom theme '{theme_name}' with keywords: {keywords}")
+        
         print(f"Processing theme chart request for theme: {theme}")
         
         # Read file content
@@ -856,6 +879,7 @@ async def generate_theme_chart(file: UploadFile = File(...), theme: str = Form(.
         enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
         themed_terms = enr_df[enr_df["Theme"].notna()]
         print(f"Assigned themes to {len(themed_terms)} terms")
+        print(f"Available themes in data: {enr_df['Theme'].dropna().unique().tolist()}")
         
         # Check if theme exists
         theme_terms = enr_df[enr_df["Theme"] == theme]
@@ -894,6 +918,9 @@ async def generate_theme_chart(file: UploadFile = File(...), theme: str = Form(.
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error generating chart: {str(e)}")
+    finally:
+        # Always restore original themes
+        ontology_api.themes = original_themes
 
 @app.post("/api/ontology/summary-chart")
 async def generate_summary_chart(file: UploadFile = File(...)):
@@ -1492,17 +1519,36 @@ async def ivcca_dendrogram(
 async def ivcca_pca(
     analyzer_id: str = Form(...),
     n_components: int = Form(3),
-    n_clusters: Optional[int] = Form(None)
+    n_clusters: str = Form(None)
 ):
     """Perform PCA analysis with optional clustering visualization"""
+    import sys
+    # Convert n_clusters from string to int if provided
+    n_clusters_int = None
+    if n_clusters and n_clusters != "None" and n_clusters != "":
+        try:
+            n_clusters_int = int(n_clusters)
+        except (ValueError, TypeError):
+            n_clusters_int = None
+    
+    print(f"DEBUG API: Received n_clusters={n_clusters} (str), converted to {n_clusters_int} (int)", file=sys.stderr, flush=True)
+    print(f"DEBUG API: n_components={n_components}", file=sys.stderr, flush=True)
     if analyzer_id not in ivcca_analyzers:
         raise HTTPException(status_code=404, detail="Analyzer not found")
     
     analyzer = ivcca_analyzers[analyzer_id]
-    result = analyzer.perform_pca(n_components=n_components, n_clusters=n_clusters)
+    result = analyzer.perform_pca(n_components=n_components, n_clusters=n_clusters_int)
     
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
+    
+    print(f"DEBUG API: Result keys: {list(result.keys())}", file=sys.stderr, flush=True)
+    print(f"DEBUG API: cluster_assignments in result? {'cluster_assignments' in result}", file=sys.stderr, flush=True)
+    if "cluster_assignments" in result:
+        print(f"DEBUG API: cluster_assignments type: {type(result['cluster_assignments'])}", file=sys.stderr, flush=True)
+        if isinstance(result['cluster_assignments'], dict):
+            print(f"DEBUG API: cluster_assignments keys: {list(result['cluster_assignments'].keys())}", file=sys.stderr, flush=True)
+            print(f"DEBUG API: First cluster sample: {list(result['cluster_assignments'].values())[0][:5] if result['cluster_assignments'] else 'empty'}", file=sys.stderr, flush=True)
     
     return result
 
