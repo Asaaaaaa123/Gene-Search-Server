@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { findGeneBySymbol } from './gene-utils';
-
 interface GeneData {
   organ: string;
   gene_symbol: string;
@@ -26,24 +24,10 @@ interface PlotResponse {
   image_base64: string;
 }
 
-interface GeneSymbol {
-  symbol: string;
-  name: string;
-  tissue: string;
-  expression: number;
-}
-
 export default function GeneSearch() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTissue, setSelectedTissue] = useState('all');
-  const [geneSymbols, setGeneSymbols] = useState<GeneSymbol[]>([]);
-  const [filteredGenes, setFilteredGenes] = useState<GeneSymbol[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedGene, setSelectedGene] = useState<GeneSymbol | null>(null);
   
-  // Original gene search functionality
+  // Gene search functionality
   const [selectedGeneSymbol, setSelectedGeneSymbol] = useState<string>('');
   const [searchResults, setSearchResults] = useState<GeneData[]>([]);
   const [currentPlot, setCurrentPlot] = useState<string>('');
@@ -63,49 +47,9 @@ export default function GeneSearch() {
     return num.toFixed(decimals);
   };
 
-  // Safe percentage calculation for progress bar
-  const safePercentage = (value: any, max: number = 10): number => {
-    if (value === null || value === undefined || value === '') return 0;
-    const num = Number(value);
-    if (isNaN(num)) return 0;
-    return Math.min((num / max) * 100, 100);
-  };
-
-  const tissues = [
-    { value: 'all', label: 'All Tissues', color: 'bg-gray-100 text-gray-800' },
-    { value: 'BoneMarrow', label: 'Bone Marrow', color: 'bg-red-100 text-red-800' },
-    { value: 'Cortex', label: 'Cortex', color: 'bg-blue-100 text-blue-800' },
-    { value: 'DRG', label: 'DRG', color: 'bg-green-100 text-green-800' },
-    { value: 'Fat', label: 'Fat', color: 'bg-yellow-100 text-yellow-800' },
-    { value: 'Heart', label: 'Heart', color: 'bg-pink-100 text-pink-800' },
-    { value: 'Hypothalamus', label: 'Hypothalamus', color: 'bg-purple-100 text-purple-800' },
-    { value: 'Kidneys', label: 'Kidneys', color: 'bg-indigo-100 text-indigo-800' },
-    { value: 'Liver', label: 'Liver', color: 'bg-orange-100 text-orange-800' },
-    { value: 'Muscle', label: 'Muscle', color: 'bg-teal-100 text-teal-800' }
-  ];
-
-  // Popular genes for quick selection
-  const popularGenes = [
-    { symbol: 'GAPDH', name: 'Glyceraldehyde-3-phosphate dehydrogenase', category: 'Housekeeping' },
-    { symbol: 'ACTB', name: 'Actin beta', category: 'Housekeeping' },
-    { symbol: 'TUBB', name: 'Tubulin beta class I', category: 'Cytoskeleton' },
-    { symbol: 'HPRT1', name: 'Hypoxanthine phosphoribosyltransferase 1', category: 'Metabolism' },
-    { symbol: 'PPIA', name: 'Peptidylprolyl isomerase A', category: 'Protein folding' },
-    { symbol: 'RPL13A', name: 'Ribosomal protein L13a', category: 'Translation' },
-    { symbol: 'B2M', name: 'Beta-2-microglobulin', category: 'Immune system' },
-    { symbol: 'SDHA', name: 'Succinate dehydrogenase complex flavoprotein subunit A', category: 'Metabolism' },
-    { symbol: 'TBP', name: 'TATA-box binding protein', category: 'Transcription' },
-    { symbol: 'YWHAZ', name: 'Tyrosine 3-monooxygenase/tryptophan 5-monooxygenase activation protein zeta', category: 'Signaling' }
-  ];
-
   useEffect(() => {
-    loadGeneSymbols();
     checkApiStatus();
   }, []);
-
-  useEffect(() => {
-    filterGenes();
-  }, [searchTerm, selectedTissue, geneSymbols]);
 
   const checkApiStatus = async () => {
     try {
@@ -153,161 +97,7 @@ export default function GeneSearch() {
     }
   };
 
-  const loadGeneSymbols = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      
-      // Check if the API endpoint exists before making the request
-      const response = await fetch(`${API_BASE_URL}/api/gene/symbols`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        // Add timeout and better error handling
-        signal: AbortSignal.timeout(10000) // 10 second timeout
-      });
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          // If endpoint doesn't exist, just log it and continue without error
-          console.log('Gene symbols API endpoint not available, continuing without gene browser data');
-          setGeneSymbols([]);
-          return;
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      // Handle the API response format: {"gene_symbols": [...]}
-      if (data.gene_symbols && Array.isArray(data.gene_symbols)) {
-        // Convert to GeneSymbol objects - handle both string and object formats
-        const validGeneSymbols = data.gene_symbols
-          .filter((gene: any) => gene)
-          .map((gene: any) => {
-            // If it's a string, convert to object format
-            if (typeof gene === 'string') {
-              return {
-                symbol: gene,
-                name: gene,
-                tissue: 'Unknown',
-                expression: 0
-              };
-            }
-            // If it's already an object with required fields, use it
-            if (typeof gene === 'object' && gene.symbol) {
-              return {
-                symbol: gene.symbol,
-                name: gene.name || gene.symbol,
-                tissue: gene.tissue || 'Unknown',
-                expression: gene.expression || 0
-              };
-            }
-            return null;
-          })
-          .filter((gene: any): gene is GeneSymbol => gene !== null);
-        setGeneSymbols(validGeneSymbols);
-      } else if (Array.isArray(data)) {
-        // Fallback for direct array response
-        const validGeneSymbols = data
-          .filter((gene: any) => gene)
-          .map((gene: any) => {
-            if (typeof gene === 'string') {
-              return {
-                symbol: gene,
-                name: gene,
-                tissue: 'Unknown',
-                expression: 0
-              };
-            }
-            if (typeof gene === 'object' && gene.symbol) {
-              return {
-                symbol: gene.symbol,
-                name: gene.name || gene.symbol,
-                tissue: gene.tissue || 'Unknown',
-                expression: gene.expression || 0
-              };
-            }
-            return null;
-          })
-          .filter((gene: any): gene is GeneSymbol => gene !== null);
-        setGeneSymbols(validGeneSymbols);
-      } else {
-        console.log('Unexpected API response format:', data);
-        setGeneSymbols([]);
-      }
-    } catch (error) {
-      console.error('Error loading gene symbols:', error);
-      // Don't show error to user if it's just a missing endpoint or network issue
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          console.log('Gene symbols API endpoint not available (network error), continuing without gene browser data');
-          setGeneSymbols([]);
-        } else if (error.name === 'AbortError') {
-          console.log('Gene symbols API request timed out, continuing without gene browser data');
-          setGeneSymbols([]);
-        } else {
-          setError('Failed to load gene symbols. Please try again later.');
-        }
-      } else {
-        setError('Failed to load gene symbols. Please try again later.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const filterGenes = () => {
-    let filtered = geneSymbols;
-
-    // Filter by search term
-    if (searchTerm.trim()) {
-      filtered = filtered.filter(gene =>
-        gene.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        gene.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Filter by tissue
-    if (selectedTissue !== 'all') {
-      filtered = filtered.filter(gene => gene.tissue === selectedTissue);
-    }
-
-    setFilteredGenes(filtered);
-  };
-
-  const handleGeneSelect = (gene: GeneSymbol) => {
-    setSelectedGene(gene);
-    setSearchTerm(gene.symbol);
-    setShowDropdown(false);
-  };
-
-  const handlePopularGeneSelect = (gene: { symbol: string; name: string; category: string }) => {
-    // Find the gene in our actual data (case-insensitive)
-    const foundGene = findGeneBySymbol(geneSymbols, gene.symbol);
-    if (foundGene) {
-      setSelectedGene(foundGene);
-      setSearchTerm(foundGene.symbol); // Use the actual symbol from data
-    } else {
-      // If not found in actual data, create a placeholder
-      setSelectedGene({
-        symbol: gene.symbol,
-        name: gene.name,
-        tissue: 'Unknown',
-        expression: 0
-      });
-      setSearchTerm(gene.symbol);
-    }
-    setShowDropdown(false);
-  };
-
-  const clearSelection = () => {
-    setSelectedGene(null);
-    setSearchTerm('');
-    setShowDropdown(false);
-  };
-
-  // Original gene search functionality
+  // Gene search functionality
   const searchGene = async () => {
     if (!selectedGeneSymbol) {
       setError('Please enter a gene symbol');
@@ -519,16 +309,6 @@ export default function GeneSearch() {
     }
   };
 
-  const getTissueColor = (tissue: string) => {
-    const tissueObj = tissues.find(t => t.value === tissue);
-    return tissueObj ? tissueObj.color : 'bg-gray-100 text-gray-800';
-  };
-
-  const getTissueLabel = (tissue: string) => {
-    const tissueObj = tissues.find(t => t.value === tissue);
-    return tissueObj ? tissueObj.label : tissue;
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
       {/* Header */}
@@ -731,203 +511,6 @@ export default function GeneSearch() {
           )}
         </div>
 
-        {/* Gene Browser Section */}
-        {geneSymbols.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8">
-            <h3 className="text-xl font-semibold text-gray-900 mb-6">Gene Browser & Tissue Filter</h3>
-            
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Gene Selection */}
-              <div>
-                <label htmlFor="gene-select" className="block text-sm font-medium text-gray-700 mb-2">
-                  Browse Genes
-                </label>
-                <div className="relative">
-                  <div className="flex">
-                    <input
-                      id="gene-select"
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => {
-                        setSearchTerm(e.target.value);
-                        setShowDropdown(true);
-                        setSelectedGene(null);
-                      }}
-                      onFocus={() => setShowDropdown(true)}
-                      placeholder="Search or select a gene..."
-                      className="block w-full pl-4 pr-10 py-3 border border-gray-300 rounded-l-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                    />
-                    <button
-                      onClick={() => setShowDropdown(!showDropdown)}
-                      className="px-3 py-3 bg-gray-100 border border-l-0 border-gray-300 rounded-r-xl hover:bg-gray-200 transition-colors"
-                    >
-                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* Dropdown */}
-                  {showDropdown && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-96 overflow-y-auto">
-                      {/* Popular Genes Section */}
-                      <div className="p-3 border-b border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Popular Genes</h4>
-                        <div className="grid grid-cols-1 gap-1">
-                          {popularGenes.map((gene) => (
-                            <button
-                              key={gene.symbol}
-                              onClick={() => handlePopularGeneSelect(gene)}
-                              className="w-full text-left p-2 rounded-lg hover:bg-blue-50 transition-colors"
-                            >
-                              <div className="font-medium text-gray-900">{gene.symbol}</div>
-                              <div className="text-xs text-gray-500 truncate">{gene.name}</div>
-                              <div className="text-xs text-blue-600">{gene.category}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Search Results Section */}
-                      <div className="p-3">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Search Results</h4>
-                        {filteredGenes.length > 0 ? (
-                          <div className="space-y-1">
-                            {filteredGenes.slice(0, 20).map((gene, index) => (
-                              <button
-                                key={`${gene.symbol}-${gene.tissue}-${index}`}
-                                onClick={() => handleGeneSelect(gene)}
-                                className="w-full text-left p-2 rounded-lg hover:bg-blue-50 transition-colors"
-                              >
-                                <div className="font-medium text-gray-900">{gene.symbol}</div>
-                                <div className="text-xs text-gray-500 truncate">{gene.name}</div>
-                                <div className="text-xs text-blue-600">{getTissueLabel(gene.tissue)}</div>
-                              </button>
-                            ))}
-                            {filteredGenes.length > 20 && (
-                              <div className="text-xs text-gray-500 text-center py-2">
-                                Showing first 20 results. Type more to narrow down.
-                              </div>
-                            )}
-                          </div>
-                        ) : searchTerm && (
-                          <div className="text-sm text-gray-500 py-2">No genes found</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Selected Gene Display */}
-                {selectedGene && (
-                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-blue-900">{selectedGene.symbol}</div>
-                        <div className="text-sm text-blue-700">{selectedGene.name}</div>
-                        <div className="text-xs text-blue-600">{getTissueLabel(selectedGene.tissue)}</div>
-                      </div>
-                      <button
-                        onClick={clearSelection}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Tissue Filter */}
-              <div>
-                <label htmlFor="tissue" className="block text-sm font-medium text-gray-700 mb-2">
-                  Filter by Tissue
-                </label>
-                <select
-                  id="tissue"
-                  value={selectedTissue}
-                  onChange={(e) => setSelectedTissue(e.target.value)}
-                  className="block w-full px-3 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                >
-                  {tissues.map((tissue) => (
-                    <option key={tissue.value} value={tissue.value}>
-                      {tissue.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Search Stats */}
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <div className="flex flex-wrap items-center justify-between text-sm text-gray-600">
-                <div className="flex items-center space-x-4">
-                  <span className="flex items-center">
-                    <svg className="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {filteredGenes.length} genes found
-                  </span>
-                  <span className="flex items-center">
-                    <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7c0-2.21-3.582-4-8-4s-8 1.79-8 4z" />
-                    </svg>
-                    {tissues.length - 1} tissue types
-                  </span>
-                </div>
-                {isLoading && (
-                  <div className="flex items-center text-blue-600">
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Loading...
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Gene Browser Not Available Message */}
-        {!isLoading && geneSymbols.length === 0 && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8">
-            <div className="flex items-center">
-              <svg className="w-6 h-6 text-blue-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <h3 className="text-sm font-medium text-blue-800">Gene Browser Temporarily Unavailable</h3>
-                                 <p className="text-sm text-blue-700 mt-1">
-                   {apiStatus === 'disconnected' 
-                     ? 'Unable to connect to the server. Please ensure the backend is running and accessible.'
-                     : ''
-                   }
-                 </p>
-                {apiStatus === 'disconnected' && (
-                  <div className="mt-2 text-xs text-blue-600">
-                    <p>• Check if the backend server is running</p>
-                    <p>• Verify the API URL: {API_BASE_URL}</p>
-                    <p>• Ensure no firewall is blocking the connection</p>
-                    <button
-                      onClick={() => {
-                        setApiStatus('checking');
-                        checkApiStatus();
-                        loadGeneSymbols();
-                      }}
-                      className="mt-2 px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-                    >
-                      Retry Connection
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Error Display */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
@@ -997,97 +580,6 @@ export default function GeneSearch() {
                 className="max-w-full h-auto rounded-lg shadow-sm"
               />
             </div>
-          </div>
-        )}
-
-        {/* Gene Browser Results */}
-        {geneSymbols.length > 0 && (searchTerm.trim() || selectedTissue !== 'all' || selectedGene) && (
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Gene Browser Results</h3>
-            </div>
-            
-            {filteredGenes.length === 0 && !isLoading ? (
-              <div className="p-12 text-center">
-                <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No genes found</h3>
-                <p className="text-gray-500">
-                  {searchTerm || selectedTissue !== 'all' 
-                    ? 'Try adjusting your search terms or tissue filter'
-                    : 'Start typing to search for genes or select from popular options'
-                  }
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Gene Symbol
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-800 uppercase tracking-wider">
-                        Gene Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tissue
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Expression Level
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredGenes.map((gene, index) => (
-                      <tr key={`${gene.symbol}-${gene.tissue}-${index}`} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{gene.symbol}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-600 max-w-xs truncate" title={gene.name}>
-                            {gene.name}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getTissueColor(gene.tissue)}`}>
-                            {getTissueLabel(gene.tissue)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="w-16 bg-gray-200 rounded-full h-2 mr-3">
-                              <div 
-                                className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all duration-300"
-                                style={{ width: `${safePercentage(gene.expression, 10)}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm text-gray-600">{safeNumberFormat(gene.expression, 2)}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Prompt to search when no search term and no results */}
-        {geneSymbols.length > 0 && !searchTerm.trim() && selectedTissue === 'all' && !selectedGene && (
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-12 mb-8 text-center">
-            <svg className="w-16 h-16 text-blue-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <h3 className="text-lg font-medium text-blue-900 mb-2">Start Searching for Genes</h3>
-            <p className="text-blue-700 mb-4">
-              Enter a gene symbol or name in the search box above, or select from popular genes to start searching
-            </p>
-            <p className="text-sm text-blue-600">
-              System has loaded {geneSymbols.length} genes, waiting for your search query
-            </p>
           </div>
         )}
 

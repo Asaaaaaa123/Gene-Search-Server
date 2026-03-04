@@ -24,10 +24,17 @@ python server.py
 
 ### 2. 启动前端
 
+**安装依赖（首次或拉取后需要）：**
 ```bash
 cd genegen
+npm install
+```
+
+**启动开发服务器并打开页面：**
+```bash
 npm run dev
 ```
+然后在浏览器中打开 **http://localhost:3000**。终端显示 `Ready` 或 `Local: http://localhost:3000` 即表示前端已启动；仅运行 `npm install` 不会启动服务器，必须再运行 `npm run dev`。
 
 ## 故障排除
 

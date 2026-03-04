@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev -p 3000",
+    "dev:3002": "next dev -p 3002",
+    "dev:turbopack": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -11,7 +13,8 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "next": "15.3.8",
+    "cytoscape": "^3.28.1",
+    "next": "^15.3.8",
     "plotly.js": "^2.35.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -778,6 +778,85 @@ class GeneOntologyAPI:
             plt.close('all')
             raise e
 
+    def enrich_with_genes(self, genes: List[str], p_thresh: float = 1e-2) -> pd.DataFrame:
+        """Enrichment analysis returning gene lists per term (for theme-theme overlap)."""
+        if not genes:
+            return pd.DataFrame()
+        try:
+            print(f"Starting enrichment with gene lists for {len(genes)} genes")
+            df = self.gp.profile(organism="mmusculus", query=genes, no_evidences=False)
+            print(f"GProfiler returned {len(df)} results")
+            df = df[df["p_value"] < p_thresh].sort_values("p_value").copy()
+            df["Score"] = -np.log10(df["p_value"])
+            if "intersections" not in df.columns:
+                df["intersections"] = [[]] * len(df)
+            else:
+                def to_genes(x):
+                    if not isinstance(x, list):
+                        return []
+                    out = []
+                    for g in x:
+                        if isinstance(g, str):
+                            out.append(g)
+                        elif isinstance(g, list):
+                            out.extend(gg for gg in g if isinstance(gg, str))
+                    return out
+                df["intersections"] = df["intersections"].apply(to_genes)
+            return df
+        except Exception as e:
+            print(f"Error in enrich_with_genes: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
+
+    def get_theme_gene_sets(self, enr_df: pd.DataFrame) -> dict:
+        """For each theme, return the set of genes from all GO terms assigned to that theme."""
+        if enr_df.empty or "Theme" not in enr_df.columns:
+            return {}
+        theme_genes = {}
+        for _, row in enr_df.iterrows():
+            theme = row.get("Theme")
+            if pd.isna(theme) or not theme:
+                continue
+            genes = row.get("intersections", [])
+            if not isinstance(genes, list):
+                genes = []
+            theme_genes.setdefault(theme, set()).update(g for g in genes if isinstance(g, str))
+        return theme_genes
+
+    def compute_theme_overlap_network(
+        self, theme_genes: dict, theme_list: Optional[List[str]] = None
+    ) -> dict:
+        """Compute nodes and edges for theme-theme gene overlap network.
+        theme_list: if provided, only include these themes (and only edges between them).
+        Returns: { nodes: [{id, label}], edges: [{source, target, weight}], min_shared, max_shared }
+        """
+        themes = theme_list if theme_list is not None else list(theme_genes.keys())
+        themes = [t for t in themes if t in theme_genes and theme_genes[t]]
+        nodes = [{"id": t, "label": t} for t in themes]
+        edges = []
+        min_shared = None
+        max_shared = None
+        for i, a in enumerate(themes):
+            for b in themes[i + 1 :]:
+                shared = len(theme_genes[a] & theme_genes[b])
+                if shared > 0:
+                    edges.append({"source": a, "target": b, "weight": shared})
+                    if min_shared is None or shared < min_shared:
+                        min_shared = shared
+                    if max_shared is None or shared > max_shared:
+                        max_shared = shared
+        if min_shared is None:
+            min_shared = 0
+        if max_shared is None:
+            max_shared = 0
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "min_shared": min_shared,
+            "max_shared": max_shared,
+        }
+
 # Initialize ontology API
 ontology_api = GeneOntologyAPI()
 
@@ -1266,6 +1345,98 @@ async def generate_custom_summary_chart(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@app.post("/api/ontology/theme-overlap-network")
+async def get_theme_overlap_network(
+    file: UploadFile = File(...),
+    themes: str = Form(None),
+    custom_themes: str = Form(None)
+):
+    """Return theme-theme gene overlap network (nodes, edges with shared gene count) for default or custom themes."""
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    try:
+        import json
+        content = await file.read()
+        file_content = content.decode('utf-8')
+        genes = ontology_api.load_genes_from_file(file_content)
+        if not genes:
+            raise HTTPException(status_code=400, detail="No valid genes found in file")
+
+        selected_themes = None
+        custom_theme_data = []
+        theme_mapping = {}
+        original_themes = ontology_api.themes.copy()
+
+        if themes:
+            try:
+                selected_themes = json.loads(themes)
+            except json.JSONDecodeError:
+                pass
+        if custom_themes:
+            try:
+                custom_theme_data = json.loads(custom_themes)
+            except json.JSONDecodeError:
+                pass
+
+        if custom_theme_data:
+            for ct in custom_theme_data:
+                name = ct.get('name')
+                kw = ct.get('keywords', [])
+                if name and kw:
+                    ontology_api.themes[name] = kw
+            for ct in custom_theme_data:
+                tid, tname = ct.get('id'), ct.get('name')
+                if tid and tname:
+                    theme_mapping[tid] = tname
+
+        if not theme_mapping and selected_themes:
+            theme_mapping = {
+                'metabolism': 'Metabolic re-wiring', 'cell_cycle': 'Cell-cycle & Apoptosis',
+                'apoptosis': 'Cell-cycle & Apoptosis', 'immune_response': 'Inflammation & immune signaling',
+                'development': 'Neurotrophic Signaling & Growth Factors', 'signaling': 'Neurotrophic Signaling & Growth Factors',
+                'transport': 'Extracellular matrix & adhesion', 'transcription': 'Metabolic re-wiring',
+                'translation': 'Metabolic re-wiring', 'stress_response': 'Stress & cytokine response',
+                'enzyme_activity': 'Metabolic re-wiring', 'binding': 'Metabolic re-wiring',
+                'receptor_activity': 'Neurotrophic Signaling & Growth Factors', 'transporter_activity': 'Extracellular matrix & adhesion',
+                'structural_molecule': 'Extracellular matrix & adhesion', 'membrane': 'Membrane & Cell Surface',
+                'nucleus': 'Nucleus & Nuclear Processes', 'cytoplasm': 'Cytoplasm & Cytoskeleton',
+                'mitochondria': 'Mitochondria & Energy', 'endoplasmic_reticulum': 'Endoplasmic Reticulum & Golgi',
+                'golgi': 'Endoplasmic Reticulum & Golgi', 'cytoskeleton': 'Cytoplasm & Cytoskeleton'
+            }
+
+        enr_df = ontology_api.enrich_with_genes(genes)
+        if enr_df.empty:
+            ontology_api.themes = original_themes
+            raise HTTPException(status_code=400, detail="No significant enrichment results found")
+
+        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        enr_df = enr_df.dropna(subset=["Theme"])
+
+        if selected_themes:
+            selected_names = [theme_mapping.get(t, t) for t in selected_themes]
+            enr_df = enr_df[enr_df["Theme"].isin(selected_names)]
+        if enr_df.empty:
+            ontology_api.themes = original_themes
+            raise HTTPException(status_code=400, detail="No themes with enrichment data for overlap network")
+
+        theme_genes = ontology_api.get_theme_gene_sets(enr_df)
+        theme_list = list(theme_genes.keys()) if not selected_themes else [theme_mapping.get(t, t) for t in selected_themes if theme_mapping.get(t, t) in theme_genes]
+        if not theme_list:
+            theme_list = list(theme_genes.keys())
+        network = ontology_api.compute_theme_overlap_network(theme_genes, theme_list=theme_list)
+        ontology_api.themes = original_themes
+        return network
+    except HTTPException:
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
+        raise
+    except Exception as e:
+        if 'original_themes' in locals():
+            ontology_api.themes = original_themes
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/debug/themes")
 async def debug_themes():
     """Debug endpoint to show available themes"""
@@ -1343,6 +1514,10 @@ async def root():
             "POST /api/gene/add": "Add a new gene to the database",
             "POST /api/ontology/analyze": "Analyze gene ontology from uploaded file",
             "POST /api/ontology/theme-chart": "Generate theme-specific chart",
+            "POST /api/ontology/summary-chart": "Generate ontology summary chart",
+            "POST /api/ontology/custom-analyze": "Custom theme analysis",
+            "POST /api/ontology/custom-summary-chart": "Custom theme summary chart",
+            "POST /api/ontology/theme-overlap-network": "Theme-theme gene overlap network (nodes, edges)",
             "GET /api/debug/themes": "Debug: Show available themes",
             "POST /api/debug/test-enrichment": "Debug: Test enrichment analysis"
         }

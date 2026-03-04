@@ -138,6 +138,9 @@ export default function Home() {
                 href="/ivcca"
                 className="inline-flex items-center px-8 py-4 bg-indigo-50 text-indigo-700 text-lg font-semibold rounded-xl border-2 border-indigo-200 hover:border-indigo-300 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
               >
+                <svg className="mr-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c1.657 0 3-1.343 3-3S13.657 2 12 2 9 3.343 9 5s1.343 3 3 3zm0 14c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm9-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm-18 0c1.657 0 3-1.343 3-3S4.657 9 3 9 0 10.343 0 12s1.343 3 3 3z" />
+                </svg>
                 Launch IVCCA Suite
                 <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />

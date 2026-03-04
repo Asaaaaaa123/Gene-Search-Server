@@ -1,9 +1,26 @@
 import type { NextConfig } from "next";
 
+const BACKEND_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 const nextConfig: NextConfig = {
   // Only use standalone in production
   ...(process.env.NODE_ENV === 'production' ? { output: 'standalone' } : {}),
-  
+
+  // In dev: proxy API routes to backends so same-origin requests work (avoids 404 when backend has new routes)
+  ...(process.env.NODE_ENV === 'development'
+    ? {
+        async rewrites() {
+          return [
+            { source: '/api/ontology/:path*', destination: `${BACKEND_API}/api/ontology/:path*` },
+            { source: '/api/ivcca/:path*', destination: `${BACKEND_API}/api/ivcca/:path*` },
+            { source: '/api/gene/:path*', destination: `${BACKEND_API}/api/gene/:path*` },
+            { source: '/api/health', destination: `${BACKEND_API}/api/health` },
+            { source: '/api/debug/:path*', destination: `${BACKEND_API}/api/debug/:path*` },
+          ];
+        },
+      }
+    : {}),
+
   webpack: (config, { isServer }) => {
     // Fix for plotly.js in Next.js
     if (!isServer) {

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
+import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetwork';
 
 interface OntologyResult {
   theme: string;
@@ -19,7 +20,8 @@ interface ThemeOption {
   name: string;
   description: string;
   category: string;
-  keywords?: string[]; // For custom themes
+  keywords?: string[];
+  backendThemeName?: string; // Backend display name for predefined themes
 }
 
 export default function CustomizeTheme() {
@@ -42,6 +44,12 @@ export default function CustomizeTheme() {
   const [newThemeName, setNewThemeName] = useState('');
   const [newThemeDescription, setNewThemeDescription] = useState('');
   const [newThemeKeywords, setNewThemeKeywords] = useState('');
+  // View/Edit keywords for any theme (predefined or custom)
+  const [themeKeywordOverrides, setThemeKeywordOverrides] = useState<Record<string, string[]>>({});
+  const [editKeywordsTheme, setEditKeywordsTheme] = useState<ThemeOption | null>(null);
+  const [editKeywordsDraft, setEditKeywordsDraft] = useState('');
+  const [overlapNetworkData, setOverlapNetworkData] = useState<ThemeOverlapData | null>(null);
+  const [overlapNetworkLoading, setOverlapNetworkLoading] = useState(false);
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -53,35 +61,33 @@ export default function CustomizeTheme() {
     return num.toFixed(decimals);
   };
 
-  // Predefined theme options
+  // Predefined theme options with default keywords (must match backend server.py theme definitions)
   const themeOptions: ThemeOption[] = [
     // Biological Processes
-    { id: 'metabolism', name: 'Metabolism', description: 'Metabolic processes and pathways', category: 'Biological Process' },
-    { id: 'cell_cycle', name: 'Cell Cycle', description: 'Cell division and cycle regulation', category: 'Biological Process' },
-    { id: 'apoptosis', name: 'Apoptosis', description: 'Programmed cell death', category: 'Biological Process' },
-    { id: 'immune_response', name: 'Immune Response', description: 'Immune system and defense', category: 'Biological Process' },
-    { id: 'development', name: 'Development', description: 'Organism development and differentiation', category: 'Biological Process' },
-    { id: 'signaling', name: 'Signaling', description: 'Cell signaling and communication', category: 'Biological Process' },
-    { id: 'transport', name: 'Transport', description: 'Molecular transport and trafficking', category: 'Biological Process' },
-    { id: 'transcription', name: 'Transcription', description: 'Gene transcription and regulation', category: 'Biological Process' },
-    { id: 'translation', name: 'Translation', description: 'Protein translation and synthesis', category: 'Biological Process' },
-    { id: 'stress_response', name: 'Stress Response', description: 'Cellular stress and adaptation', category: 'Biological Process' },
-    
+    { id: 'metabolism', name: 'Metabolism', description: 'Metabolic processes and pathways', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+    { id: 'cell_cycle', name: 'Cell Cycle', description: 'Cell division and cycle regulation', category: 'Biological Process', backendThemeName: 'Cell-cycle & Apoptosis', keywords: ['cell cycle', 'mitotic', 'chromosome', 'checkpoint', 'dna replication', 'nuclear division', 'apoptosis', 'programmed cell death', 'caspase'] },
+    { id: 'apoptosis', name: 'Apoptosis', description: 'Programmed cell death', category: 'Biological Process', backendThemeName: 'Cell-cycle & Apoptosis', keywords: ['cell cycle', 'mitotic', 'chromosome', 'checkpoint', 'dna replication', 'nuclear division', 'apoptosis', 'programmed cell death', 'caspase'] },
+    { id: 'immune_response', name: 'Immune Response', description: 'Immune system and defense', category: 'Biological Process', backendThemeName: 'Inflammation & immune signaling', keywords: ['inflammation', 'inflammatory', 'tnf', 'il-1', 'il-6', 'nf-kb', 'toll-like', 'interleukin', 'chemokine', 'ccl', 'cxcl', 'immune response', 'inflammasome', 'pattern recognition', 'pathogen response', 'immune system', 'inflammatory response', 'immune signaling', 'toll-like receptor'] },
+    { id: 'development', name: 'Development', description: 'Organism development and differentiation', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
+    { id: 'signaling', name: 'Signaling', description: 'Cell signaling and communication', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
+    { id: 'transport', name: 'Transport', description: 'Molecular transport and trafficking', category: 'Biological Process', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
+    { id: 'transcription', name: 'Transcription', description: 'Gene transcription and regulation', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+    { id: 'translation', name: 'Translation', description: 'Protein translation and synthesis', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+    { id: 'stress_response', name: 'Stress Response', description: 'Cellular stress and adaptation', category: 'Biological Process', backendThemeName: 'Stress & cytokine response', keywords: ['stress', 'interferon', 'cytokine', 'inflammatory', 'defense', 'response to stress', 'cellular response to stress', 'response to cytokine', 'cytokine production'] },
     // Molecular Functions
-    { id: 'enzyme_activity', name: 'Enzyme Activity', description: 'Catalytic and enzymatic functions', category: 'Molecular Function' },
-    { id: 'binding', name: 'Binding', description: 'Molecular binding and interactions', category: 'Molecular Function' },
-    { id: 'receptor_activity', name: 'Receptor Activity', description: 'Receptor and signal transduction', category: 'Molecular Function' },
-    { id: 'transporter_activity', name: 'Transporter Activity', description: 'Membrane transport functions', category: 'Molecular Function' },
-    { id: 'structural_molecule', name: 'Structural Molecule', description: 'Structural and architectural functions', category: 'Molecular Function' },
-    
+    { id: 'enzyme_activity', name: 'Enzyme Activity', description: 'Catalytic and enzymatic functions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+    { id: 'binding', name: 'Binding', description: 'Molecular binding and interactions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+    { id: 'receptor_activity', name: 'Receptor Activity', description: 'Receptor and signal transduction', category: 'Molecular Function', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
+    { id: 'transporter_activity', name: 'Transporter Activity', description: 'Membrane transport functions', category: 'Molecular Function', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
+    { id: 'structural_molecule', name: 'Structural Molecule', description: 'Structural and architectural functions', category: 'Molecular Function', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
     // Cellular Components
-    { id: 'membrane', name: 'Membrane', description: 'Membrane and membrane-bound organelles', category: 'Cellular Component' },
-    { id: 'nucleus', name: 'Nucleus', description: 'Nuclear components and processes', category: 'Cellular Component' },
-    { id: 'cytoplasm', name: 'Cytoplasm', description: 'Cytoplasmic components and processes', category: 'Cellular Component' },
-    { id: 'mitochondria', name: 'Mitochondria', description: 'Mitochondrial functions and processes', category: 'Cellular Component' },
-    { id: 'endoplasmic_reticulum', name: 'Endoplasmic Reticulum', description: 'ER and secretory pathway', category: 'Cellular Component' },
-    { id: 'golgi', name: 'Golgi Apparatus', description: 'Golgi complex and vesicle trafficking', category: 'Cellular Component' },
-    { id: 'cytoskeleton', name: 'Cytoskeleton', description: 'Cytoskeletal components and organization', category: 'Cellular Component' },
+    { id: 'membrane', name: 'Membrane', description: 'Membrane and membrane-bound organelles', category: 'Cellular Component', backendThemeName: 'Membrane & Cell Surface', keywords: ['membrane', 'plasma membrane', 'cell surface', 'membrane protein', 'transmembrane', 'integral membrane', 'membrane transport', 'ion channel'] },
+    { id: 'nucleus', name: 'Nucleus', description: 'Nuclear components and processes', category: 'Cellular Component', backendThemeName: 'Nucleus & Nuclear Processes', keywords: ['nucleus', 'nuclear', 'chromatin', 'dna', 'rna', 'transcription', 'nucleolus', 'nuclear envelope', 'nuclear pore', 'chromosome'] },
+    { id: 'cytoplasm', name: 'Cytoplasm', description: 'Cytoplasmic components and processes', category: 'Cellular Component', backendThemeName: 'Cytoplasm & Cytoskeleton', keywords: ['cytoplasm', 'cytoskeleton', 'microtubule', 'actin', 'intermediate filament', 'microfilament', 'centrosome', 'centriole', 'cilium', 'flagellum'] },
+    { id: 'mitochondria', name: 'Mitochondria', description: 'Mitochondrial functions and processes', category: 'Cellular Component', backendThemeName: 'Mitochondria & Energy', keywords: ['mitochondria', 'mitochondrial', 'atp', 'energy', 'respiration', 'electron transport', 'oxidative phosphorylation', 'krebs cycle'] },
+    { id: 'endoplasmic_reticulum', name: 'Endoplasmic Reticulum', description: 'ER and secretory pathway', category: 'Cellular Component', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['endoplasmic reticulum', 'er', 'golgi', 'golgi apparatus', 'vesicle', 'secretory', 'protein folding', 'glycosylation', 'trafficking'] },
+    { id: 'golgi', name: 'Golgi Apparatus', description: 'Golgi complex and vesicle trafficking', category: 'Cellular Component', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['endoplasmic reticulum', 'er', 'golgi', 'golgi apparatus', 'vesicle', 'secretory', 'protein folding', 'glycosylation', 'trafficking'] },
+    { id: 'cytoskeleton', name: 'Cytoskeleton', description: 'Cytoskeletal components and organization', category: 'Cellular Component', backendThemeName: 'Cytoplasm & Cytoskeleton', keywords: ['cytoplasm', 'cytoskeleton', 'microtubule', 'actin', 'intermediate filament', 'microfilament', 'centrosome', 'centriole', 'cilium', 'flagellum'] },
   ];
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,6 +163,123 @@ export default function CustomizeTheme() {
     setSelectedThemes(prev => prev.filter(id => id !== themeId));
   };
 
+  // Get effective keywords for a theme (override or default)
+  const getKeywordsForTheme = (theme: ThemeOption): string[] => {
+    if (themeKeywordOverrides[theme.id] !== undefined) return themeKeywordOverrides[theme.id];
+    return theme.keywords ?? [];
+  };
+
+  const openEditKeywords = (theme: ThemeOption) => {
+    setEditKeywordsTheme(theme);
+    setEditKeywordsDraft(getKeywordsForTheme(theme).join(', '));
+  };
+
+  const closeEditKeywords = () => {
+    setEditKeywordsTheme(null);
+    setEditKeywordsDraft('');
+  };
+
+  const saveEditKeywords = () => {
+    if (!editKeywordsTheme) return;
+    const keywords = editKeywordsDraft.split(',').map(k => k.trim()).filter(k => k);
+    if (keywords.length === 0) {
+      setError('Please enter at least one keyword');
+      return;
+    }
+    setThemeKeywordOverrides(prev => ({ ...prev, [editKeywordsTheme.id]: keywords }));
+    setSuccess(`Keywords updated for "${editKeywordsTheme.name}"`);
+    setTimeout(() => setSuccess(''), 3000);
+    closeEditKeywords();
+  };
+
+  const resetThemeKeywords = (theme: ThemeOption) => {
+    setThemeKeywordOverrides(prev => {
+      const next = { ...prev };
+      delete next[theme.id];
+      return next;
+    });
+    if (editKeywordsTheme?.id === theme.id) setEditKeywordsDraft((theme.keywords ?? []).join(', '));
+  };
+
+  // Merge predefined and custom themes (used by buildCustomThemePayload)
+  const allThemes = [...themeOptions, ...customThemes];
+
+  // Build custom theme payload for API: custom themes + predefined (grouped by backend name, merged keywords)
+  const buildCustomThemePayload = (): { id: string; name: string; keywords: string[] }[] => {
+    const payload: { id: string; name: string; keywords: string[] }[] = [];
+    for (const theme of customThemes.filter(t => selectedThemes.includes(t.id))) {
+      payload.push({ id: theme.id, name: theme.name, keywords: getKeywordsForTheme(theme) });
+    }
+    const byBackend: Record<string, string[]> = {};
+    for (const themeId of selectedThemes) {
+      const theme = allThemes.find(t => t.id === themeId);
+      if (!theme || theme.id.startsWith('custom_')) continue;
+      const backendName = theme.backendThemeName ?? theme.name;
+      const keywords = getKeywordsForTheme(theme);
+      if (!byBackend[backendName]) byBackend[backendName] = [];
+      byBackend[backendName] = [...new Set([...byBackend[backendName], ...keywords])];
+    }
+    for (const [name, keywords] of Object.entries(byBackend)) {
+      payload.push({ id: name, name, keywords });
+    }
+    return payload;
+  };
+
+  // Single-theme payload for theme chart (so backend uses our keywords for that theme)
+  const buildSingleThemePayload = (themeName: string): { id: string; name: string; keywords: string[] }[] => {
+    const custom = customThemes.find(t => t.name === themeName);
+    if (custom) return [{ id: custom.id, name: custom.name, keywords: getKeywordsForTheme(custom) }];
+    const predefined = allThemes.filter(t => !t.id.startsWith('custom_') && selectedThemes.includes(t.id) && (t.backendThemeName ?? t.name) === themeName);
+    if (predefined.length === 0) return [];
+    const keywords = [...new Set(predefined.flatMap(t => getKeywordsForTheme(t)))];
+    return [{ id: themeName, name: themeName, keywords }];
+  };
+
+  const generateOverlapNetwork = async () => {
+    if (!selectedFile) return;
+    if (selectedThemes.length === 0) {
+      setError('Select at least one theme before generating the overlap network.');
+      return;
+    }
+    setOverlapNetworkLoading(true);
+    setOverlapNetworkData(null);
+    setError('');
+    // Use relative path in browser when API URL unset so Next.js dev rewrite proxies to backend
+    const apiBase = typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL ? '' : API_BASE_URL;
+    const url = `${apiBase}/api/ontology/theme-overlap-network`.replace(/\/\/api/, '/api');
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('themes', JSON.stringify(selectedThemes));
+      const customPayload = buildCustomThemePayload();
+      if (customPayload.length > 0) formData.append('custom_themes', JSON.stringify(customPayload));
+      const response = await fetch(url, { method: 'POST', body: formData });
+      if (!response.ok) {
+        const text = await response.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text);
+          if (j.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+        } catch {
+          /* use text as-is */
+        }
+        if (response.status === 404) {
+          setError(`Overlap network API not found (404). Ensure the backend is running and restarted so it has the theme-overlap-network endpoint. URL: ${url}`);
+        } else {
+          setError(`Failed to generate overlap network: ${msg}`);
+        }
+        return;
+      }
+      const data: ThemeOverlapData = await response.json();
+      setOverlapNetworkData(data);
+    } catch (e) {
+      console.error('Overlap network error:', e);
+      setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check that the backend at ${API_BASE_URL} is running and has been restarted.`);
+    } finally {
+      setOverlapNetworkLoading(false);
+    }
+  };
+
   const analyzeGenes = async () => {
     if (!selectedFile) {
       setError('Please select a gene file first');
@@ -181,15 +304,7 @@ export default function CustomizeTheme() {
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
       
-      // Add custom themes with their keywords
-      const customThemeData = customThemes
-        .filter(theme => selectedThemes.includes(theme.id))
-        .map(theme => ({
-          id: theme.id,
-          name: theme.name,
-          keywords: theme.keywords || []
-        }));
-      
+      const customThemeData = buildCustomThemePayload();
       if (customThemeData.length > 0) {
         formData.append('custom_themes', JSON.stringify(customThemeData));
       }
@@ -243,16 +358,9 @@ export default function CustomizeTheme() {
       formData.append('file', selectedFile);
       formData.append('theme', themeName);
 
-      // Check if this is a custom theme and include custom_themes if needed
-      const customTheme = customThemes.find(theme => theme.name === themeName);
-      if (customTheme) {
-        const customThemeData = [{
-          id: customTheme.id,
-          name: customTheme.name,
-          keywords: customTheme.keywords || []
-        }];
-        formData.append('custom_themes', JSON.stringify(customThemeData));
-        console.log(`Including custom theme data for: ${themeName}`);
+      const singleThemeData = buildSingleThemePayload(themeName);
+      if (singleThemeData.length > 0) {
+        formData.append('custom_themes', JSON.stringify(singleThemeData));
       }
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/theme-chart`, {
@@ -295,15 +403,7 @@ export default function CustomizeTheme() {
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
       
-      // Add custom themes with their keywords
-      const customThemeData = customThemes
-        .filter(theme => selectedThemes.includes(theme.id))
-        .map(theme => ({
-          id: theme.id,
-          name: theme.name,
-          keywords: theme.keywords || []
-        }));
-      
+      const customThemeData = buildCustomThemePayload();
       if (customThemeData.length > 0) {
         formData.append('custom_themes', JSON.stringify(customThemeData));
       }
@@ -362,9 +462,6 @@ export default function CustomizeTheme() {
     window.URL.revokeObjectURL(url);
   };
 
-  // Merge predefined and custom themes
-  const allThemes = [...themeOptions, ...customThemes];
-  
   const groupedThemes = allThemes.reduce((acc, theme) => {
     if (!acc[theme.category]) {
       acc[theme.category] = [];
@@ -457,16 +554,34 @@ export default function CustomizeTheme() {
                       }`}
                       onClick={() => handleThemeToggle(theme.id)}
                     >
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-start space-x-2">
                         <input
                           type="checkbox"
                           checked={selectedThemes.includes(theme.id)}
                           onChange={() => handleThemeToggle(theme.id)}
-                          className="rounded"
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded mt-0.5"
                         />
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <div className="font-medium text-gray-900">{theme.name}</div>
                           <div className="text-sm text-gray-600">{theme.description}</div>
+                          <div className="mt-2 flex flex-wrap items-center gap-1">
+                            {(getKeywordsForTheme(theme).slice(0, 4)).map((kw, i) => (
+                              <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-200 text-gray-700">
+                                {kw}
+                              </span>
+                            ))}
+                            {getKeywordsForTheme(theme).length > 4 && (
+                              <span className="text-xs text-gray-500">+{getKeywordsForTheme(theme).length - 4} more</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); openEditKeywords(theme); }}
+                              className="text-xs text-blue-600 hover:text-blue-800 font-medium ml-0.5"
+                            >
+                              Edit keywords
+                            </button>
+                          </div>
                         </div>
                         {theme.id.startsWith('custom_') && (
                           <button
@@ -474,7 +589,7 @@ export default function CustomizeTheme() {
                               e.stopPropagation();
                               handleDeleteCustomTheme(theme.id);
                             }}
-                            className="text-red-500 hover:text-red-700 transition-colors"
+                            className="text-red-500 hover:text-red-700 transition-colors flex-shrink-0"
                             title="Delete custom theme"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -541,6 +656,20 @@ export default function CustomizeTheme() {
         {/* Results and Interactive Section */}
         {results.length > 0 && (
           <>
+            {/* Theme-Theme Gene Overlap Network */}
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Theme-Theme Gene Overlap Network</h3>
+              <p className="text-gray-600 mb-4 text-sm">Nodes are themes; edges show how many genes are shared between themes. Edge color and thickness indicate the number of shared genes.</p>
+              <button
+                onClick={generateOverlapNetwork}
+                disabled={overlapNetworkLoading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {overlapNetworkLoading ? 'Generating...' : 'Generate Network'}
+              </button>
+              <ThemeOverlapNetwork data={overlapNetworkData} loading={overlapNetworkLoading} className="mt-4" />
+            </div>
+
             {/* Summary Chart Section */}
             {summaryChart && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -704,10 +833,14 @@ export default function CustomizeTheme() {
               <li>Select specific themes of interest</li>
               <li>Targeted analysis for your research focus</li>
               <li>Interactive theme selection with descriptions</li>
+              <li>View and edit keywords per theme (defaults from backend, editable here)</li>
               <li>Dynamic chart generation for each selected theme</li>
               <li>Detailed subterm analysis with scores</li>
               <li>Export results to CSV format</li>
             </ul>
+            <p className="mt-2 text-sm">
+              <strong>Keywords:</strong> Each theme has a list of keywords used to match Gene Ontology (GO) terms. The default keywords come from the backend analysis engine (server). You can view and modify them via &quot;Edit keywords&quot; on each theme; your changes apply for the current analysis.
+            </p>
           </div>
         </div>
 
@@ -819,6 +952,69 @@ export default function CustomizeTheme() {
                   >
                     Add Theme
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Keywords Modal */}
+        {editKeywordsTheme && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    Keywords for &quot;{editKeywordsTheme.name}&quot;
+                  </h3>
+                  <button
+                    onClick={closeEditKeywords}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-sm text-gray-600 mb-3">
+                  These keywords are used to match GO terms to this theme. You can add, remove, or change them (comma-separated).
+                </p>
+                <p className="text-xs text-gray-500 mb-2">
+                  Default keywords are defined in the backend (Gene Ontology analysis engine) and mirrored here. Your edits override them for this session.
+                </p>
+                <textarea
+                  value={editKeywordsDraft}
+                  onChange={(e) => setEditKeywordsDraft(e.target.value)}
+                  placeholder="e.g., metabolic, glycolysis, biosynthesis"
+                  rows={6}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900 placeholder:text-gray-400"
+                />
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <div>
+                    {!editKeywordsTheme.id.startsWith('custom_') && (themeKeywordOverrides[editKeywordsTheme.id] !== undefined) && (
+                      <button
+                        type="button"
+                        onClick={() => editKeywordsTheme && resetThemeKeywords(editKeywordsTheme)}
+                        className="text-sm text-gray-600 hover:text-gray-800"
+                      >
+                        Reset to default keywords
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={closeEditKeywords}
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveEditKeywords}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Save keywords
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

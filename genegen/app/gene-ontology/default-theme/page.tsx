@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import Link from 'next/link';
+import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetwork';
 
 interface OntologyResult {
   theme: string;
@@ -19,6 +20,8 @@ export default function DefaultTheme() {
   const [currentStep, setCurrentStep] = useState(1);
   const [showTutorial, setShowTutorial] = useState(true);
   const [selectedTheme, setSelectedTheme] = useState<string>('');
+  const [overlapNetworkData, setOverlapNetworkData] = useState<ThemeOverlapData | null>(null);
+  const [overlapNetworkLoading, setOverlapNetworkLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -191,12 +194,51 @@ export default function DefaultTheme() {
     setThemeChart('');
   };
 
+  const generateOverlapNetwork = async () => {
+    if (!selectedFile) return;
+    setOverlapNetworkLoading(true);
+    setOverlapNetworkData(null);
+    setError('');
+    // Use relative path in browser when API URL unset so Next.js dev rewrite proxies to backend
+    const apiBase = typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL ? '' : API_BASE_URL;
+    const url = `${apiBase}/api/ontology/theme-overlap-network`.replace(/\/\/api/, '/api');
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const response = await fetch(url, { method: 'POST', body: formData });
+      if (!response.ok) {
+        const text = await response.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text);
+          if (j.detail) msg = j.detail;
+        } catch {
+          // use text as-is
+        }
+        if (response.status === 404) {
+          setError(`Overlap network API not found (404). Ensure the backend is running and restarted so it has the theme-overlap-network endpoint. URL: ${url}`);
+        } else {
+          setError(`Failed to generate overlap network: ${msg}`);
+        }
+        return;
+      }
+      const data: ThemeOverlapData = await response.json();
+      setOverlapNetworkData(data);
+    } catch (e) {
+      console.error('Overlap network error:', e);
+      setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check that the backend at ${API_BASE_URL} is running and has been restarted.`);
+    } finally {
+      setOverlapNetworkLoading(false);
+    }
+  };
+
   const resetAnalysis = () => {
     setSelectedFile(null);
     setResults([]);
     setSummaryChart('');
     setThemeChart('');
-    setSelectedTheme(''); // Clear selected theme
+    setSelectedTheme('');
+    setOverlapNetworkData(null);
     setError('');
     setCurrentStep(1);
     if (fileInputRef.current) {
@@ -484,6 +526,24 @@ export default function DefaultTheme() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* Theme-Theme Gene Overlap Network */}
+        {results.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8">
+            <div className="mb-4">
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Theme-Theme Gene Overlap Network</h3>
+              <p className="text-gray-600 mb-4">Nodes are themes; edges show how many genes are shared between themes. Edge color and thickness indicate the number of shared genes.</p>
+              <button
+                onClick={generateOverlapNetwork}
+                disabled={overlapNetworkLoading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {overlapNetworkLoading ? 'Generating...' : 'Generate Network'}
+              </button>
+            </div>
+            <ThemeOverlapNetwork data={overlapNetworkData} loading={overlapNetworkLoading} className="mt-4" />
           </div>
         )}
 
