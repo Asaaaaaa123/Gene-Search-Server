@@ -60,8 +60,8 @@ type TSNEInfo = {
   n_components: number;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use relative URL when unset so Next.js dev rewrites proxy to backend (avoids CORS and wrong port)
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 const CORRELATION_METHODS = ['pearson', 'spearman', 'kendall'] as const;
 
@@ -277,7 +277,12 @@ export default function IVCCAPage() {
 
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(text || `Load failed (${response.status})`);
+        let msg = text || `Load failed (${response.status})`;
+        try {
+          const j = JSON.parse(text);
+          if (j.detail) msg = Array.isArray(j.detail) ? j.detail.join(' ') : String(j.detail);
+        } catch (_) {}
+        throw new Error(msg);
       }
 
       const payload = await response.json();
@@ -293,9 +298,13 @@ export default function IVCCAPage() {
     } catch (err) {
       setAnalyzerId('');
       setStatus('');
-      setError(
-        err instanceof Error ? err.message : 'Failed to load IVCCA dataset',
-      );
+      const isNetwork =
+        err instanceof TypeError && (err.message === 'Failed to fetch' || (err as any).name === 'TypeError');
+      const message =
+        isNetwork
+          ? 'Cannot reach the backend. Start the Python API (e.g. cd backend && python -m uvicorn server:app --reload --port 8000) and ensure NEXT_PUBLIC_API_URL is set if you use a custom URL.'
+          : (err instanceof Error ? err.message : 'Failed to load IVCCA dataset');
+      setError(message);
       setPreview(null);
     } finally {
       setLoading(false);

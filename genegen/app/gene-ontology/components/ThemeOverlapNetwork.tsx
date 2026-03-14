@@ -58,16 +58,30 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
   const cyRef = useRef<{ destroy: () => void; png: (opts?: { scale?: number; full?: boolean }) => string } | null>(null);
   const [downloadReady, setDownloadReady] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [threshold, setThreshold] = useState(0);
+  const [selectedEdge, setSelectedEdge] = useState<{ sourceLabel: string; targetLabel: string; weight: number } | null>(null);
+
+  const filteredEdges = useMemo(() => {
+    if (!data || !data.edges.length) return [];
+    return data.edges.filter((e) => e.weight >= threshold);
+  }, [data, threshold]);
+
+  useEffect(() => {
+    setSelectedEdge(null);
+  }, [threshold]);
 
   const { minS, maxS } = useMemo(() => {
-    if (!data || data.edges.length === 0) return { minS: 0, maxS: 1 };
-    return { minS: data.min_shared, maxS: Math.max(data.max_shared, data.min_shared + 1) };
-  }, [data]);
+    if (!data || filteredEdges.length === 0) return { minS: 0, maxS: 1 };
+    const weights = filteredEdges.map((e) => e.weight);
+    const minW = Math.min(...weights);
+    const maxW = Math.max(...weights);
+    return { minS: minW, maxS: Math.max(maxW, minW + 1) };
+  }, [data, filteredEdges]);
 
   const initCy = useCallback(() => {
     if (!data || !containerRef.current || typeof window === 'undefined') return;
     const nodes = data.nodes;
-    const edges = data.edges;
+    const edges = filteredEdges;
     if (nodes.length === 0) return;
 
     import('cytoscape').then((cytoscapeLib) => {
@@ -139,6 +153,8 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
               'curve-style': 'bezier',
             },
           },
+          { selector: 'edge:selected', style: { width: 'data(lineWidth)', 'line-color': '#1e293b', 'overlay-opacity': 0.3 } },
+          { selector: 'edge.highlight', style: { width: 'data(lineWidth)', 'line-color': '#1e293b', 'overlay-opacity': 0.2 } },
           { selector: ':selected', style: { 'background-color': '#334155' } },
           { selector: ':hover', style: { 'background-color': '#475569' } },
         ],
@@ -149,10 +165,62 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
           padding: 60,
         },
       });
+
+      const idToLabel: Record<string, string> = {};
+      nodes.forEach((n) => { idToLabel[n.id] = n.label || n.id; });
+
+      instance.on('tap', 'edge', (evt) => {
+        const edge = evt.target;
+        const weight = edge.data('weight') as number;
+        const sourceId = edge.data('source') as string;
+        const targetId = edge.data('target') as string;
+        setSelectedEdge({
+          sourceLabel: idToLabel[sourceId] ?? sourceId,
+          targetLabel: idToLabel[targetId] ?? targetId,
+          weight,
+        });
+        instance.elements().removeClass('highlight');
+        instance.elements().unselect();
+        edge.select();
+      });
+
+      instance.on('mouseover', 'edge', (evt) => {
+        const edge = evt.target;
+        edge.addClass('highlight');
+        const weight = edge.data('weight') as number;
+        const sourceId = edge.data('source') as string;
+        const targetId = edge.data('target') as string;
+        setSelectedEdge({
+          sourceLabel: idToLabel[sourceId] ?? sourceId,
+          targetLabel: idToLabel[targetId] ?? targetId,
+          weight,
+        });
+      });
+
+      instance.on('mouseout', 'edge', (evt) => {
+        evt.target.removeClass('highlight');
+        setSelectedEdge((prev) => {
+          if (!prev) return null;
+          const edge = evt.target;
+          const sourceId = edge.data('source') as string;
+          const targetId = edge.data('target') as string;
+          const stillHover = prev.sourceLabel === (idToLabel[sourceId] ?? sourceId) && prev.targetLabel === (idToLabel[targetId] ?? targetId);
+          return stillHover ? null : prev;
+        });
+      });
+
+      instance.on('tap', (evt) => {
+        if (evt.target === instance) {
+          instance.elements().unselect();
+          instance.elements().removeClass('highlight');
+          setSelectedEdge(null);
+        }
+      });
+
       cyRef.current = instance;
       setDownloadReady(true);
     }).catch((e) => console.warn('Cytoscape init failed:', e));
-  }, [data, minS, maxS]);
+  }, [data, minS, maxS, filteredEdges]);
 
   useEffect(() => {
     if (!data || data.nodes.length === 0) {
@@ -167,7 +235,7 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
       }
       setDownloadReady(false);
     };
-  }, [initCy, data?.nodes?.length, data?.edges?.length]);
+  }, [initCy, data?.nodes?.length, data?.edges?.length, filteredEdges.length]);
 
   const legendTicks = useMemo(() => {
     const out: number[] = [];
@@ -255,8 +323,39 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
     );
   }
 
+  const dataMax = data ? Math.max(data.max_shared, data.min_shared + 1) : 100;
+
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
+      <div className="flex flex-wrap items-center gap-4 mb-2">
+        <label className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-700">Min overlap (threshold):</span>
+          <input
+            type="number"
+            min={0}
+            max={dataMax}
+            step={1}
+            value={threshold}
+            onChange={(e) => setThreshold(Math.max(0, Math.min(dataMax, Number(e.target.value) || 0)))}
+            className="w-20 px-2 py-1.5 rounded border border-gray-300 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </label>
+        <span className="text-sm text-gray-500">
+          Showing {filteredEdges.length} connection{filteredEdges.length !== 1 ? 's' : ''} (≥ {threshold})
+        </span>
+        {filteredEdges.length === 0 && data.edges.length > 0 && (
+          <span className="text-sm text-amber-600">No connections at this threshold. Lower it to see edges.</span>
+        )}
+        <span className="text-xs text-gray-400">Click or hover an edge to see shared genes</span>
+        {selectedEdge && (
+          <div className="ml-auto px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-gray-800">
+            <span className="font-medium">{selectedEdge.sourceLabel}</span>
+            <span className="mx-2 text-indigo-600">↔</span>
+            <span className="font-medium">{selectedEdge.targetLabel}</span>
+            <span className="text-indigo-600 font-semibold ml-2">{selectedEdge.weight} shared genes</span>
+          </div>
+        )}
+      </div>
       <div className="flex gap-4">
         <div className="flex-1 min-h-[400px] rounded-xl border border-gray-200 bg-white overflow-hidden" ref={containerRef} />
         <div className="flex flex-col items-center shrink-0">
