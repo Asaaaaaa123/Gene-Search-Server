@@ -262,7 +262,7 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
     const filename = `theme-overlap-network-${Date.now()}.png`;
 
     const tryBlob = () => {
-      const blobPromise = cy.png({ ...opts, output: 'blob-promise' });
+      const blobPromise = cy.png({ ...opts, output: 'blob-promise' } as { scale?: number; full?: boolean }) as unknown as Promise<Blob>;
       if (blobPromise && typeof blobPromise.then === 'function') {
         setDownloading(true);
         blobPromise
