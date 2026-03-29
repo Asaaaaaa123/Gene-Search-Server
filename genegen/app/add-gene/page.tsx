@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { UserButton, useAuth } from '@clerk/nextjs';
@@ -35,6 +35,11 @@ export default function AddGenePage() {
   const [success, setSuccess] = useState('');
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken } = useAuth();
+
+  useEffect(() => {
+    if (!isLoaded || isSignedIn) return;
+    router.replace('/sign-in');
+  }, [isLoaded, isSignedIn, router]);
 
   // 可用的器官选项
   const organOptions = [
@@ -117,6 +122,14 @@ export default function AddGenePage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-600">Loading…</p>
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-600">Redirecting to sign in…</p>
       </div>
     );
   }

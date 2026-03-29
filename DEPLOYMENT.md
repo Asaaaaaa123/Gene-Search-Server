@@ -20,7 +20,7 @@ VALID_TOKENS=your_token_here,another_token_here
 # 对于 Coolify 部署，使用 Coolify 提供的域名
 NEXT_PUBLIC_API_URL=https://your-backend-service.your-coolify-domain.com
 
-# Clerk（Next.js 前端 sign-in / middleware 必需；缺省会报 Missing publishableKey，容器健康检查失败）
+# Clerk（Next.js 前端 sign-in；middleware 仅在镜像构建时存在 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY 时启用 Clerk）
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxx   # 或 pk_test_xxx
 CLERK_SECRET_KEY=sk_live_xxx                      # 或 sk_test_xxx
 ```

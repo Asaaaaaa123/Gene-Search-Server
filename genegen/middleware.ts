@@ -1,47 +1,30 @@
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import type { NextFetchEvent, NextMiddleware, NextRequest } from "next/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
+
+const isProtectedRoute = createRouteMatcher([
+  "/upload-csv(.*)",
+  "/add-gene(.*)",
+]);
+
+const clerk = clerkMiddleware(async (auth, request) => {
+  if (isProtectedRoute(request)) {
+    await auth.protect();
+  }
+});
 
 /**
- * Edge middleware only sees NEXT_PUBLIC_* (inlined at build). Do not static-import
- * @clerk/nextjs here — the bundle still runs Clerk and throws Missing publishableKey on
- * every request when the key was empty at build time (e.g. Coolify runtime-only env).
+ * Edge only inlines NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY. Set it as a Docker **build arg**
+ * for production (Coolify). If it is missing at build, we skip Clerk here so health checks
+ * still pass; `/upload-csv` and `/add-gene` stay protected by client redirects + API auth.
  */
-function edgePublishableKeyPresent(): boolean {
+function clerkKeyPresentOnEdge(): boolean {
   const v = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   return typeof v === "string" && v.trim().length > 0;
 }
 
-let clerkMw: NextMiddleware | null = null;
-let clerkLoadFailed = false;
-
-async function getClerkMiddleware(): Promise<NextMiddleware | null> {
-  if (!edgePublishableKeyPresent()) return null;
-  if (clerkLoadFailed) return null;
-  if (clerkMw) return clerkMw;
-  try {
-    const { clerkMiddleware, createRouteMatcher } = await import("@clerk/nextjs/server");
-    const isProtectedRoute = createRouteMatcher([
-      "/upload-csv(.*)",
-      "/add-gene(.*)",
-    ]);
-    clerkMw = clerkMiddleware(async (auth, request) => {
-      if (isProtectedRoute(request)) {
-        await auth.protect();
-      }
-    });
-    return clerkMw;
-  } catch {
-    clerkLoadFailed = true;
-    return null;
-  }
-}
-
-export default async function middleware(request: NextRequest, event: NextFetchEvent) {
-  if (!edgePublishableKeyPresent()) {
-    return NextResponse.next();
-  }
-  const clerk = await getClerkMiddleware();
-  if (!clerk) {
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  if (!clerkKeyPresentOnEdge()) {
     return NextResponse.next();
   }
   return clerk(request, event);

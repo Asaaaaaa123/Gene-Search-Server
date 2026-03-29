@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
@@ -30,6 +30,11 @@ export default function UploadCSVPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
   const { isLoaded, isSignedIn, getToken } = useAuth();
+
+  useEffect(() => {
+    if (!isLoaded || isSignedIn) return;
+    router.replace("/sign-in");
+  }, [isLoaded, isSignedIn, router]);
 
   const isOthers = organPreset === OTHERS_VALUE;
 
@@ -99,6 +104,14 @@ export default function UploadCSVPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-600">Loading…</p>
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-600">Redirecting to sign in…</p>
       </div>
     );
   }

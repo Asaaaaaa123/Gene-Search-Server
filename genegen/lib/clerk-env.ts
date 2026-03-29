@@ -1,12 +1,8 @@
 /**
  * Clerk keys in Docker / Coolify:
- * - Edge middleware only sees NEXT_PUBLIC_* and it is inlined at **build** time.
  * - Node (layout, RSC) can read CLERK_PUBLISHABLE_KEY at **runtime** (same value as the public key).
+ * - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is optional; used when set at build for client bundles.
  */
-
-export function clerkPublishableKeyForEdge(): string {
-  return process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() ?? "";
-}
 
 export function clerkPublishableKeyForNode(): string {
   return (
