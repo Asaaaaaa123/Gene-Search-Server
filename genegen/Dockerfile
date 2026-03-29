@@ -16,6 +16,11 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Optional: docker-compose passes Coolify’s NEXT_PUBLIC_API_URL here (wins over coolify-deploy.env).
+ARG COOLIFY_NEXT_PUBLIC_API_URL=""
+# Bump when you need Coolify to rebuild (same commit “skip build” workaround).
+LABEL genegen.coolify.deploy="2026-03-29-v3"
+
 # All deploy config from repo file (when Coolify UI env vars are unavailable).
 RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env — copy coolify-deploy.env.example" >&2 && exit 1)
 RUN chmod +x docker-entrypoint.sh
@@ -28,6 +33,7 @@ RUN node scripts/validate-coolify-deploy.cjs
 RUN set -a \
   && . ./coolify-deploy.env \
   && set +a \
+  && if [ -n "$COOLIFY_NEXT_PUBLIC_API_URL" ]; then export NEXT_PUBLIC_API_URL="$COOLIFY_NEXT_PUBLIC_API_URL"; fi \
   && npm run build
 
 # Remove Edge middleware output so Coolify health checks never hit Clerk (fixes bad caches / old middleware.ts).
