@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appendix 1. System_Architecture_Complete - GenoCorr Platform System Architecture</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 2.5cm 2cm;
+            }
+            
+            body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            
+            .no-print {
+                display: none;
+            }
+            
+            h1, h2, h3, h4, h5, h6 {
+                page-break-after: avoid;
+            }
+            
+            pre, blockquote, table {
+                page-break-inside: avoid;
+            }
+            
+            .flow-diagram {
+                page-break-inside: avoid;
+            }
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 12pt;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14pt;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        .print-button:hover {
+            background-color: #2980b9;
+        }
+        
+        h1 {
+            font-size: 28pt;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 0.5em;
+        }
+        
+        h2 {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+            border-bottom: 2px solid #95a5a6;
+            padding-bottom: 0.3em;
+        }
+        
+        h3 {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.3em;
+            margin-bottom: 0.5em;
+        }
+        
+        h4 {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+        }
+        
+        h5, h6 {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+        }
+        
+        p {
+            margin: 0.8em 0;
+            text-align: justify;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10.5pt;
+            color: #c7254e;
+            border: 1px solid #e1e1e1;
+        }
+        
+        pre {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+            margin: 1em 0;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10pt;
+            line-height: 1.5;
+        }
+        
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            border: none;
+            color: #333;
+            font-size: 10pt;
+            display: block;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5em 0;
+            font-size: 11pt;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        ul, ol {
+            margin: 0.8em 0;
+            padding-left: 2em;
+        }
+        
+        li {
+            margin: 0.4em 0;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3498db;
+            margin: 1.5em 0;
+            padding-left: 1.5em;
+            padding-right: 1em;
+            color: #555;
+            font-style: italic;
+            background-color: #f9f9f9;
+            padding-top: 0.5em;
+            padding-bottom: 0.5em;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #ddd;
+            margin: 2em 0;
+        }
+        
+        strong {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        em {
+            font-style: italic;
+            color: #555;
+        }
+        
+        .toc {
+            background-color: #f9f9f9;
+            padding: 1.5em;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .toc ul {
+            list-style-type: none;
+            padding-left: 1em;
+        }
+        
+        .toc li {
+            margin: 0.3em 0;
+        }
+        
+        .toc a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        
+        /* 流程图样式 */
+        .flow-diagram {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10pt;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        /* 代码块中的特殊字符 */
+        pre.highlight, pre code {
+            white-space: pre;
+            word-wrap: normal;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button no-print" onclick="window.print()">
+        🖨️ Print to PDF
+    </button>
+    
+    <h1 id="genocorr">GenoCorr 平台完整系统架构文档<a class="headerlink" href="#genocorr" title="Permanent link">&para;</a></h1>
+<h2 id="_1">目录<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#整体架构概述">整体架构概述</a></li>
+<li><a href="#三层架构详解">三层架构详解</a></li>
+<li><a href="#前端架构详细设计">前端架构详细设计</a></li>
+<li><a href="#后端架构详细设计">后端架构详细设计</a></li>
+<li><a href="#数据流与交互流程">数据流与交互流程</a></li>
+<li><a href="#核心模块架构">核心模块架构</a></li>
+<li><a href="#api接口架构">API接口架构</a></li>
+<li><a href="#数据库架构">数据库架构</a></li>
+<li><a href="#部署架构">部署架构</a></li>
+<li><a href="#技术栈详解">技术栈详解</a></li>
+</ol>
+<hr />
+<h2 id="_2">整体架构概述<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<h3 id="_3">架构模式<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h3>
+<p>GenoCorr 平台采用<strong>三层客户端-服务器架构</strong>（Three-Tier Client-Server Architecture），结合<strong>RESTful API</strong>通信模式和<strong>前后端分离</strong>的设计理念。</p>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                     表示层 (Presentation Layer)                │
+│                    Next.js 15.3.5 Frontend                    │
+│                  (React 19.0 + TypeScript)                    │
+└────────────────────┬──────────────────────────────────────────┘
+                     │ HTTP/REST API (JSON)
+                     │ Port: 8000
+┌────────────────────▼──────────────────────────────────────────┐
+│                   业务逻辑层 (Business Logic Layer)             │
+│                   FastAPI 0.68.0 Backend                      │
+│                    (Python 3.9+)                              │
+└───────┬────────────────────────┬──────────────┬───────────────┘
+        │                        │              │
+        │                        │              │
+┌───────▼────────┐  ┌───────────▼──────┐  ┌───▼──────────────┐
+│   MongoDB      │  │   GProfiler API  │  │  File System     │
+│  (数据持久层)   │  │  (外部API服务)    │  │  (Excel/CSV/TSV) │
+│                │  │                  │  │                  │
+│ gene_search_db │  │ 富集分析服务      │  │ 后端数据文件      │
+└────────────────┘  └──────────────────┘  └──────────────────┘
+</code></pre>
+<h3 id="_4">架构层次说明<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>表示层（前端）</strong>：用户界面和交互</li>
+<li><strong>业务逻辑层（后端）</strong>：核心业务处理和算法</li>
+<li><strong>数据持久层</strong>：数据存储和外部服务集成</li>
+</ol>
+<hr />
+<h2 id="_5">三层架构详解<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h2>
+<h3 id="frontend-nextjs">第一层：表示层（Frontend - Next.js）<a class="headerlink" href="#frontend-nextjs" title="Permanent link">&para;</a></h3>
+<h4 id="_6">技术栈<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>框架</strong>：Next.js 15.3.5（基于 React 19.0）</li>
+<li><strong>语言</strong>：TypeScript 5.x</li>
+<li><strong>样式</strong>：Tailwind CSS 4.x</li>
+<li><strong>可视化</strong>：Plotly.js 2.35.3</li>
+<li><strong>构建工具</strong>：Turbopack（Next.js内置）</li>
+</ul>
+<h4 id="_7">前端目录结构<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h4>
+<pre><code>genegen/
+├── app/                          # Next.js App Router
+│   ├── layout.tsx               # 根布局组件
+│   ├── page.tsx                 # 首页
+│   ├── globals.css              # 全局样式
+│   │
+│   ├── gene-search/             # 模块1：基因搜索
+│   │   └── page.tsx            # 基因搜索页面组件
+│   │
+│   ├── gene-ontology/           # 模块2：主题分析
+│   │   ├── page.tsx            # 主题分析入口页
+│   │   ├── default-theme/      # 默认主题分析
+│   │   │   └── page.tsx
+│   │   └── customize-theme/    # 自定义主题分析
+│   │       └── page.tsx
+│   │
+│   ├── ivcca/                   # 模块3：IVCCA分析
+│   │   └── page.tsx            # IVCCA分析页面
+│   │
+│   ├── login/                   # 认证页面
+│   │   └── page.tsx
+│   │
+│   ├── add-gene/                # 添加基因数据（需认证）
+│   │   └── page.tsx
+│   │
+│   └── upload-csv/              # CSV上传功能
+│       └── page.tsx
+│
+├── public/                      # 静态资源
+│   └── 885_genes.txt           # 示例基因列表
+│
+├── package.json                 # 依赖配置
+├── tsconfig.json                # TypeScript配置
+└── next.config.ts               # Next.js配置
+</code></pre>
+<h4 id="_8">前端组件架构<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h4>
+<p><strong>1. 页面组件（Page Components）</strong></p>
+<p>每个页面都是一个独立的 React 组件，使用 <code>'use client'</code> 指令标记为客户端组件。</p>
+<pre><code class="language-typescript">// 示例：基因搜索页面结构
+export default function GeneSearch() {
+  // 状态管理
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState&lt;GeneData[]&gt;([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // API调用
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // 事件处理函数
+  const handleSearch = async () =&gt; {
+    // 调用后端API
+    const response = await fetch(`${API_BASE_URL}/api/gene/symbol/search?gene_symbol=${searchTerm}`);
+    const data = await response.json();
+    setSearchResults(data.data);
+  };
+
+  // UI渲染
+  return (
+    // JSX结构
+  );
+}
+</code></pre>
+<p><strong>2. 状态管理架构</strong></p>
+<ul>
+<li><strong>本地状态</strong>：使用 React <code>useState</code> Hook</li>
+<li><strong>全局状态</strong>：通过 Context API 或 props传递</li>
+<li><strong>API状态</strong>：每次API调用时独立管理</li>
+<li><strong>缓存策略</strong>：浏览器 localStorage（认证token）</li>
+</ul>
+<p><strong>3. 数据获取流程</strong></p>
+<pre><code>用户操作 → 事件触发 → API调用 → 状态更新 → UI重渲染
+</code></pre>
+<h4 id="-">前端-后端通信<a class="headerlink" href="#-" title="Permanent link">&para;</a></h4>
+<p><strong>通信协议</strong>：<br />
+- <strong>协议</strong>：HTTP/HTTPS<br />
+- <strong>数据格式</strong>：JSON<br />
+- <strong>方法</strong>：GET, POST<br />
+- <strong>认证</strong>：Token-based（存储在localStorage）</p>
+<p><strong>API调用模式</strong>：</p>
+<pre><code class="language-typescript">// 标准API调用模式
+const response = await fetch(`${API_BASE_URL}/api/endpoint`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify(requestData),
+});
+
+const data = await response.json();
+</code></pre>
+<p><strong>错误处理</strong>：<br />
+- Try-catch 捕获网络错误<br />
+- HTTP状态码检查<br />
+- 用户友好的错误提示</p>
+<h3 id="backend-fastapi">第二层：业务逻辑层（Backend - FastAPI）<a class="headerlink" href="#backend-fastapi" title="Permanent link">&para;</a></h3>
+<h4 id="_9">技术栈<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>框架</strong>：FastAPI 0.68.0</li>
+<li><strong>语言</strong>：Python 3.9+</li>
+<li><strong>数据科学库</strong>：</li>
+<li>pandas：数据处理</li>
+<li>NumPy：数值计算</li>
+<li>SciPy：科学计算</li>
+<li>scikit-learn：机器学习</li>
+<li><strong>可视化</strong>：matplotlib, seaborn</li>
+<li><strong>外部服务</strong>：GProfiler Python客户端</li>
+</ul>
+<h4 id="_10">后端目录结构<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h4>
+<pre><code>backend/
+├── server.py                    # FastAPI主应用（1900+行）
+├── ivcca_core.py               # IVCCA核心算法模块（2200+行）
+├── start_backend.py            # 后端启动脚本
+├── requirements.txt            # Python依赖
+│
+├── data/                       # 数据文件目录
+│   ├── BoneMarrow.xlsx
+│   ├── Cortex.xlsx
+│   ├── DRG.xlsx
+│   ├── Fat.xlsx
+│   ├── Heart.xlsx
+│   ├── Hypothalamus.xlsx
+│   ├── Kidneys.xlsx
+│   ├── Liver.xlsx
+│   └── Muscle.xlsx
+│
+└── .env                        # 环境变量配置
+</code></pre>
+<h4 id="_11">后端应用架构<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h4>
+<p><strong>1. FastAPI 应用初始化</strong></p>
+<pre><code class="language-python"># server.py
+app = FastAPI(title=&quot;Gene Expression Search API&quot;, version=&quot;1.0.0&quot;)
+
+# CORS中间件配置
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[&quot;*&quot;],
+    allow_credentials=True,
+    allow_methods=[&quot;*&quot;],
+    allow_headers=[&quot;*&quot;],
+)
+</code></pre>
+<p><strong>2. API类组织</strong></p>
+<pre><code class="language-python"># 三个主要API类
+class GeneSearchAPI:
+    &quot;&quot;&quot;基因搜索API类&quot;&quot;&quot;
+    - load_data_to_mongodb()
+    - search_gene_data()
+    - create_fold_change_plot()
+    # ...
+
+class GeneOntologyAPI:
+    &quot;&quot;&quot;基因本体分析API类&quot;&quot;&quot;
+    - enrich()
+    - assign_theme()
+    - aggregate()
+    - create_theme_chart()
+    # ...
+
+# IVCCA功能通过 ivcca_core.py 中的类实现
+# 在 server.py 中直接使用 IVCCAAnalyzer 类
+</code></pre>
+<p><strong>3. 请求处理流程</strong></p>
+<pre><code>HTTP请求 → FastAPI路由 → Pydantic验证 → 业务逻辑 → 数据处理 → 响应返回
+</code></pre>
+<h4 id="api">API端点组织<a class="headerlink" href="#api" title="Permanent link">&para;</a></h4>
+<p><strong>端点分类</strong>：</p>
+<ol>
+<li><strong>认证端点</strong>：</li>
+<li>
+<p><code>POST /api/auth/login</code> - Token认证</p>
+</li>
+<li>
+<p><strong>基因搜索端点</strong>（7个）：</p>
+</li>
+<li><code>GET /api/gene/symbols</code> - 获取所有基因符号</li>
+<li><code>GET /api/gene/symbol/search</code> - 搜索基因</li>
+<li><code>GET /api/gene/symbol/showFoldChange</code> - Fold Change图</li>
+<li><code>GET /api/gene/symbol/showLSMeanControl</code> - 对照组图</li>
+<li><code>GET /api/gene/symbol/showLSMeanTenMgKg</code> - 处理组图</li>
+<li>
+<p><code>POST /api/gene/add</code> - 添加基因（需认证）</p>
+</li>
+<li>
+<p><strong>主题分析端点</strong>（4个）：</p>
+</li>
+<li><code>POST /api/ontology/analyze</code> - 标准富集分析</li>
+<li><code>POST /api/ontology/custom-analyze</code> - 自定义主题分析</li>
+<li><code>POST /api/ontology/theme-chart</code> - 主题详细图</li>
+<li>
+<p><code>POST /api/ontology/custom-summary-chart</code> - 主题汇总图</p>
+</li>
+<li>
+<p><strong>IVCCA分析端点</strong>（14个）：</p>
+</li>
+<li><code>POST /api/ivcca/load-data</code> - 加载数据</li>
+<li><code>POST /api/ivcca/calculate-correlation</code> - 计算相关性</li>
+<li><code>POST /api/ivcca/sort-matrix</code> - 排序矩阵</li>
+<li><code>POST /api/ivcca/heatmap</code> - 热图</li>
+<li><code>POST /api/ivcca/histogram</code> - 直方图</li>
+<li><code>POST /api/ivcca/optimal-clusters</code> - 最优聚类数</li>
+<li><code>POST /api/ivcca/dendrogram</code> - 系统树图</li>
+<li><code>POST /api/ivcca/pca</code> - PCA分析</li>
+<li><code>POST /api/ivcca/tsne</code> - t-SNE分析</li>
+<li><code>POST /api/ivcca/single-pathway</code> - 单通路分析</li>
+<li><code>POST /api/ivcca/compare-pathways</code> - 通路比较</li>
+<li><code>POST /api/ivcca/gene-to-genes</code> - 基因到基因</li>
+<li><code>POST /api/ivcca/gene-to-pathways</code> - 基因到通路</li>
+<li><code>POST /api/ivcca/multi-pathway</code> - 多通路分析</li>
+<li><code>POST /api/ivcca/venn-diagram</code> - Venn图</li>
+<li>
+<p><code>POST /api/ivcca/network-analysis</code> - 网络分析</p>
+</li>
+<li>
+<p><strong>工具端点</strong>：</p>
+</li>
+<li><code>GET /api/health</code> - 健康检查</li>
+<li><code>GET /api/test</code> - 测试端点</li>
+<li><code>GET /docs</code> - API文档（自动生成）</li>
+</ol>
+<p><strong>总计</strong>：约 40+ API端点</p>
+<h3 id="_12">第三层：数据持久层<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h3>
+<h4 id="mongodb">MongoDB 数据库<a class="headerlink" href="#mongodb" title="Permanent link">&para;</a></h4>
+<p><strong>连接管理</strong>：</p>
+<pre><code class="language-python"># 连接配置
+MONGODB_URI = os.getenv('MONGODB_URI')
+client = MongoClient(MONGODB_URI)
+db = client.gene_search_db
+collection = db.gene_data
+</code></pre>
+<p><strong>数据模型</strong>：</p>
+<pre><code class="language-python"># 文档结构
+{
+    '_id': ObjectId,                    # MongoDB自动生成
+    'organ': 'Heart',                   # 组织名称（9种）
+    'gene_symbol': 'GAPDH',            # 基因符号（索引字段）
+    'gene_name': 'Glyceraldehyde-3-phosphate dehydrogenase',
+    'p_value_10_mgkg_vs_control': '0.001',
+    'fdr_step_up_10_mgkg_vs_control': '0.05',
+    'ratio_10_mgkg_vs_control': '1.5',
+    'fold_change_10_mgkg_vs_control': '0.5',
+    'lsmean_10mgkg_10_mgkg_vs_control': '10.5',
+    'lsmean_control_10_mgkg_vs_control': '8.5'
+}
+</code></pre>
+<p><strong>索引设计</strong>：</p>
+<pre><code class="language-python"># 单字段索引（加速查询）
+collection.create_index([(&quot;gene_symbol&quot;, 1)])      # 升序索引
+collection.create_index([(&quot;organ&quot;, 1)])
+
+# 复合唯一索引（防止重复）
+collection.create_index(
+    [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)], 
+    unique=True
+)
+</code></pre>
+<h4 id="api_1">外部API服务<a class="headerlink" href="#api_1" title="Permanent link">&para;</a></h4>
+<p><strong>GProfiler API</strong>：</p>
+<pre><code class="language-python"># 初始化
+from gprofiler import GProfiler
+gp = GProfiler(return_dataframe=True)
+
+# 富集分析调用
+df = gp.profile(
+    organism=&quot;mmusculus&quot;,  # 小鼠
+    query=genes_list       # 基因列表
+)
+</code></pre>
+<h4 id="_13">文件系统存储<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Excel文件</strong>：<code>backend/data/*.xlsx</code>（9个组织）</li>
+<li><strong>基因列表</strong>：<code>.txt</code>文件（通路定义、基因列表）</li>
+<li><strong>生成的图表</strong>：临时存储在内存，以base64编码返回</li>
+</ul>
+<hr />
+<h2 id="_14">前端架构详细设计<a class="headerlink" href="#_14" title="Permanent link">&para;</a></h2>
+<h3 id="_15">组件层次结构<a class="headerlink" href="#_15" title="Permanent link">&para;</a></h3>
+<pre><code>RootLayout (layout.tsx)
+├── Navigation/Header (各页面内嵌)
+├── Page Components
+│   ├── GeneSearch (gene-search/page.tsx)
+│   │   ├── SearchInput Component
+│   │   ├── GeneList Component
+│   │   ├── ResultsTable Component
+│   │   └── PlotDisplay Component
+│   │
+│   ├── ThemeAnalysis (gene-ontology/*/page.tsx)
+│   │   ├── FileUpload Component
+│   │   ├── ThemeSelector Component
+│   │   ├── ResultsDisplay Component
+│   │   └── ChartDisplay Component
+│   │
+│   └── IVCCA (ivcca/page.tsx)
+│       ├── DataUpload Component
+│       ├── AnalysisControls Component
+│       ├── CorrelationMatrix Component
+│       ├── VisualizationPanel Component
+│       └── ResultsPanel Component
+└── Footer (各页面内嵌)
+</code></pre>
+<h3 id="_16">数据流（前端视角）<a class="headerlink" href="#_16" title="Permanent link">&para;</a></h3>
+<p><strong>1. 用户输入流程</strong></p>
+<pre><code>用户输入 → 状态更新（useState）→ 事件处理函数 → API调用 → 响应处理 → 状态更新 → UI更新
+</code></pre>
+<p><strong>2. API调用流程</strong></p>
+<pre><code class="language-typescript">// 标准流程
+async function handleApiCall() {
+  setIsLoading(true);                    // 1. 设置加载状态
+  setError('');                          // 2. 清除错误
+
+  try {
+    const response = await fetch(...);    // 3. 发起请求
+    if (!response.ok) {                   // 4. 检查响应状态
+      throw new Error(...);
+    }
+    const data = await response.json();   // 5. 解析JSON
+    setResults(data);                     // 6. 更新状态
+  } catch (error) {
+    setError(error.message);              // 7. 错误处理
+  } finally {
+    setIsLoading(false);                  // 8. 清除加载状态
+  }
+}
+</code></pre>
+<p><strong>3. 可视化数据流</strong></p>
+<pre><code class="language-typescript">// Plotly图表数据流
+API返回数据 → 数据转换 → Plotly JSON配置 → React Plotly组件 → 交互式图表
+
+// 静态图片数据流
+API返回base64 → &lt;img src={`data:image/png;base64,${image}`} /&gt; → 显示图片
+</code></pre>
+<h3 id="_17">状态管理架构<a class="headerlink" href="#_17" title="Permanent link">&para;</a></h3>
+<p><strong>本地状态（Component State）</strong>：</p>
+<ul>
+<li>使用 <code>useState</code> Hook管理组件级状态</li>
+<li>每个页面组件独立管理自己的状态</li>
+<li>状态类型：</li>
+<li>用户输入（表单数据）</li>
+<li>API响应数据</li>
+<li>UI状态（加载、错误、展开/折叠）</li>
+<li>可视化配置（图表类型、参数）</li>
+</ul>
+<p><strong>示例</strong>：</p>
+<pre><code class="language-typescript">// 基因搜索页面状态
+const [searchTerm, setSearchTerm] = useState('');
+const [searchResults, setSearchResults] = useState&lt;GeneData[]&gt;([]);
+const [isLoading, setIsLoading] = useState(false);
+const [error, setError] = useState('');
+const [currentPlot, setCurrentPlot] = useState('');
+</code></pre>
+<p><strong>全局状态（App State）</strong>：</p>
+<ul>
+<li>API URL：通过环境变量 <code>NEXT_PUBLIC_API_URL</code></li>
+<li>认证Token：存储在 <code>localStorage</code></li>
+<li>无全局状态管理库（Redux/Zustand），保持简单</li>
+</ul>
+<h3 id="nextjs-app-router">路由架构（Next.js App Router）<a class="headerlink" href="#nextjs-app-router" title="Permanent link">&para;</a></h3>
+<p><strong>文件系统路由</strong>：</p>
+<pre><code>app/
+├── page.tsx                 → /
+├── gene-search/
+│   └── page.tsx            → /gene-search
+├── gene-ontology/
+│   ├── page.tsx            → /gene-ontology
+│   ├── default-theme/
+│   │   └── page.tsx        → /gene-ontology/default-theme
+│   └── customize-theme/
+│       └── page.tsx        → /gene-ontology/customize-theme
+└── ivcca/
+    └── page.tsx            → /ivcca
+</code></pre>
+<p><strong>导航实现</strong>：</p>
+<pre><code class="language-typescript">// 使用 Next.js Link 组件
+import Link from 'next/link';
+
+&lt;Link href=&quot;/gene-search&quot;&gt;基因搜索&lt;/Link&gt;
+&lt;Link href=&quot;/gene-ontology&quot;&gt;主题分析&lt;/Link&gt;
+&lt;Link href=&quot;/ivcca&quot;&gt;IVCCA分析&lt;/Link&gt;
+</code></pre>
+<hr />
+<h2 id="_18">后端架构详细设计<a class="headerlink" href="#_18" title="Permanent link">&para;</a></h2>
+<h3 id="fastapi">FastAPI 应用结构<a class="headerlink" href="#fastapi" title="Permanent link">&para;</a></h3>
+<h4 id="1">1. 应用初始化流程<a class="headerlink" href="#1" title="Permanent link">&para;</a></h4>
+<pre><code class="language-python"># Step 1: 导入依赖
+from fastapi import FastAPI, HTTPException, ...
+from ivcca_core import IVCCAAnalyzer
+
+# Step 2: 加载环境变量
+load_dotenv(env_path)
+
+# Step 3: 连接MongoDB
+client = MongoClient(MONGODB_URI)
+db = client.gene_search_db
+collection = db.gene_data
+
+# Step 4: 初始化API类
+gene_api = GeneSearchAPI()        # 自动加载数据到MongoDB
+ontology_api = GeneOntologyAPI()  # 初始化GProfiler客户端
+
+# Step 5: 创建FastAPI应用
+app = FastAPI(title=&quot;...&quot;, version=&quot;1.0.0&quot;)
+
+# Step 6: 配置中间件
+app.add_middleware(CORSMiddleware, ...)
+
+# Step 7: 定义路由端点
+@app.get(&quot;/api/...&quot;)
+async def endpoint(...):
+    ...
+</code></pre>
+<h4 id="2">2. 请求处理流程（详细步骤）<a class="headerlink" href="#2" title="Permanent link">&para;</a></h4>
+<p><strong>步骤1：HTTP请求接收</strong></p>
+<pre><code>客户端 → HTTP请求 → FastAPI ASGI服务器 → 路由匹配
+</code></pre>
+<p><strong>步骤2：请求验证</strong></p>
+<pre><code class="language-python"># FastAPI自动验证（基于Pydantic模型）
+@app.get(&quot;/api/gene/symbol/search&quot;)
+async def search_gene_symbol(
+    gene_symbol: str = Query(..., description=&quot;...&quot;)  # 自动验证参数
+):
+    # 如果验证失败，自动返回422错误
+</code></pre>
+<p><strong>步骤3：业务逻辑处理</strong></p>
+<pre><code class="language-python"># 调用相应的API类方法
+results = gene_api.search_gene_data(gene_symbol)
+</code></pre>
+<p><strong>步骤4：响应生成</strong></p>
+<pre><code class="language-python"># 返回JSON响应（FastAPI自动序列化）
+return {&quot;gene_symbol&quot;: gene_symbol, &quot;data&quot;: results}
+</code></pre>
+<p><strong>步骤5：错误处理</strong></p>
+<pre><code class="language-python">try:
+    # 业务逻辑
+except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
+</code></pre>
+<h4 id="3-api">3. API类详细设计<a class="headerlink" href="#3-api" title="Permanent link">&para;</a></h4>
+<p><strong>GeneSearchAPI 类</strong>：</p>
+<pre><code class="language-python">class GeneSearchAPI:
+    def __init__(self):
+        # 初始化时执行
+        self.load_data_to_mongodb()  # 加载数据到MongoDB
+        self.all_genes = self.load_all_genes()  # 加载所有基因符号
+
+    # 数据加载流程
+    def load_data_to_mongodb(self):
+        &quot;&quot;&quot;
+        步骤1: 扫描data目录下的Excel文件
+        步骤2: 对每个文件：
+            - 读取Excel (pandas.read_excel)
+            - 提取组织名称（文件名）
+            - 遍历每一行：
+                - 提取基因符号和表达数据
+                - 构建MongoDB文档
+                - 添加到批量操作列表
+        步骤3: 执行批量写入（bulk_write with upsert）
+        步骤4: 创建索引
+        &quot;&quot;&quot;
+        pass
+
+    # 搜索流程
+    def search_gene_data(self, gene_symbol: str):
+        &quot;&quot;&quot;
+        步骤1: 构建查询（正则表达式，大小写不敏感）
+        步骤2: 执行MongoDB查询（使用索引）
+        步骤3: 遍历查询结果
+        步骤4: 格式化为响应格式
+        步骤5: 返回结果列表
+        &quot;&quot;&quot;
+        pass
+
+    # 可视化生成流程
+    def create_fold_change_plot(self, gene_symbol: str):
+        &quot;&quot;&quot;
+        步骤1: 查询基因数据（调用search_gene_data）
+        步骤2: 提取组织和Fold Change值
+        步骤3: 使用matplotlib创建图表
+        步骤4: 转换为base64编码
+        步骤5: 返回base64字符串
+        &quot;&quot;&quot;
+        pass
+</code></pre>
+<p><strong>GeneOntologyAPI 类</strong>：</p>
+<pre><code class="language-python">class GeneOntologyAPI:
+    def __init__(self):
+        # 初始化GProfiler客户端
+        self.gp = GProfiler(return_dataframe=True)
+        # 定义主题关键词映射
+        self.themes = {
+            'Inflammation &amp; immune signaling': ['inflammatory', ...],
+            # ...
+        }
+
+    # 富集分析流程
+    def enrich(self, genes: List[str]):
+        &quot;&quot;&quot;
+        步骤1: 调用GProfiler API
+            df = self.gp.profile(organism=&quot;mmusculus&quot;, query=genes)
+        步骤2: 过滤P值（p &lt; 0.01）
+        步骤3: 计算Score = -log10(p_value)
+        步骤4: 返回DataFrame
+        &quot;&quot;&quot;
+        pass
+
+    # 主题分配流程
+    def assign_theme(self, go_term_name: str):
+        &quot;&quot;&quot;
+        步骤1: 将GO术语名称转为小写
+        步骤2: 遍历所有主题的关键词
+        步骤3: 检查关键词是否在GO术语名称中
+        步骤4: 返回第一个匹配的主题
+        &quot;&quot;&quot;
+        pass
+
+    # 主题聚合流程
+    def aggregate(self, df: pd.DataFrame):
+        &quot;&quot;&quot;
+        步骤1: 为每个GO术语分配主题（apply assign_theme）
+        步骤2: 过滤掉无主题的GO术语
+        步骤3: 按主题分组
+        步骤4: 聚合计算：
+            - Score: 累积分数（sum）
+            - Terms: 术语数量（count）
+        步骤5: 按Score降序排序
+        &quot;&quot;&quot;
+        pass
+</code></pre>
+<h4 id="4-ivcca">4. IVCCA核心模块架构<a class="headerlink" href="#4-ivcca" title="Permanent link">&para;</a></h4>
+<p><strong>IVCCAAnalyzer 类结构</strong>：</p>
+<pre><code class="language-python">class IVCCAAnalyzer:
+    def __init__(self):
+        # 数据状态
+        self.data = None              # 原始数据矩阵 (samples × genes)
+        self.gene_names = None        # 基因名称列表
+        self.sample_names = None      # 样本名称列表
+        self.correlation_matrix = None # 相关性矩阵 (genes × genes)
+
+        # 状态标志
+        self.data_loaded = False
+        self.correlation_calculated = False
+
+    # 数据加载流程
+    def load_data(self, file_path: str):
+        &quot;&quot;&quot;
+        步骤1: 检测文件类型（.xlsx, .csv, .tsv）
+        步骤2: 使用pandas读取文件
+        步骤3: 提取样本名称（第一列）
+        步骤4: 提取基因名称（除第一列外的所有列）
+        步骤5: 提取数值数据（转换为numpy数组）
+        步骤6: 处理缺失值（NaN）
+        步骤7: 设置状态标志
+        &quot;&quot;&quot;
+        pass
+
+    # 相关性计算流程
+    def calculate_correlations(self, method: str = 'pearson'):
+        &quot;&quot;&quot;
+        步骤1: 检查数据是否已加载
+        步骤2: 将数据转换为DataFrame
+        步骤3: 调用pandas.corr()方法（根据method参数）
+        步骤4: 处理NaN值（替换为0）
+        步骤5: 计算统计信息（均值、标准差等）
+        步骤6: 设置状态标志
+        &quot;&quot;&quot;
+        pass
+
+    # 排序流程
+    def sort_correlation_matrix(self):
+        &quot;&quot;&quot;
+        步骤1: 计算每个基因的平均绝对相关性
+            Q_i = mean(|r_ij|) for j ≠ i
+        步骤2: 按Q_i降序排序，得到排序索引
+        步骤3: 使用排序索引重新排列：
+            - 相关性矩阵
+            - 基因名称列表
+        步骤4: 返回排序后的矩阵和基因名称
+        &quot;&quot;&quot;
+        pass
+</code></pre>
+<hr />
+<h2 id="_19">数据流与交互流程<a class="headerlink" href="#_19" title="Permanent link">&para;</a></h2>
+<h3 id="-_1">完整请求-响应流程<a class="headerlink" href="#-_1" title="Permanent link">&para;</a></h3>
+<h4 id="1_1">流程1：基因搜索完整流程<a class="headerlink" href="#1_1" title="Permanent link">&para;</a></h4>
+<pre><code>┌──────────┐
+│  用户     │
+│ (浏览器)  │
+└────┬─────┘
+     │ 1. 输入基因符号&quot;GAPDH&quot;
+     │ 2. 点击&quot;搜索&quot;按钮
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: gene-search/page.tsx          │
+│                                      │
+│ handleSearch() 函数：                │
+│ 1. setIsLoading(true)               │
+│ 2. 构建API URL                       │
+│ 3. fetch(`${API_URL}/api/gene/      │
+│          symbol/search?gene_symbol=  │
+│          GAPDH`)                     │
+└────┬────────────────────────────────┘
+     │ 3. HTTP GET 请求
+     │    URL: /api/gene/symbol/search?gene_symbol=GAPDH
+     ▼
+┌─────────────────────────────────────┐
+│ FastAPI 路由处理                     │
+│ @app.get(&quot;/api/gene/symbol/search&quot;) │
+│                                      │
+│ 1. 接收查询参数 gene_symbol          │
+│ 2. Pydantic验证（自动）              │
+│ 3. 调用 gene_api.search_gene_data() │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ GeneSearchAPI.search_gene_data()    │
+│                                      │
+│ 1. 构建MongoDB查询：                 │
+│    query = {&quot;gene_symbol&quot;: {        │
+│        &quot;$regex&quot;: &quot;^GAPDH$&quot;,         │
+│        &quot;$options&quot;: &quot;i&quot;              │
+│    }}                                │
+│ 2. collection.find(query)           │
+│    （使用gene_symbol索引，O(log n)） │
+│ 3. 遍历查询结果                      │
+│ 4. 格式化数据                        │
+│ 5. 返回列表                          │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ MongoDB 数据库                       │
+│                                      │
+│ 1. 使用索引快速查找                  │
+│ 2. 返回匹配的文档列表                │
+│    [                                │
+│      {organ: &quot;Heart&quot;, gene_symbol:  │
+│       &quot;GAPDH&quot;, ...},                │
+│      {organ: &quot;Liver&quot;, gene_symbol:  │
+│       &quot;GAPDH&quot;, ...},                │
+│      ...                            │
+│    ]                                │
+└────┬────────────────────────────────┘
+     │ 4. 返回结果
+     ▼
+┌─────────────────────────────────────┐
+│ FastAPI 响应                        │
+│                                      │
+│ return {                            │
+│   &quot;gene_symbol&quot;: &quot;GAPDH&quot;,           │
+│   &quot;data&quot;: [...]                     │
+│ }                                   │
+│ （FastAPI自动序列化为JSON）          │
+└────┬────────────────────────────────┘
+     │ 5. HTTP 200 响应
+     │    Content-Type: application/json
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: 处理响应                       │
+│                                      │
+│ 1. response.json() 解析JSON         │
+│ 2. setSearchResults(data.data)      │
+│ 3. setIsLoading(false)              │
+│ 4. React重渲染 → 显示结果表格        │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌──────────┐
+│  用户看到 │
+│ 结果表格  │
+└──────────┘
+</code></pre>
+<h4 id="2_1">流程2：主题分析完整流程<a class="headerlink" href="#2_1" title="Permanent link">&para;</a></h4>
+<pre><code>┌──────────┐
+│  用户     │
+└────┬─────┘
+     │ 1. 上传基因列表文件 (.txt)
+     │ 2. 选择主题
+     │ 3. 点击&quot;分析&quot;
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: customize-theme/page.tsx      │
+│                                      │
+│ handleAnalyze() 函数：               │
+│ 1. 读取文件内容                       │
+│ 2. 构建FormData                      │
+│ 3. fetch(`${API_URL}/api/ontology/  │
+│          custom-analyze`, {          │
+│    method: 'POST',                   │
+│    body: formData                    │
+│  })                                  │
+└────┬────────────────────────────────┘
+     │ 2. HTTP POST 请求
+     │    Content-Type: multipart/form-data
+     ▼
+┌─────────────────────────────────────┐
+│ FastAPI 路由                        │
+│ @app.post(&quot;/api/ontology/custom-    │
+│          analyze&quot;)                   │
+│                                      │
+│ 1. 接收文件 (UploadFile)             │
+│ 2. 接收selected_themes (Form)        │
+│ 3. 接收custom_themes (Form, JSON)   │
+│ 4. 调用ontology_api方法              │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ GeneOntologyAPI                     │
+│                                      │
+│ Step 1: load_genes_from_file()      │
+│    - 读取文件内容                     │
+│    - 按行分割                         │
+│    - 去除空白                         │
+│    - 返回基因列表                     │
+│                                      │
+│ Step 2: 临时添加自定义主题           │
+│    original_themes = self.themes     │
+│    for custom_theme in custom_themes:│
+│        self.themes[theme_name] =     │
+│            keywords                  │
+│                                      │
+│ Step 3: enrich(genes)               │
+│    - 调用GProfiler API               │
+│    - 过滤P值                         │
+│    - 计算Score                       │
+│                                      │
+│ Step 4: assign_theme()              │
+│    - 为每个GO术语分配主题             │
+│                                      │
+│ Step 5: aggregate()                 │
+│    - 按主题聚合                       │
+│                                      │
+│ Step 6: 恢复原始主题                 │
+│    self.themes = original_themes     │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ GProfiler API (外部服务)             │
+│                                      │
+│ 1. 接收基因列表                       │
+│ 2. 执行超几何检验                     │
+│ 3. 返回富集结果（DataFrame）          │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 后端处理结果                         │
+│                                      │
+│ 1. 过滤显著结果                       │
+│ 2. 分配主题                           │
+│ 3. 聚合统计                           │
+│ 4. 生成图表（可选）                   │
+│ 5. 返回JSON响应                      │
+└────┬────────────────────────────────┘
+     │ 3. HTTP 200 响应
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: 显示结果                       │
+│                                      │
+│ 1. 解析响应                           │
+│ 2. 显示结果表格                       │
+│ 3. 显示汇总图表                       │
+│ 4. 显示主题详细图                     │
+└─────────────────────────────────────┘
+</code></pre>
+<h4 id="3ivcca">流程3：IVCCA分析完整流程<a class="headerlink" href="#3ivcca" title="Permanent link">&para;</a></h4>
+<pre><code>┌──────────┐
+│  用户     │
+└────┬─────┘
+     │ 1. 上传数据文件 (.xlsx/.csv/.tsv)
+     │ 2. 点击&quot;加载数据&quot;
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: ivcca/page.tsx                │
+│                                      │
+│ handleLoadData() 函数：              │
+│ 1. 读取文件                          │
+│ 2. 构建FormData                      │
+│ 3. POST /api/ivcca/load-data        │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 后端: /api/ivcca/load-data          │
+│                                      │
+│ 1. 创建IVCCAAnalyzer实例            │
+│    analyzer = IVCCAAnalyzer()       │
+│ 2. 调用analyzer.load_data()         │
+│ 3. 生成唯一ID（analyzer_id）        │
+│ 4. 存储到内存（字典）                │
+│    analyzers[analyzer_id] = analyzer │
+│ 5. 返回analyzer_id                  │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 用户点击&quot;计算相关性&quot;                  │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: POST /api/ivcca/              │
+│       calculate-correlation          │
+│                                      │
+│ Body: {                             │
+│   analyzer_id: &quot;...&quot;,                │
+│   method: &quot;pearson&quot;                  │
+│ }                                   │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 后端处理                             │
+│                                      │
+│ 1. 从内存获取analyzer                │
+│    analyzer = analyzers[analyzer_id] │
+│ 2. analyzer.calculate_correlations() │
+│    - 计算相关性矩阵                  │
+│    - 计算统计信息                    │
+│ 3. 返回统计信息                      │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 用户选择&quot;生成热图&quot;                    │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: POST /api/ivcca/heatmap       │
+│                                      │
+│ Body: {                             │
+│   analyzer_id: &quot;...&quot;,                │
+│   sorted: false                      │
+│ }                                   │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 后端: analyzer.create_correlation_   │
+│       heatmap()                      │
+│                                      │
+│ 1. 获取相关性矩阵                    │
+│ 2. 使用seaborn绘制热图               │
+│ 3. 转换为base64                      │
+│ 4. 或使用Plotly生成交互式图表        │
+│ 5. 返回JSON: {                       │
+│      type: &quot;plotly&quot;,                 │
+│      content: {...}                  │
+│    }                                │
+└────┬────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────────┐
+│ 前端: 渲染图表                       │
+│                                      │
+│ if (type === &quot;plotly&quot;) {            │
+│    &lt;Plot data={content} /&gt;          │
+│ } else {                            │
+│    &lt;img src={`data:image/...`} /&gt;   │
+│ }                                   │
+└─────────────────────────────────────┘
+</code></pre>
+<h3 id="_20">状态管理（后端）<a class="headerlink" href="#_20" title="Permanent link">&para;</a></h3>
+<p><strong>内存状态管理</strong>：</p>
+<pre><code class="language-python"># IVCCA分析器实例存储（内存中）
+analyzers: Dict[str, IVCCAAnalyzer] = {}
+
+# 使用analyzer_id作为键
+analyzer_id = str(uuid.uuid4())
+analyzers[analyzer_id] = IVCCAAnalyzer()
+</code></pre>
+<p><strong>MongoDB状态</strong>：</p>
+<ul>
+<li>基因表达数据持久化存储</li>
+<li>索引加速查询</li>
+<li>支持并发访问</li>
+</ul>
+<p><strong>无状态API设计</strong>：</p>
+<ul>
+<li>每个请求独立处理</li>
+<li>通过analyzer_id关联分析会话</li>
+<li>支持多个用户同时分析</li>
+</ul>
+<hr />
+<h2 id="_21">核心模块架构<a class="headerlink" href="#_21" title="Permanent link">&para;</a></h2>
+<h3 id="1_2">模块1：基因搜索系统架构<a class="headerlink" href="#1_2" title="Permanent link">&para;</a></h3>
+<h4 id="_22">数据流架构<a class="headerlink" href="#_22" title="Permanent link">&para;</a></h4>
+<pre><code>Excel文件 (data/*.xlsx)
+    │
+    ▼
+[数据加载阶段]
+    ├─ pandas.read_excel()
+    ├─ 数据清洗（去除空值、类型转换）
+    └─ 批量写入MongoDB
+    │
+    ▼
+MongoDB (gene_data collection)
+    │
+    ▼
+[查询阶段]
+    ├─ 用户输入基因符号
+    ├─ MongoDB查询（使用索引）
+    └─ 返回匹配文档
+    │
+    ▼
+[可视化阶段]
+    ├─ 提取数据（organ, fold_change, lsmean）
+    ├─ matplotlib生成图表
+    └─ base64编码返回
+</code></pre>
+<h4 id="_23">组件交互<a class="headerlink" href="#_23" title="Permanent link">&para;</a></h4>
+<pre><code>用户界面 (React)
+    │
+    ├─→ SearchInput → handleSearch()
+    │                    │
+    │                    ▼
+    │              API调用 (fetch)
+    │                    │
+    ├─→ ResultsTable ←─ API响应
+    │                    │
+    └─→ PlotDisplay ←─ 图表API调用
+</code></pre>
+<h3 id="2_2">模块2：主题分析系统架构<a class="headerlink" href="#2_2" title="Permanent link">&para;</a></h3>
+<h4 id="_24">数据流架构<a class="headerlink" href="#_24" title="Permanent link">&para;</a></h4>
+<pre><code>用户上传基因列表 (.txt)
+    │
+    ▼
+[解析阶段]
+    ├─ 按行读取
+    ├─ 去除空白
+    └─ 生成基因列表
+    │
+    ▼
+[富集分析阶段]
+    ├─ 调用GProfiler API
+    ├─ 超几何检验
+    └─ 返回显著GO术语
+    │
+    ▼
+[主题分配阶段]
+    ├─ 关键词匹配
+    ├─ 主题映射
+    └─ 标记每个GO术语的主题
+    │
+    ▼
+[聚合阶段]
+    ├─ 按主题分组
+    ├─ 计算累积分数
+    └─ 排序
+    │
+    ▼
+[可视化阶段]
+    ├─ 生成汇总图表
+    ├─ 生成主题详细图
+    └─ base64编码返回
+</code></pre>
+<h4 id="_25">主题匹配算法流程<a class="headerlink" href="#_25" title="Permanent link">&para;</a></h4>
+<pre><code>GO术语名称 (&quot;inflammatory response&quot;)
+    │
+    ▼
+转换为小写 (&quot;inflammatory response&quot;)
+    │
+    ▼
+遍历主题关键词：
+    ├─ &quot;Inflammation &amp; immune signaling&quot;: 
+    │     [&quot;inflammatory&quot;, &quot;immune&quot;, ...]
+    │     │
+    │     ▼
+    │  检查 &quot;inflammatory&quot; in &quot;inflammatory response&quot; → True
+    │     │
+    │     ▼
+    │  返回主题 &quot;Inflammation &amp; immune signaling&quot;
+    │
+    └─ 其他主题（跳过）
+</code></pre>
+<h3 id="3ivcca_1">模块3：IVCCA分析系统架构<a class="headerlink" href="#3ivcca_1" title="Permanent link">&para;</a></h3>
+<h4 id="_26">分析流程架构<a class="headerlink" href="#_26" title="Permanent link">&para;</a></h4>
+<pre><code>数据加载
+    │
+    ├─→ 文件读取 → 数据矩阵 (samples × genes)
+    │
+    ▼
+相关性计算
+    │
+    ├─→ Pearson/Spearman/Kendall → 相关性矩阵 (genes × genes)
+    │
+    ▼
+排序/聚类
+    │
+    ├─→ 排序 → 按相关性强度排序
+    ├─→ 聚类 → Elbow/Silhouette → K-means/层次聚类
+    │
+    ▼
+降维分析
+    │
+    ├─→ PCA → 主成分分数
+    └─→ t-SNE → 低维嵌入
+    │
+    ▼
+通路分析
+    │
+    ├─→ 单通路 → PCI_A, PCI_B计算
+    ├─→ 多通路 → CECI, Z-score计算
+    └─→ 通路比较 → 余弦相似度
+    │
+    ▼
+网络分析
+    │
+    └─→ 相关性阈值过滤 → 网络图（2D/3D）
+</code></pre>
+<h4 id="ivcca">IVCCA类方法调用链<a class="headerlink" href="#ivcca" title="Permanent link">&para;</a></h4>
+<pre><code>load_data()
+    │
+    ▼
+calculate_correlations()
+    │
+    ├─→ sort_correlation_matrix()
+    │       │
+    │       └─→ create_correlation_heatmap()
+    │
+    ├─→ calculate_optimal_clusters()
+    │       │
+    │       └─→ create_dendrogram()
+    │
+    ├─→ perform_pca()
+    │       │
+    │       └─→ create_pca_3d_plot()
+    │
+    ├─→ perform_tsne()
+    │       │
+    │       └─→ create_tsne_3d_plot()
+    │
+    ├─→ analyze_single_pathway()
+    │
+    ├─→ multi_pathway_analysis()
+    │
+    └─→ create_network_graph()
+</code></pre>
+<hr />
+<h2 id="api_2">API接口架构<a class="headerlink" href="#api_2" title="Permanent link">&para;</a></h2>
+<h3 id="restful-api">RESTful API设计原则<a class="headerlink" href="#restful-api" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>资源导向</strong>：URL代表资源</li>
+<li><code>/api/gene/symbol/search</code> - 基因资源</li>
+<li><code>/api/ontology/analyze</code> - 本体分析资源</li>
+<li>
+<p><code>/api/ivcca/load-data</code> - IVCCA数据资源</p>
+</li>
+<li>
+<p><strong>HTTP方法语义</strong>：</p>
+</li>
+<li>GET：获取资源</li>
+<li>
+<p>POST：创建/执行操作</p>
+</li>
+<li>
+<p><strong>状态码使用</strong>：</p>
+</li>
+<li>200：成功</li>
+<li>400：客户端错误</li>
+<li>401：未认证</li>
+<li>404：资源不存在</li>
+<li>500：服务器错误</li>
+</ol>
+<h3 id="api_3">API端点详细映射<a class="headerlink" href="#api_3" title="Permanent link">&para;</a></h3>
+<h4 id="api_4">基因搜索API端点<a class="headerlink" href="#api_4" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>输入</th>
+<th>输出</th>
+<th>关联组件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/gene/symbols</code></td>
+<td>GET</td>
+<td>-</td>
+<td><code>{gene_symbols: []}</code></td>
+<td>GeneSearch → MongoDB</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/search</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{gene_symbol, data: []}</code></td>
+<td>GeneSearch → MongoDB</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/showFoldChange</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{image_base64}</code></td>
+<td>GeneSearch → matplotlib</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/showLSMeanControl</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{image_base64}</code></td>
+<td>GeneSearch → matplotlib</td>
+</tr>
+<tr>
+<td><code>/api/gene/symbol/showLSMeanTenMgKg</code></td>
+<td>GET</td>
+<td><code>gene_symbol</code></td>
+<td><code>{image_base64}</code></td>
+<td>GeneSearch → matplotlib</td>
+</tr>
+</tbody>
+</table>
+<p><strong>数据流</strong>：</p>
+<pre><code>前端 → FastAPI路由 → GeneSearchAPI → MongoDB → 数据处理 → 可视化 → base64 → 前端
+</code></pre>
+<h4 id="api_5">主题分析API端点<a class="headerlink" href="#api_5" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>输入</th>
+<th>输出</th>
+<th>关联组件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/ontology/analyze</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>selected_themes</code></td>
+<td><code>{results: []}</code></td>
+<td>ThemeAnalysis → GProfiler</td>
+</tr>
+<tr>
+<td><code>/api/ontology/custom-analyze</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>selected_themes</code>, <code>custom_themes</code></td>
+<td><code>{results: []}</code></td>
+<td>ThemeAnalysis → GProfiler</td>
+</tr>
+<tr>
+<td><code>/api/ontology/theme-chart</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>theme</code></td>
+<td><code>{image_base64}</code></td>
+<td>ThemeAnalysis → matplotlib</td>
+</tr>
+<tr>
+<td><code>/api/ontology/custom-summary-chart</code></td>
+<td>POST</td>
+<td><code>file</code>, <code>selected_themes</code>, <code>custom_themes</code></td>
+<td><code>{image_base64}</code></td>
+<td>ThemeAnalysis → matplotlib</td>
+</tr>
+</tbody>
+</table>
+<p><strong>数据流</strong>：</p>
+<pre><code>前端 → FastAPI → GeneOntologyAPI → GProfiler API → 富集结果 → 主题分配 → 聚合 → 可视化 → 前端
+</code></pre>
+<h4 id="ivccaapi">IVCCA分析API端点<a class="headerlink" href="#ivccaapi" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>方法</th>
+<th>输入</th>
+<th>输出</th>
+<th>关联组件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/ivcca/load-data</code></td>
+<td>POST</td>
+<td><code>file</code></td>
+<td><code>{analyzer_id, preview}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/calculate-correlation</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>method</code></td>
+<td><code>{statistics}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/sort-matrix</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code></td>
+<td><code>{sorted_matrix, sorted_genes}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/heatmap</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>sorted</code></td>
+<td><code>{type, content}</code></td>
+<td>IVCCA → IVCCAAnalyzer → Plotly</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/pca</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>n_components</code></td>
+<td><code>{scores, explained_variance, plots}</code></td>
+<td>IVCCA → IVCCAAnalyzer → sklearn</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/tsne</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>n_components</code>, <code>perplexity</code></td>
+<td><code>{scores, scatter_plot}</code></td>
+<td>IVCCA → IVCCAAnalyzer → sklearn</td>
+</tr>
+<tr>
+<td><code>/api/ivcca/multi-pathway</code></td>
+<td>POST</td>
+<td><code>analyzer_id</code>, <code>pathway_files</code></td>
+<td><code>{pathways: [{ceci, z_score, ...}]}</code></td>
+<td>IVCCA → IVCCAAnalyzer</td>
+</tr>
+</tbody>
+</table>
+<p><strong>数据流</strong>：</p>
+<pre><code>前端 → FastAPI → 内存中的IVCCAAnalyzer实例 → 算法计算 → 结果返回 → 前端
+</code></pre>
+<h3 id="api_6">API响应格式<a class="headerlink" href="#api_6" title="Permanent link">&para;</a></h3>
+<p><strong>成功响应</strong>：</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;data&quot;: {...},
+  &quot;message&quot;: &quot;Operation completed successfully&quot;
+}
+</code></pre>
+<p><strong>错误响应</strong>：</p>
+<pre><code class="language-json">{
+  &quot;detail&quot;: &quot;Error message here&quot;
+}
+</code></pre>
+<p><strong>分页响应</strong>（如果需要）：</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;success&quot;,
+  &quot;data&quot;: [...],
+  &quot;total&quot;: 100,
+  &quot;page&quot;: 1,
+  &quot;page_size&quot;: 20
+}
+</code></pre>
+<hr />
+<h2 id="_27">数据库架构<a class="headerlink" href="#_27" title="Permanent link">&para;</a></h2>
+<h3 id="mongodb_1">MongoDB数据模型<a class="headerlink" href="#mongodb_1" title="Permanent link">&para;</a></h3>
+<h4 id="collectiongene_data">集合（Collection）：<code>gene_data</code><a class="headerlink" href="#collectiongene_data" title="Permanent link">&para;</a></h4>
+<p><strong>文档结构</strong>：</p>
+<pre><code class="language-javascript">{
+  &quot;_id&quot;: ObjectId(&quot;...&quot;),                    // MongoDB自动生成
+  &quot;organ&quot;: &quot;Heart&quot;,                          // 组织名称（索引字段）
+  &quot;gene_symbol&quot;: &quot;GAPDH&quot;,                   // 基因符号（索引字段）
+  &quot;gene_name&quot;: &quot;Glyceraldehyde-3-phosphate dehydrogenase&quot;,
+  &quot;p_value_10_mgkg_vs_control&quot;: &quot;0.001&quot;,
+  &quot;fdr_step_up_10_mgkg_vs_control&quot;: &quot;0.05&quot;,
+  &quot;ratio_10_mgkg_vs_control&quot;: &quot;1.5&quot;,
+  &quot;fold_change_10_mgkg_vs_control&quot;: &quot;0.5&quot;,
+  &quot;lsmean_10mgkg_10_mgkg_vs_control&quot;: &quot;10.5&quot;,
+  &quot;lsmean_control_10_mgkg_vs_control&quot;: &quot;8.5&quot;
+}
+</code></pre>
+<p><strong>索引设计</strong>：</p>
+<pre><code class="language-python"># 1. 单字段索引（加速单条件查询）
+collection.create_index([(&quot;gene_symbol&quot;, 1)])  # 升序索引
+# 查询性能：O(log n)
+
+# 2. 单字段索引（按组织筛选）
+collection.create_index([(&quot;organ&quot;, 1)])
+# 查询性能：O(log n)
+
+# 3. 复合唯一索引（防止重复数据）
+collection.create_index(
+    [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)], 
+    unique=True
+)
+# 确保同一组织同一基因只有一条记录
+</code></pre>
+<h4 id="_28">数据加载流程（详细步骤）<a class="headerlink" href="#_28" title="Permanent link">&para;</a></h4>
+<p><strong>步骤1：文件扫描</strong></p>
+<pre><code class="language-python">excel_files = glob.glob(os.path.join(&quot;data&quot;, &quot;*.xlsx&quot;))
+# 结果：['data/BoneMarrow.xlsx', 'data/Cortex.xlsx', ...]
+</code></pre>
+<p><strong>步骤2：逐个文件处理</strong></p>
+<pre><code class="language-python">for file_path in excel_files:
+    # 2.1 提取组织名称
+    organ_name = os.path.splitext(os.path.basename(file_path))[0]
+    # 结果：'BoneMarrow'
+
+    # 2.2 读取Excel文件
+    df = pd.read_excel(file_path)
+    # DataFrame结构：
+    # | Gene_symbol | Gene_name | P_value_... | ... |
+    # |-------------|-----------|-------------|-----|
+    # | GAPDH       | ...       | 0.001       | ... |
+    # | ACTB        | ...       | 0.002       | ... |
+
+    # 2.3 遍历每一行
+    for _, row in df.iterrows():
+        gene_symbol = str(row.get('Gene_symbol', '')).strip()
+        if not gene_symbol:  # 跳过空基因符号
+            continue
+
+        # 2.4 构建MongoDB文档
+        record = {
+            'organ': organ_name,
+            'gene_symbol': gene_symbol,
+            'gene_name': str(row.get('Gene_name', '')),
+            # ... 其他字段
+        }
+        records.append(record)
+</code></pre>
+<p><strong>步骤3：批量写入</strong></p>
+<pre><code class="language-python"># 3.1 构建批量操作列表
+operations = []
+for record in records:
+    operations.append({
+        'replaceOne': {
+            'filter': {
+                'organ': record['organ'],
+                'gene_symbol': record['gene_symbol']
+            },
+            'replacement': record,
+            'upsert': True  # 不存在则插入，存在则更新
+        }
+    })
+
+# 3.2 执行批量操作
+result = collection.bulk_write(operations)
+# 结果：
+# - result.upserted_count: 新插入的文档数
+# - result.modified_count: 更新的文档数
+</code></pre>
+<p><strong>步骤4：创建索引</strong></p>
+<pre><code class="language-python"># 4.1 创建单字段索引
+collection.create_index([(&quot;gene_symbol&quot;, 1)])
+collection.create_index([(&quot;organ&quot;, 1)])
+
+# 4.2 创建复合唯一索引
+collection.create_index(
+    [(&quot;organ&quot;, 1), (&quot;gene_symbol&quot;, 1)], 
+    unique=True
+)
+</code></pre>
+<h4 id="_29">查询优化<a class="headerlink" href="#_29" title="Permanent link">&para;</a></h4>
+<p><strong>查询1：精确基因符号搜索</strong></p>
+<pre><code class="language-python">query = {&quot;gene_symbol&quot;: {&quot;$regex&quot;: f&quot;^{gene_symbol}$&quot;, &quot;$options&quot;: &quot;i&quot;}}
+# 使用索引：gene_symbol索引
+# 性能：O(log n)
+</code></pre>
+<p><strong>查询2：获取所有唯一基因符号</strong></p>
+<pre><code class="language-python">pipeline = [
+    {&quot;$group&quot;: {&quot;_id&quot;: &quot;$gene_symbol&quot;}},  # 分组去重
+    {&quot;$sort&quot;: {&quot;_id&quot;: 1}}                  # 排序
+]
+genes = [doc[&quot;_id&quot;] for doc in collection.aggregate(pipeline)]
+# 使用索引：gene_symbol索引
+# 性能：O(n log n)
+</code></pre>
+<hr />
+<h2 id="_30">部署架构<a class="headerlink" href="#_30" title="Permanent link">&para;</a></h2>
+<h3 id="docker">Docker容器化架构<a class="headerlink" href="#docker" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────────────────────────────┐
+│         Docker Compose                  │
+│                                         │
+│  ┌──────────────┐    ┌──────────────┐  │
+│  │   Frontend   │    │   Backend    │  │
+│  │   Container  │◄──►│   Container  │  │
+│  │              │    │              │  │
+│  │ Next.js      │    │ FastAPI      │  │
+│  │ Port: 3000   │    │ Port: 8000   │  │
+│  └──────────────┘    └──────┬───────┘  │
+│                             │          │
+│                             ▼          │
+│                      ┌──────────────┐  │
+│                      │   MongoDB    │  │
+│                      │   Container  │  │
+│                      │   (可选)     │  │
+│                      └──────────────┘  │
+│                                         │
+│  ┌──────────────────────────────────┐  │
+│  │      gene-search-network         │  │
+│  │      (Bridge Network)            │  │
+│  └──────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+</code></pre>
+<h3 id="_31">部署流程<a class="headerlink" href="#_31" title="Permanent link">&para;</a></h3>
+<p><strong>1. 构建阶段</strong></p>
+<pre><code class="language-bash"># Frontend构建
+cd genegen
+npm install
+npm run build  # 生成.next目录
+
+# Backend准备
+cd backend
+pip install -r requirements.txt
+</code></pre>
+<p><strong>2. Docker镜像构建</strong></p>
+<pre><code class="language-dockerfile"># Dockerfile.backend
+FROM python:3.9-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD [&quot;uvicorn&quot;, &quot;server:app&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;8000&quot;]
+
+# Dockerfile.frontend
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+CMD [&quot;npm&quot;, &quot;start&quot;]
+</code></pre>
+<p><strong>3. 容器启动</strong></p>
+<pre><code class="language-bash">docker-compose up -d
+</code></pre>
+<hr />
+<h2 id="_32">技术栈详解<a class="headerlink" href="#_32" title="Permanent link">&para;</a></h2>
+<h3 id="_33">前端技术栈<a class="headerlink" href="#_33" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>技术</th>
+<th>版本</th>
+<th>用途</th>
+<th>关联关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Next.js</td>
+<td>15.3.5</td>
+<td>React框架，路由，SSR</td>
+<td>构建前端应用</td>
+</tr>
+<tr>
+<td>React</td>
+<td>19.0.0</td>
+<td>UI组件库</td>
+<td>Next.js的基础</td>
+</tr>
+<tr>
+<td>TypeScript</td>
+<td>5.x</td>
+<td>类型安全</td>
+<td>编译为JavaScript</td>
+</tr>
+<tr>
+<td>Tailwind CSS</td>
+<td>4.x</td>
+<td>样式框架</td>
+<td>通过globals.css引入</td>
+</tr>
+<tr>
+<td>Plotly.js</td>
+<td>2.35.3</td>
+<td>交互式图表</td>
+<td>通过react-plotly.js使用</td>
+</tr>
+</tbody>
+</table>
+<p><strong>依赖关系</strong>：</p>
+<pre><code>Next.js → React → React DOM
+Next.js → TypeScript Compiler
+Next.js → Tailwind CSS
+React → Plotly.js (动态导入)
+</code></pre>
+<h3 id="_34">后端技术栈<a class="headerlink" href="#_34" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>技术</th>
+<th>版本</th>
+<th>用途</th>
+<th>关联关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FastAPI</td>
+<td>0.68.0</td>
+<td>Web框架</td>
+<td>构建API服务</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>3.9+</td>
+<td>编程语言</td>
+<td>FastAPI的基础</td>
+</tr>
+<tr>
+<td>pandas</td>
+<td>1.3.0+</td>
+<td>数据处理</td>
+<td>读取Excel/CSV</td>
+</tr>
+<tr>
+<td>NumPy</td>
+<td>1.21.0+</td>
+<td>数值计算</td>
+<td>矩阵运算</td>
+</tr>
+<tr>
+<td>SciPy</td>
+<td>-</td>
+<td>科学计算</td>
+<td>统计检验</td>
+</tr>
+<tr>
+<td>scikit-learn</td>
+<td>-</td>
+<td>机器学习</td>
+<td>PCA, t-SNE, K-means</td>
+</tr>
+<tr>
+<td>matplotlib</td>
+<td>3.4.0+</td>
+<td>图表生成</td>
+<td>静态图片</td>
+</tr>
+<tr>
+<td>seaborn</td>
+<td>0.11.0+</td>
+<td>高级可视化</td>
+<td>热图</td>
+</tr>
+<tr>
+<td>GProfiler</td>
+<td>1.0.0+</td>
+<td>富集分析</td>
+<td>外部API客户端</td>
+</tr>
+<tr>
+<td>pymongo</td>
+<td>-</td>
+<td>MongoDB驱动</td>
+<td>数据库连接</td>
+</tr>
+</tbody>
+</table>
+<p><strong>依赖关系</strong>：</p>
+<pre><code>FastAPI → Pydantic (数据验证)
+FastAPI → Uvicorn (ASGI服务器)
+pandas → NumPy (底层数组)
+scikit-learn → NumPy, SciPy
+matplotlib → NumPy
+seaborn → matplotlib, pandas
+</code></pre>
+<hr />
+<h2 id="_35">模块间关联关系<a class="headerlink" href="#_35" title="Permanent link">&para;</a></h2>
+<h3 id="_36">数据共享<a class="headerlink" href="#_36" title="Permanent link">&para;</a></h3>
+<p><strong>1. 基因列表共享</strong>：</p>
+<pre><code>MongoDB (gene_data)
+    │
+    ├─→ 基因搜索模块：查询基因表达数据
+    │
+    └─→ 其他模块：可以作为参考数据源
+</code></pre>
+<p><strong>2. 分析结果共享</strong>：</p>
+<pre><code>IVCCA分析结果（相关性矩阵）
+    │
+    └─→ 可用于通路分析
+        └─→ 通路分析结果可用于主题分析
+</code></pre>
+<h3 id="_37">功能依赖关系<a class="headerlink" href="#_37" title="Permanent link">&para;</a></h3>
+<pre><code>基因搜索 ←─ 独立模块（仅依赖MongoDB）
+    │
+主题分析 ←─ 依赖GProfiler API
+    │
+IVCCA分析 ←─ 独立模块（算法自包含）
+</code></pre>
+<h3 id="api_7">API端点关联<a class="headerlink" href="#api_7" title="Permanent link">&para;</a></h3>
+<p><strong>同一模块内的端点关联</strong>：</p>
+<pre><code>/api/ivcca/load-data
+    ↓ (返回analyzer_id)
+/api/ivcca/calculate-correlation (需要analyzer_id)
+    ↓ (需要先计算相关性)
+/api/ivcca/heatmap (需要analyzer_id)
+/api/ivcca/pca (需要analyzer_id)
+/api/ivcca/tsne (需要analyzer_id)
+</code></pre>
+<hr />
+<h2 id="_38">性能优化策略<a class="headerlink" href="#_38" title="Permanent link">&para;</a></h2>
+<h3 id="_39">前端优化<a class="headerlink" href="#_39" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>代码分割</strong>：</li>
+<li>Plotly.js动态导入（<code>dynamic import</code>）</li>
+<li>
+<p>页面级代码分割（Next.js自动）</p>
+</li>
+<li>
+<p><strong>缓存策略</strong>：</p>
+</li>
+<li>基因符号列表缓存（localStorage）</li>
+<li>
+<p>API响应缓存（可选）</p>
+</li>
+<li>
+<p><strong>懒加载</strong>：</p>
+</li>
+<li>图表组件懒加载</li>
+<li>图片懒加载</li>
+</ol>
+<h3 id="_40">后端优化<a class="headerlink" href="#_40" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>数据库优化</strong>：</li>
+<li>索引加速查询</li>
+<li>
+<p>批量操作减少IO</p>
+</li>
+<li>
+<p><strong>计算优化</strong>：</p>
+</li>
+<li>NumPy向量化运算</li>
+<li>
+<p>相关性矩阵缓存（内存中）</p>
+</li>
+<li>
+<p><strong>并发处理</strong>：</p>
+</li>
+<li>FastAPI异步处理</li>
+<li>多个analyzer实例独立</li>
+</ol>
+<hr />
+<h2 id="_41">安全架构<a class="headerlink" href="#_41" title="Permanent link">&para;</a></h2>
+<h3 id="_42">认证机制<a class="headerlink" href="#_42" title="Permanent link">&para;</a></h3>
+<p><strong>Token-based认证</strong>：</p>
+<pre><code class="language-python"># 环境变量存储有效token
+VALID_TOKENS = os.getenv('VALID_TOKENS', '').split(',')
+
+# 验证函数
+def verify_token(token: str) -&gt; bool:
+    return token in VALID_TOKENS
+
+# 保护端点
+@app.post(&quot;/api/gene/add&quot;)
+async def add_gene(..., token: str = Query(...)):
+    if not verify_token(token):
+        raise HTTPException(status_code=401)
+</code></pre>
+<h3 id="cors">CORS配置<a class="headerlink" href="#cors" title="Permanent link">&para;</a></h3>
+<pre><code class="language-python">app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[&quot;*&quot;],  # 开发环境，生产环境应限制
+    allow_credentials=True,
+    allow_methods=[&quot;*&quot;],
+    allow_headers=[&quot;*&quot;],
+)
+</code></pre>
+<h3 id="_43">数据验证<a class="headerlink" href="#_43" title="Permanent link">&para;</a></h3>
+<p><strong>Pydantic模型验证</strong>：</p>
+<pre><code class="language-python">class GeneData(BaseModel):
+    gene_symbol: str
+    gene_name: str
+    # ... 自动类型验证和转换
+</code></pre>
+<hr />
+<h2 id="_44">错误处理架构<a class="headerlink" href="#_44" title="Permanent link">&para;</a></h2>
+<h3 id="_45">前端错误处理<a class="headerlink" href="#_45" title="Permanent link">&para;</a></h3>
+<pre><code class="language-typescript">try {
+  const response = await fetch(...);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const data = await response.json();
+} catch (error) {
+  setError(error.message);  // 显示错误信息
+  console.error(error);     // 日志记录
+}
+</code></pre>
+<h3 id="_46">后端错误处理<a class="headerlink" href="#_46" title="Permanent link">&para;</a></h3>
+<pre><code class="language-python">try:
+    # 业务逻辑
+    result = process_data()
+    return {&quot;status&quot;: &quot;success&quot;, &quot;data&quot;: result}
+except ValueError as e:
+    raise HTTPException(status_code=400, detail=str(e))
+except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
+</code></pre>
+<hr />
+<h2 id="_47">扩展性设计<a class="headerlink" href="#_47" title="Permanent link">&para;</a></h2>
+<h3 id="_48">水平扩展<a class="headerlink" href="#_48" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>前端</strong>：可以部署多个实例，使用负载均衡</li>
+<li><strong>后端</strong>：无状态设计，支持多实例部署</li>
+<li><strong>数据库</strong>：MongoDB支持分片和副本集</li>
+</ul>
+<h3 id="_49">功能扩展<a class="headerlink" href="#_49" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>新模块</strong>：可以添加新的API类和新端点</li>
+<li><strong>新算法</strong>：可以在<code>ivcca_core.py</code>中添加新方法</li>
+<li><strong>新可视化</strong>：可以添加新的图表生成函数</li>
+</ul>
+<hr />
+<p><strong>文档版本</strong>：1.0<br />
+<strong>最后更新</strong>：2024年</p>
+    
+    <script>
+        // Print hint
+        window.onbeforeprint = function() {
+            console.log("Print hint: Please select 'Save as PDF' or 'Print to PDF'");
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+*.html
+*.pdf
+*.docx
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+htmlcov
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+.next
+out
+
+# Environment files
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker compose files (not needed in image)
+docker-compose.yml
+docker-compose.prod.yml
+.dockerignore
+
+# Deprecated
+deprecated/
+
+# Test files
+test_*
+*_test.py
+*.test.*
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Architecture diagrams
+*.png
+*.jpg
+*.jpeg
+!backend/data/**/*.xlsx
+
+# Thesis and academic files
+thesis_charts/
+*.tex
+
+# Nginx (if not used)
+nginx/

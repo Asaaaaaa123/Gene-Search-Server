@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>研究生答辩完整文档 - GenoCorr 平台</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 2.5cm 2cm;
+            }
+            
+            body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+            
+            .no-print {
+                display: none;
+            }
+            
+            h1, h2, h3, h4, h5, h6 {
+                page-break-after: avoid;
+            }
+            
+            pre, blockquote, table {
+                page-break-inside: avoid;
+            }
+        }
+        
+        body {
+            font-family: "Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans", Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            font-size: 12pt;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14pt;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        .print-button:hover {
+            background-color: #2980b9;
+        }
+        
+        h1 {
+            font-size: 28pt;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 0.5em;
+        }
+        
+        h2 {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+            border-bottom: 2px solid #95a5a6;
+            padding-bottom: 0.3em;
+        }
+        
+        h3 {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.3em;
+            margin-bottom: 0.5em;
+        }
+        
+        h4 {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1.2em;
+            margin-bottom: 0.4em;
+        }
+        
+        h5, h6 {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 1em;
+            margin-bottom: 0.3em;
+        }
+        
+        p {
+            margin: 0.8em 0;
+            text-align: justify;
+        }
+        
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 10.5pt;
+            color: #c7254e;
+            border: 1px solid #e1e1e1;
+        }
+        
+        pre {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+            margin: 1em 0;
+        }
+        
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            border: none;
+            color: #333;
+            font-size: 10pt;
+            display: block;
+            white-space: pre;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5em 0;
+            font-size: 11pt;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        ul, ol {
+            margin: 0.8em 0;
+            padding-left: 2em;
+        }
+        
+        li {
+            margin: 0.4em 0;
+        }
+        
+        blockquote {
+            border-left: 4px solid #3498db;
+            margin: 1.5em 0;
+            padding-left: 1.5em;
+            padding-right: 1em;
+            color: #555;
+            font-style: italic;
+            background-color: #f9f9f9;
+            padding-top: 0.5em;
+            padding-bottom: 0.5em;
+        }
+        
+        hr {
+            border: none;
+            border-top: 2px solid #ddd;
+            margin: 2em 0;
+        }
+        
+        strong {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        em {
+            font-style: italic;
+            color: #555;
+        }
+        
+        .toc {
+            background-color: #f9f9f9;
+            padding: 1.5em;
+            margin: 1.5em 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .toc ul {
+            list-style-type: none;
+            padding-left: 1em;
+        }
+        
+        .toc li {
+            margin: 0.3em 0;
+        }
+        
+        .toc a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        
+        /* 数学公式样式 */
+        .math {
+            font-family: "Times New Roman", "STIX", serif;
+            font-style: italic;
+            margin: 0.5em 0;
+            text-align: center;
+        }
+        
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1.5em auto;
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button no-print" onclick="window.print()">
+        🖨️ 打印为 PDF
+    </button>
+    
+    <h1 id="_1">研究生答辩完整文档<a class="headerlink" href="#_1" title="Permanent link">&para;</a></h1>
+<h2 id="genocorr">GenoCorr 平台：基因表达分析与相关性平台<a class="headerlink" href="#genocorr" title="Permanent link">&para;</a></h2>
+<hr />
+<h2 id="_2">目录<a class="headerlink" href="#_2" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#项目概述">项目概述</a></li>
+<li><a href="#模块一基因搜索系统">模块一：基因搜索系统（Gene Search System）</a></li>
+<li><a href="#模块二主题分析系统">模块二：主题分析系统（Theme Analysis System）</a></li>
+<li><a href="#模块三ivcca分析系统">模块三：IVCCA 分析系统（Inter-Variability Cross-Correlation Analysis）</a></li>
+<li><a href="#技术架构">技术架构</a></li>
+<li><a href="#项目总结与展望">项目总结与展望</a></li>
+</ol>
+<hr />
+<h2 id="_3">项目概述<a class="headerlink" href="#_3" title="Permanent link">&para;</a></h2>
+<p>GenoCorr 平台是一个综合性的基于Web的生物信息学分析平台，整合了基因表达数据搜索、基因本体富集分析和跨变异性相关性分析三大核心功能。该平台旨在解决生物医学研究中基因表达数据分散、分析工具复杂、结果解读困难等问题，为研究人员提供一站式、易用的基因表达分析解决方案。</p>
+<h3 id="_4">研究背景与动机<a class="headerlink" href="#_4" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>数据分散问题</strong>：基因表达数据通常存储在不同的文件或数据库中，缺乏统一的查询接口</li>
+<li><strong>工具使用门槛高</strong>：现有的生物信息学工具往往需要命令行操作或编程技能，限制了非计算背景研究人员的使用</li>
+<li><strong>分析流程割裂</strong>：不同分析步骤需要切换不同工具，缺乏统一的平台整合</li>
+<li><strong>结果可视化不足</strong>：分析结果往往以表格形式呈现，缺乏直观的可视化展示</li>
+</ol>
+<h3 id="_5">项目目标<a class="headerlink" href="#_5" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>数据整合</strong>：整合多个组织/器官的基因表达数据，提供统一的搜索接口</li>
+<li><strong>功能富集分析</strong>：提供基于主题的基因本体富集分析，帮助理解基因的生物学功能</li>
+<li><strong>相关性分析</strong>：实现跨样本的相关性分析，识别共表达模式和调控网络</li>
+<li><strong>易用性</strong>：提供直观的Web界面，降低使用门槛</li>
+</ol>
+<hr />
+<h2 id="gene-search-system">模块一：基因搜索系统（Gene Search System）<a class="headerlink" href="#gene-search-system" title="Permanent link">&para;</a></h2>
+<h3 id="11">1.1 这是什么？<a class="headerlink" href="#11" title="Permanent link">&para;</a></h3>
+<p>基因搜索系统是一个多组织基因表达数据查询与分析平台，允许用户通过基因符号（Gene Symbol）搜索并获取该基因在多个组织/器官中的表达数据。系统整合了9个组织的数据：骨髓（Bone Marrow）、皮层（Cortex）、背根神经节（DRG）、脂肪（Fat）、心脏（Heart）、下丘脑（Hypothalamus）、肾脏（Kidneys）、肝脏（Liver）和肌肉（Muscle）。</p>
+<h3 id="12">1.2 能做什么？<a class="headerlink" href="#12" title="Permanent link">&para;</a></h3>
+<h4 id="121">1.2.1 核心功能<a class="headerlink" href="#121" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>基因搜索</strong>：</li>
+<li>通过基因符号搜索（支持大小写不敏感）</li>
+<li>返回该基因在所有组织中的表达数据</li>
+<li>
+<p>支持自动补全和模糊匹配</p>
+</li>
+<li>
+<p><strong>数据展示</strong>：</p>
+</li>
+<li>
+<p>显示每个组织中的以下数据：</p>
+<ul>
+<li><strong>P值</strong>（P-value）：统计显著性</li>
+<li><strong>FDR校正</strong>（FDR step-up）：多重比较校正后的错误发现率</li>
+<li><strong>比率</strong>（Ratio）：处理组与对照组的比值</li>
+<li><strong>倍数变化</strong>（Fold Change）：表达量的倍数变化</li>
+<li><strong>最小二乘均值</strong>（LSMean）：处理组和对照组的均值</li>
+</ul>
+</li>
+<li>
+<p><strong>可视化</strong>：</p>
+</li>
+<li><strong>Fold Change 柱状图</strong>：展示基因在各组织中的倍数变化，正值为蓝色，负值为红色</li>
+<li><strong>LSMean(Control) 柱状图</strong>：展示对照组在各组织中的表达水平</li>
+<li>
+<p><strong>LSMean(10mg/kg) 柱状图</strong>：展示处理组在各组织中的表达水平</p>
+</li>
+<li>
+<p><strong>数据管理</strong>：</p>
+</li>
+<li>支持添加新基因数据</li>
+<li>数据去重和验证</li>
+<li>自动索引优化</li>
+</ol>
+<h4 id="122">1.2.2 应用场景<a class="headerlink" href="#122" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>药物研发</strong>：评估药物对特定基因在不同组织中的表达影响</li>
+<li><strong>毒性研究</strong>：识别药物诱导的组织特异性基因表达变化</li>
+<li><strong>比较研究</strong>：比较同一基因在不同组织中的表达模式</li>
+<li><strong>生物标志物发现</strong>：识别组织特异性的生物标志物</li>
+</ul>
+<h3 id="13">1.3 为什么要做？<a class="headerlink" href="#13" title="Permanent link">&para;</a></h3>
+<h4 id="131">1.3.1 研究需求<a class="headerlink" href="#131" title="Permanent link">&para;</a></h4>
+<p>在药物研发和毒性评估研究中，研究人员经常需要：<br />
+1. 快速查询特定基因在多个组织中的表达数据<br />
+2. 比较同一基因在不同组织中的表达差异<br />
+3. 评估药物处理对基因表达的影响<br />
+4. 识别组织特异性的表达模式</p>
+<h4 id="132">1.3.2 现有方案的不足<a class="headerlink" href="#132" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>数据分散</strong>：数据存储在不同的Excel文件中，查询困难</li>
+<li><strong>操作繁琐</strong>：需要手动打开多个文件，复制粘贴数据</li>
+<li><strong>缺乏可视化</strong>：数据以表格形式呈现，不直观</li>
+<li><strong>难以比较</strong>：跨组织比较需要人工整理数据</li>
+</ol>
+<h4 id="133">1.3.3 我们的解决方案<a class="headerlink" href="#133" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>统一数据存储</strong>：使用MongoDB整合所有组织的数据</li>
+<li><strong>快速搜索</strong>：基于索引的快速查询（O(log n)复杂度）</li>
+<li><strong>自动可视化</strong>：自动生成专业的柱状图</li>
+<li><strong>跨组织比较</strong>：在一个界面中展示所有组织的数据</li>
+</ul>
+<h3 id="14">1.4 如何实现？<a class="headerlink" href="#14" title="Permanent link">&para;</a></h3>
+<h4 id="141">1.4.1 数据架构<a class="headerlink" href="#141" title="Permanent link">&para;</a></h4>
+<p><strong>数据存储结构</strong>：</p>
+<pre><code class="language-python">{
+    'organ': 'Heart',                    # 组织名称
+    'gene_symbol': 'GAPDH',             # 基因符号
+    'gene_name': 'Glyceraldehyde-3-phosphate dehydrogenase',  # 基因全名
+    'p_value_10_mgkg_vs_control': '0.001',      # P值
+    'fdr_step_up_10_mgkg_vs_control': '0.05',   # FDR校正
+    'ratio_10_mgkg_vs_control': '1.5',          # 比率
+    'fold_change_10_mgkg_vs_control': '0.5',    # 倍数变化
+    'lsmean_10mgkg_10_mgkg_vs_control': '10.5', # 处理组均值
+    'lsmean_control_10_mgkg_vs_control': '8.5'  # 对照组均值
+}
+</code></pre>
+<p><strong>数据库设计</strong>：<br />
+- <strong>集合（Collection）</strong>：<code>gene_data</code><br />
+- <strong>索引</strong>：<br />
+  - <code>gene_symbol</code>：单字段索引，支持快速搜索<br />
+  - <code>organ</code>：单字段索引，支持按组织筛选<br />
+  - <code>(organ, gene_symbol)</code>：复合唯一索引，防止重复数据</p>
+<h4 id="142">1.4.2 核心算法<a class="headerlink" href="#142" title="Permanent link">&para;</a></h4>
+<p><strong>1. 数据加载算法</strong></p>
+<pre><code class="language-python">def load_data_to_mongodb(self):
+    &quot;&quot;&quot;加载Excel文件到MongoDB，支持去重&quot;&quot;&quot;
+    for file_path in excel_files:
+        df = pd.read_excel(file_path)  # 读取Excel
+        records = []
+        for _, row in df.iterrows():
+            record = {
+                'organ': organ_name,
+                'gene_symbol': row['Gene_symbol'],
+                # ... 其他字段
+            }
+            records.append(record)
+
+        # 批量操作，使用upsert防止重复
+        operations = []
+        for record in records:
+            operations.append({
+                'replaceOne': {
+                    'filter': {
+                        'organ': record['organ'],
+                        'gene_symbol': record['gene_symbol']
+                    },
+                    'replacement': record,
+                    'upsert': True  # 存在则更新，不存在则插入
+                }
+            })
+
+        collection.bulk_write(operations)  # 批量写入
+</code></pre>
+<p><strong>时间复杂度</strong>：O(n)，其中n为记录数<br />
+<strong>空间复杂度</strong>：O(n)</p>
+<p><strong>2. 基因搜索算法</strong></p>
+<pre><code class="language-python">def search_gene_data(self, gene_symbol: str) -&gt; List[Dict]:
+    &quot;&quot;&quot;搜索基因数据（大小写不敏感）&quot;&quot;&quot;
+    # 使用正则表达式实现大小写不敏感搜索
+    query = {
+        &quot;gene_symbol&quot;: {
+            &quot;$regex&quot;: f&quot;^{gene_symbol}$&quot;,  # 精确匹配
+            &quot;$options&quot;: &quot;i&quot;  # 大小写不敏感
+        }
+    }
+    cursor = collection.find(query)  # 使用索引快速查询
+    return list(cursor)
+</code></pre>
+<p><strong>时间复杂度</strong>：O(log n)（利用索引）<br />
+<strong>空间复杂度</strong>：O(m)，其中m为匹配结果数</p>
+<p><strong>3. 可视化生成算法</strong></p>
+<pre><code class="language-python">def create_fold_change_plot(self, gene_symbol: str) -&gt; str:
+    &quot;&quot;&quot;生成Fold Change柱状图&quot;&quot;&quot;
+    results = self.search_gene_data(gene_symbol)
+
+    organs = []
+    fold_changes = []
+    colors = []
+
+    for doc in results:
+        fold_change = float(doc['fold_change_10_mgkg_vs_control'])
+        organs.append(doc['organ'])
+        fold_changes.append(fold_change)
+        # 根据符号选择颜色
+        colors.append('blue' if fold_change &gt;= 0 else 'red')
+
+    # 使用matplotlib生成图表
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(organs, fold_changes, color=colors)
+    ax.set_title(f'Fold Change for {gene_symbol}')
+    # ... 其他设置
+
+    # 转换为base64编码的图片
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='jpg', dpi=300)
+    return base64.b64encode(buffer.getvalue()).decode()
+</code></pre>
+<p><strong>时间复杂度</strong>：O(m)，其中m为组织数<br />
+<strong>空间复杂度</strong>：O(1)</p>
+<h4 id="143">1.4.3 代码架构<a class="headerlink" href="#143" title="Permanent link">&para;</a></h4>
+<p><strong>类结构</strong>：</p>
+<pre><code class="language-python">class GeneSearchAPI:
+    def __init__(self):
+        self.load_data_to_mongodb()  # 初始化时加载数据
+        self.all_genes = self.load_all_genes()  # 获取所有基因符号
+
+    def load_data_to_mongodb(self):
+        &quot;&quot;&quot;数据加载逻辑&quot;&quot;&quot;
+
+    def load_all_genes(self) -&gt; List[str]:
+        &quot;&quot;&quot;获取所有基因符号（用于自动补全）&quot;&quot;&quot;
+
+    def search_gene_data(self, gene_symbol: str) -&gt; List[Dict]:
+        &quot;&quot;&quot;搜索基因数据&quot;&quot;&quot;
+
+    def create_fold_change_plot(self, gene_symbol: str) -&gt; str:
+        &quot;&quot;&quot;生成Fold Change图&quot;&quot;&quot;
+
+    def create_lsmean_control_plot(self, gene_symbol: str) -&gt; str:
+        &quot;&quot;&quot;生成对照组LSMean图&quot;&quot;&quot;
+
+    def create_lsmean_10mgkg_plot(self, gene_symbol: str) -&gt; str:
+        &quot;&quot;&quot;生成处理组LSMean图&quot;&quot;&quot;
+</code></pre>
+<p><strong>API端点</strong>：<br />
+- <code>GET /api/gene/symbol/search?gene_symbol=GAPDH</code>：搜索基因<br />
+- <code>GET /api/gene/symbols</code>：获取所有基因符号<br />
+- <code>GET /api/gene/symbol/showFoldChange?gene_symbol=GAPDH</code>：获取Fold Change图<br />
+- <code>GET /api/gene/symbol/showLSMeanControl?gene_symbol=GAPDH</code>：获取对照组图<br />
+- <code>GET /api/gene/symbol/showLSMeanTenMgKg?gene_symbol=GAPDH</code>：获取处理组图</p>
+<h3 id="15">1.5 局限性<a class="headerlink" href="#15" title="Permanent link">&para;</a></h3>
+<h4 id="151">1.5.1 数据局限性<a class="headerlink" href="#151" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>数据来源单一</strong>：</li>
+<li>目前仅包含特定实验条件下的数据</li>
+<li>数据时间点固定（10mg/kg处理）</li>
+<li>
+<p>缺乏时间序列数据</p>
+</li>
+<li>
+<p><strong>组织覆盖有限</strong>：</p>
+</li>
+<li>仅包含9个组织/器官</li>
+<li>缺乏细胞类型特异性数据</li>
+<li>
+<p>缺乏发育阶段特异性数据</p>
+</li>
+<li>
+<p><strong>统计指标固定</strong>：</p>
+</li>
+<li>仅包含P值、FDR、Fold Change等基本指标</li>
+<li>缺乏更高级的统计指标（如效应量、置信区间等）</li>
+</ol>
+<h4 id="152">1.5.2 功能局限性<a class="headerlink" href="#152" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>搜索功能</strong>：</li>
+<li>仅支持精确匹配和大小写不敏感匹配</li>
+<li>不支持模糊搜索或同义词匹配</li>
+<li>
+<p>不支持批量搜索</p>
+</li>
+<li>
+<p><strong>可视化</strong>：</p>
+</li>
+<li>图表类型固定（仅柱状图）</li>
+<li>不支持交互式图表</li>
+<li>
+<p>不支持数据导出</p>
+</li>
+<li>
+<p><strong>比较分析</strong>：</p>
+</li>
+<li>不支持多基因同时比较</li>
+<li>不支持跨实验条件比较</li>
+<li>缺乏统计分析功能（如配对t检验）</li>
+</ol>
+<h4 id="153">1.5.3 技术局限性<a class="headerlink" href="#153" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>性能</strong>：</li>
+<li>大量数据加载时可能较慢</li>
+<li>图表生成需要时间（特别是高分辨率图片）</li>
+<li>
+<p>缺乏缓存机制</p>
+</li>
+<li>
+<p><strong>可扩展性</strong>：</p>
+</li>
+<li>数据模型固定，难以扩展新字段</li>
+<li>缺乏版本控制</li>
+<li>
+<p>不支持数据更新历史追踪</p>
+</li>
+<li>
+<p><strong>数据质量</strong>：</p>
+</li>
+<li>缺乏数据验证机制</li>
+<li>缺乏异常值检测</li>
+<li>缺乏数据完整性检查</li>
+</ol>
+<hr />
+<h2 id="theme-analysis-system">模块二：主题分析系统（Theme Analysis System）<a class="headerlink" href="#theme-analysis-system" title="Permanent link">&para;</a></h2>
+<h3 id="21">2.1 这是什么？<a class="headerlink" href="#21" title="Permanent link">&para;</a></h3>
+<p>主题分析系统是一个基于基因本体（Gene Ontology, GO）的功能富集分析平台，通过主题（Theme）概念对GO术语进行分组和聚合分析。系统将生物学相关的GO术语归类到预定义或用户自定义的主题中，帮助研究人员理解基因集合的生物学功能。</p>
+<h3 id="22">2.2 能做什么？<a class="headerlink" href="#22" title="Permanent link">&para;</a></h3>
+<h4 id="221">2.2.1 核心功能<a class="headerlink" href="#221" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>基因本体富集分析</strong>：</li>
+<li>输入基因列表（.txt文件）</li>
+<li>通过GProfiler API进行富集分析</li>
+<li>
+<p>返回显著富集的GO术语（BP、MF、CC）</p>
+</li>
+<li>
+<p><strong>主题分配</strong>：</p>
+</li>
+<li>基于关键词匹配，将GO术语分配到预定义主题</li>
+<li>
+<p>支持三个GO类别：</p>
+<ul>
+<li><strong>Biological Process (BP)</strong>：生物学过程</li>
+<li><strong>Molecular Function (MF)</strong>：分子功能</li>
+<li><strong>Cellular Component (CC)</strong>：细胞组分</li>
+</ul>
+</li>
+<li>
+<p><strong>主题聚合</strong>：</p>
+</li>
+<li>将同一主题内的GO术语分数聚合</li>
+<li>计算累积分数（Cumulative Score）</li>
+<li>
+<p>生成主题汇总图表</p>
+</li>
+<li>
+<p><strong>可视化</strong>：</p>
+</li>
+<li><strong>主题汇总图</strong>：展示所有主题的累积分数</li>
+<li><strong>主题详细图</strong>：展示特定主题内所有GO术语的分数</li>
+<li>
+<p>支持自定义主题颜色和样式</p>
+</li>
+<li>
+<p><strong>自定义主题</strong>：</p>
+</li>
+<li>用户可以添加自定义主题</li>
+<li>定义主题名称、描述和关键词</li>
+<li>实时应用到分析中</li>
+</ol>
+<h4 id="222">2.2.2 预定义主题示例<a class="headerlink" href="#222" title="Permanent link">&para;</a></h4>
+<p><strong>Biological Process (BP)</strong>：<br />
+- Inflammation &amp; immune signaling<br />
+- Stress &amp; cytokine response<br />
+- Cell-cycle &amp; Apoptosis<br />
+- Metabolic re-wiring<br />
+- Oxidative stress &amp; redox regulation<br />
+- Neuronal Excitability &amp; Synapse</p>
+<p><strong>Molecular Function (MF)</strong>：<br />
+- Kinase activity<br />
+- Transcription factor activity<br />
+- Receptor binding<br />
+- Enzyme activity<br />
+- Ion channel activity</p>
+<p><strong>Cellular Component (CC)</strong>：<br />
+- Mitochondrion<br />
+- Nucleus<br />
+- Membrane<br />
+- Cytoskeleton<br />
+- Endoplasmic reticulum</p>
+<h4 id="223">2.2.3 应用场景<a class="headerlink" href="#223" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>差异表达基因分析</strong>：理解差异表达基因参与的生物学过程</li>
+<li><strong>通路分析</strong>：识别显著激活或抑制的信号通路</li>
+<li><strong>功能预测</strong>：预测未知基因的潜在功能</li>
+<li><strong>疾病机制研究</strong>：理解疾病相关的生物学过程</li>
+</ul>
+<h3 id="23">2.3 为什么要做？<a class="headerlink" href="#23" title="Permanent link">&para;</a></h3>
+<h4 id="231">2.3.1 研究需求<a class="headerlink" href="#231" title="Permanent link">&para;</a></h4>
+<p>在基因表达分析中，研究人员经常遇到以下问题：<br />
+1. <strong>结果解读困难</strong>：GO富集分析返回大量GO术语，难以理解整体生物学意义<br />
+2. <strong>信息过载</strong>：数百个显著富集的GO术语，缺乏优先级排序<br />
+3. <strong>主题识别</strong>：需要人工识别哪些GO术语属于同一生物学主题<br />
+4. <strong>结果展示</strong>：传统的表格展示不直观，难以向他人解释</p>
+<h4 id="232">2.3.2 现有方案的不足<a class="headerlink" href="#232" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>GProfiler等工具</strong>：</li>
+<li>返回大量GO术语，缺乏聚合</li>
+<li>结果以表格形式呈现，不直观</li>
+<li>
+<p>需要手动整理和解释</p>
+</li>
+<li>
+<p><strong>DAVID等工具</strong>：</p>
+</li>
+<li>功能有限，主题分类不够灵活</li>
+<li>不支持自定义主题</li>
+<li>可视化能力有限</li>
+</ol>
+<h4 id="233">2.3.3 我们的解决方案<a class="headerlink" href="#233" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>主题聚合</strong>：将相关GO术语归类到主题中，简化结果解读</li>
+<li><strong>可视化增强</strong>：生成专业的图表，直观展示分析结果</li>
+<li><strong>自定义主题</strong>：支持用户根据研究需求定义主题</li>
+<li><strong>分数聚合</strong>：累积分数帮助识别最重要的生物学主题</li>
+</ul>
+<h3 id="24">2.4 如何实现？<a class="headerlink" href="#24" title="Permanent link">&para;</a></h3>
+<h4 id="241">2.4.1 数学方法<a class="headerlink" href="#241" title="Permanent link">&para;</a></h4>
+<p><strong>1. 富集分析统计检验</strong></p>
+<p>使用超几何分布（Hypergeometric Distribution）进行富集分析：</p>
+<p>设：<br />
+- $N$ = 背景基因总数（参考基因组中的基因数）<br />
+- $M$ = 背景中属于某个GO术语的基因数<br />
+- $n$ = 输入的基因列表长度<br />
+- $k$ = 输入的基因列表中属于该GO术语的基因数</p>
+<p>则富集的P值计算为：</p>
+<p>$$P(X \geq k) = \sum_{i=k}^{min(n, M)} \frac{\binom{M}{i} \binom{N-M}{n-i}}{\binom{N}{n}}$$</p>
+<p>这表示随机选择$n$个基因时，至少有$k$个属于该GO术语的概率。</p>
+<p><strong>2. 多重比较校正</strong></p>
+<p>使用FDR（False Discovery Rate）方法进行多重比较校正：</p>
+<p>$$FDR = \frac{FP}{FP + TP}$$</p>
+<p>其中：<br />
+- $FP$ = 假阳性数<br />
+- $TP$ = 真阳性数</p>
+<p>常用方法包括：<br />
+- <strong>Benjamini-Hochberg (BH)</strong><br />
+- <strong>Bonferroni</strong><br />
+- <strong>FDR step-up</strong></p>
+<p><strong>3. 分数计算</strong></p>
+<p>对于每个GO术语，计算分数：</p>
+<p>$$Score = -\log_{10}(p_value)$$</p>
+<p>这个分数越大，表示富集越显著。</p>
+<p><strong>4. 主题聚合</strong></p>
+<p>对于主题$T$，包含的GO术语集合为${GO_1, GO_2, ..., GO_n}$，则主题的累积分数为：</p>
+<p>$$Cumulative_Score(T) = \sum_{i=1}^{n} Score(GO_i) = \sum_{i=1}^{n} -\log_{10}(p_i)$$</p>
+<p>这等价于：</p>
+<p>$$Cumulative_Score(T) = -\log_{10}\left(\prod_{i=1}^{n} p_i\right)$$</p>
+<p>因此，累积分数反映了该主题整体富集的显著性。</p>
+<p><strong>5. 关键词匹配算法</strong></p>
+<p>主题分配基于关键词匹配：</p>
+<pre><code class="language-python">def assign_theme(self, go_term_name: str) -&gt; Optional[str]:
+    &quot;&quot;&quot;基于关键词匹配分配主题&quot;&quot;&quot;
+    go_term_lower = go_term_name.lower()
+
+    for theme_name, keywords in themes.items():
+        for keyword in keywords:
+            if keyword.lower() in go_term_lower:
+                return theme_name  # 返回第一个匹配的主题
+
+    return None  # 无匹配
+</code></pre>
+<p><strong>匹配规则</strong>：<br />
+- 大小写不敏感<br />
+- 子字符串匹配（不是精确匹配）<br />
+- 多个匹配时返回第一个（优先级）</p>
+<h4 id="242">2.4.2 代码实现<a class="headerlink" href="#242" title="Permanent link">&para;</a></h4>
+<p><strong>1. 核心类结构</strong></p>
+<pre><code class="language-python">class GeneOntologyAPI:
+    def __init__(self):
+        self.gp = GProfiler(return_dataframe=True)  # GProfiler客户端
+        self.themes = {
+            'Inflammation &amp; immune signaling': [
+                'inflammatory', 'immune', 'interleukin', 'cytokine',
+                'chemokine', 'toll-like', 'nf-kappa', 'tnf', 'ifn'
+            ],
+            # ... 更多主题
+        }
+
+    def load_genes_from_file(self, file_content: str) -&gt; List[str]:
+        &quot;&quot;&quot;从文件内容中加载基因列表&quot;&quot;&quot;
+        genes = []
+        for line in file_content.strip().split('\n'):
+            gene = line.strip()
+            if gene:
+                genes.append(gene)
+        return genes
+
+    def enrich(self, genes: List[str], p_thresh: float = 1e-2) -&gt; pd.DataFrame:
+        &quot;&quot;&quot;执行富集分析&quot;&quot;&quot;
+        # 调用GProfiler API
+        df = self.gp.profile(
+            organism=&quot;mmusculus&quot;,  # 小鼠
+            query=genes
+        )
+
+        # 过滤P值
+        df = df[df[&quot;p_value&quot;] &lt; p_thresh].sort_values(&quot;p_value&quot;)
+
+        # 计算分数
+        df[&quot;Score&quot;] = -np.log10(df[&quot;p_value&quot;])
+
+        return df
+
+    def assign_theme(self, name: str) -&gt; Optional[str]:
+        &quot;&quot;&quot;分配主题&quot;&quot;&quot;
+        low = name.lower()
+        for theme, keywords in self.themes.items():
+            for kw in keywords:
+                if kw.lower() in low:
+                    return theme
+        return None
+
+    def aggregate(self, df: pd.DataFrame) -&gt; pd.DataFrame:
+        &quot;&quot;&quot;主题聚合&quot;&quot;&quot;
+        # 分配主题
+        df[&quot;Theme&quot;] = df[&quot;name&quot;].apply(self.assign_theme)
+
+        # 过滤有主题的GO术语
+        themed_df = df.dropna(subset=[&quot;Theme&quot;])
+
+        # 按主题聚合
+        aggregated = themed_df.groupby(&quot;Theme&quot;).agg(
+            Score=(&quot;Score&quot;, &quot;sum&quot;),  # 累积分数
+            Terms=(&quot;Theme&quot;, &quot;count&quot;)  # GO术语数量
+        ).sort_values(&quot;Score&quot;, ascending=False)
+
+        return aggregated
+</code></pre>
+<p><strong>2. 可视化实现</strong></p>
+<pre><code class="language-python">def create_summary_chart(self, themed_df: pd.DataFrame) -&gt; str:
+    &quot;&quot;&quot;创建主题汇总图&quot;&quot;&quot;
+    # 计算图表尺寸
+    fig_width = 12
+    fig_height = max(8, 0.4 * len(themed_df))
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    # 排序
+    themed_df_sorted = themed_df.sort_values(&quot;Score&quot;, ascending=True)
+
+    # 定义颜色
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', ...]  # 20种颜色
+
+    # 绘制水平柱状图
+    bars = ax.barh(
+        themed_df_sorted.index,
+        themed_df_sorted[&quot;Score&quot;],
+        color=colors[:len(themed_df_sorted)],
+        alpha=0.9,
+        height=0.7
+    )
+
+    # 添加数值标签
+    for i, (theme, score) in enumerate(zip(themed_df_sorted.index, themed_df_sorted[&quot;Score&quot;])):
+        ax.text(score + 1, i, f'{score:.1f}', va='center', fontweight='bold')
+
+    ax.set_xlabel(&quot;Cumulative Score (-log10(p-value))&quot;)
+    ax.set_title(&quot;Gene Ontology Analysis Summary by Theme&quot;)
+
+    # 转换为base64
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
+    return base64.b64encode(buffer.getvalue()).decode()
+</code></pre>
+<p><strong>3. 自定义主题实现</strong></p>
+<pre><code class="language-python">@app.post(&quot;/api/ontology/custom-analyze&quot;)
+async def custom_analyze(
+    file: UploadFile = File(...),
+    selected_themes: str = Form(...),
+    custom_themes: Optional[str] = Form(None)  # JSON字符串
+):
+    &quot;&quot;&quot;支持自定义主题的分析&quot;&quot;&quot;
+    # 解析自定义主题
+    if custom_themes:
+        custom_theme_data = json.loads(custom_themes)
+
+        # 保存原始主题
+        original_themes = ontology_api.themes.copy()
+
+        # 临时添加自定义主题
+        for custom_theme in custom_theme_data:
+            theme_name = custom_theme.get('name')
+            keywords = custom_theme.get('keywords', [])
+            ontology_api.themes[theme_name] = keywords
+
+    # 执行分析
+    try:
+        # ... 分析逻辑
+        pass
+    finally:
+        # 恢复原始主题
+        if custom_themes:
+            ontology_api.themes = original_themes
+</code></pre>
+<h4 id="243-api">2.4.3 API端点<a class="headerlink" href="#243-api" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>POST /api/ontology/analyze</code>：标准富集分析</li>
+<li><code>POST /api/ontology/custom-analyze</code>：支持自定义主题的分析</li>
+<li><code>POST /api/ontology/custom-summary-chart</code>：生成自定义主题汇总图</li>
+<li><code>POST /api/ontology/theme-chart</code>：生成特定主题的详细图</li>
+</ul>
+<h3 id="25">2.5 局限性<a class="headerlink" href="#25" title="Permanent link">&para;</a></h3>
+<h4 id="251">2.5.1 方法学局限性<a class="headerlink" href="#251" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>主题分配的准确性</strong>：</li>
+<li>基于关键词匹配，可能产生误分配</li>
+<li>同一个GO术语可能匹配多个主题（但只返回第一个）</li>
+<li>
+<p>某些GO术语可能无法匹配到任何主题</p>
+</li>
+<li>
+<p><strong>分数聚合的合理性</strong>：</p>
+</li>
+<li>累积分数假设所有GO术语同等重要</li>
+<li>不考虑GO术语之间的层次关系</li>
+<li>
+<p>主题内GO术语数量不同，可能产生偏差</p>
+</li>
+<li>
+<p><strong>统计检验的局限性</strong>：</p>
+</li>
+<li>假设基因间相互独立（实际上可能相关）</li>
+<li>背景基因集的选择影响结果</li>
+<li>P值阈值的选择主观</li>
+</ol>
+<h4 id="252">2.5.2 功能局限性<a class="headerlink" href="#252" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>主题定义</strong>：</li>
+<li>预定义主题可能不适合所有研究场景</li>
+<li>关键词列表需要人工维护和更新</li>
+<li>
+<p>缺乏主题验证机制</p>
+</li>
+<li>
+<p><strong>可视化</strong>：</p>
+</li>
+<li>图表类型固定（仅水平柱状图）</li>
+<li>不支持交互式探索</li>
+<li>
+<p>不支持GO层次结构可视化</p>
+</li>
+<li>
+<p><strong>结果导出</strong>：</p>
+</li>
+<li>仅支持图片导出</li>
+<li>不支持数据表格导出</li>
+<li>缺乏详细的统计报告</li>
+</ol>
+<h4 id="253">2.5.3 技术局限性<a class="headerlink" href="#253" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>GProfiler依赖</strong>：</li>
+<li>依赖外部API，网络问题可能影响分析</li>
+<li>API调用有频率限制</li>
+<li>
+<p>结果格式固定，难以定制</p>
+</li>
+<li>
+<p><strong>性能</strong>：</p>
+</li>
+<li>大量基因列表（&gt;1000）分析较慢</li>
+<li>主题匹配算法效率可以优化（目前O(n<em>m</em>k)）</li>
+<li>
+<p>缺乏缓存机制</p>
+</li>
+<li>
+<p><strong>可扩展性</strong>：</p>
+</li>
+<li>主题数据硬编码在代码中</li>
+<li>缺乏主题管理界面</li>
+<li>不支持主题导入/导出</li>
+</ol>
+<hr />
+<h2 id="ivcca-inter-variability-cross-correlation-analysis">模块三：IVCCA 分析系统（Inter-Variability Cross-Correlation Analysis）<a class="headerlink" href="#ivcca-inter-variability-cross-correlation-analysis" title="Permanent link">&para;</a></h2>
+<h3 id="31">3.1 这是什么？<a class="headerlink" href="#31" title="Permanent link">&para;</a></h3>
+<p>IVCCA（Inter-Variability Cross-Correlation Analysis，跨变异性交叉相关分析）是一个综合性的基因相关性分析平台，用于识别基因间的共表达模式、构建基因调控网络、分析信号通路激活，并发现潜在的生物学过程。该平台是MATLAB版本IVCCA的Python实现，提供了完整的相关性分析工具套件。</p>
+<h3 id="32">3.2 能做什么？<a class="headerlink" href="#32" title="Permanent link">&para;</a></h3>
+<h4 id="321">3.2.1 核心功能<a class="headerlink" href="#321" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>相关性矩阵计算</strong>：</li>
+<li>支持Pearson、Spearman、Kendall相关系数</li>
+<li>生成完整的基因间相关性矩阵</li>
+<li>
+<p>计算P值并进行统计检验</p>
+</li>
+<li>
+<p><strong>数据可视化</strong>：</p>
+</li>
+<li><strong>相关性热图</strong>：展示相关性矩阵，支持排序和聚类</li>
+<li><strong>相关性分布直方图</strong>：展示所有基因对的相关性分布</li>
+<li>
+<p><strong>排序热图</strong>：按相关性强度排序后的热图</p>
+</li>
+<li>
+<p><strong>聚类分析</strong>：</p>
+</li>
+<li><strong>最优聚类数确定</strong>：Elbow方法和Silhouette分析</li>
+<li><strong>层次聚类</strong>：生成系统树图（Dendrogram）</li>
+<li>
+<p><strong>K-means聚类</strong>：基于相关性距离的K-means聚类</p>
+</li>
+<li>
+<p><strong>降维分析</strong>：</p>
+</li>
+<li><strong>主成分分析（PCA）</strong>：降维并可视化基因聚类</li>
+<li>
+<p><strong>t-SNE</strong>：非线性降维，更好地保留局部结构</p>
+</li>
+<li>
+<p><strong>通路分析</strong>：</p>
+</li>
+<li><strong>单通路分析</strong>：分析通路内基因的相关性</li>
+<li><strong>多通路分析</strong>：批量分析多个通路，计算CECI和Z-score</li>
+<li><strong>通路比较</strong>：计算通路间的余弦相似度</li>
+<li>
+<p><strong>Venn图</strong>：可视化通路间的基因重叠</p>
+</li>
+<li>
+<p><strong>网络分析</strong>：</p>
+</li>
+<li><strong>2D/3D网络图</strong>：可视化基因共表达网络</li>
+<li><strong>节点度分析</strong>：识别高连接度的Hub基因</li>
+<li><strong>相关性阈值过滤</strong>：只显示强相关连接</li>
+</ol>
+<h4 id="322">3.2.2 应用场景<a class="headerlink" href="#322" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>共表达网络构建</strong>：识别共同调控的基因群</li>
+<li><strong>通路激活分析</strong>：评估信号通路的激活程度</li>
+<li><strong>Hub基因识别</strong>：发现调控网络中的关键基因</li>
+<li><strong>药物靶点发现</strong>：识别药物诱导的相关性变化</li>
+<li><strong>疾病机制研究</strong>：理解疾病相关的基因调控网络</li>
+</ul>
+<h3 id="33">3.3 为什么要做？<a class="headerlink" href="#33" title="Permanent link">&para;</a></h3>
+<h4 id="331">3.3.1 研究背景<a class="headerlink" href="#331" title="Permanent link">&para;</a></h4>
+<p>在基因表达研究中，传统的差异表达分析只能识别单个基因的变化，无法揭示基因间的相互作用和调控关系。相关性分析可以帮助：</p>
+<ol>
+<li><strong>发现共表达模块</strong>：识别共同表达的基因群，可能代表功能模块</li>
+<li><strong>构建调控网络</strong>：通过相关性推断基因间的调控关系</li>
+<li><strong>理解通路激活</strong>：通过通路内基因的相关性评估通路状态</li>
+<li><strong>识别关键基因</strong>：高连接度的基因可能在调控网络中起关键作用</li>
+</ol>
+<h4 id="332">3.3.2 现有工具的不足<a class="headerlink" href="#332" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>MATLAB IVCCA</strong>：</li>
+<li>需要MATLAB环境，使用门槛高</li>
+<li>缺乏Web界面，难以分享和协作</li>
+<li>
+<p>功能分散，缺乏整合</p>
+</li>
+<li>
+<p><strong>其他工具</strong>：</p>
+</li>
+<li>WGCNA：功能强大但使用复杂</li>
+<li>Cytoscape：主要用于网络可视化，缺乏分析功能</li>
+<li>GSEA：专注于通路分析，缺乏相关性分析</li>
+</ol>
+<h4 id="333">3.3.3 我们的解决方案<a class="headerlink" href="#333" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Python实现</strong>：更易部署和集成</li>
+<li><strong>Web界面</strong>：降低使用门槛，提高可访问性</li>
+<li><strong>功能整合</strong>：将相关性分析、聚类、降维、通路分析整合在一个平台</li>
+<li><strong>算法保持</strong>：保持与MATLAB版本算法的一致性</li>
+</ul>
+<h3 id="34">3.4 如何实现？<a class="headerlink" href="#34" title="Permanent link">&para;</a></h3>
+<h4 id="341">3.4.1 数学方法<a class="headerlink" href="#341" title="Permanent link">&para;</a></h4>
+<p><strong>1. Pearson相关系数</strong></p>
+<p>对于两个基因表达向量 $X = (x_1, x_2, ..., x_n)$ 和 $Y = (y_1, y_2, ..., y_n)$，Pearson相关系数定义为：</p>
+<p>$$r_{XY} = \frac{\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2 \sum_{i=1}^{n}(y_i - \bar{y})^2}}$$</p>
+<p>其中：<br />
+- $\bar{x} = \frac{1}{n}\sum_{i=1}^{n}x_i$（X的均值）<br />
+- $\bar{y} = \frac{1}{n}\sum_{i=1}^{n}y_i$（Y的均值）</p>
+<p><strong>性质</strong>：<br />
+- $r_{XY} \in [-1, 1]$<br />
+- $r_{XY} = 1$：完全正相关<br />
+- $r_{XY} = -1$：完全负相关<br />
+- $r_{XY} = 0$：无线性相关</p>
+<p><strong>2. P值计算</strong></p>
+<p>对于Pearson相关系数，使用t统计量进行显著性检验：</p>
+<p>$$t = r \sqrt{\frac{n-2}{1-r^2}}$$</p>
+<p>t统计量服从自由度为$(n-2)$的t分布，可以计算P值。</p>
+<p><strong>3. 相关性矩阵排序</strong></p>
+<p>计算每个基因的平均绝对相关性：</p>
+<p>$$Q_i = \frac{1}{m-1}\sum_{j=1, j \neq i}^{m} |r_{ij}|$$</p>
+<p>其中$m$为基因总数。然后按$Q_i$降序排序。</p>
+<p><strong>4. 通路相关性指数（PCI）</strong></p>
+<p><strong>PCI_A（通路内相关性）</strong>：</p>
+<p>对于通路$P$，包含$k$个基因，计算每个基因在通路内的平均绝对相关性：</p>
+<p>$$Q_i^{(A)} = \frac{1}{k-1}\sum_{j \in P, j \neq i} |r_{ij}|$$</p>
+<p>通路内平均相关性指数：</p>
+<p>$$PCI_A = \frac{1}{k}\sum_{i \in P} Q_i^{(A)}$$</p>
+<p><strong>PCI_B（全局相关性）</strong>：</p>
+<p>从全局排序的相关性矩阵中提取通路基因的平均相关性：</p>
+<p>$$PCI_B = \frac{1}{k}\sum_{i \in P} Q_i^{(global)}$$</p>
+<p>其中$Q_i^{(global)}$是基因$i$在全局数据集中的平均绝对相关性。</p>
+<p><strong>5. CECI（相关性-表达复合指数）</strong></p>
+<p>$$CECI = PAI \times PCI_B \times 100$$</p>
+<p>其中$PAI$（Pathway Activation Index）为：</p>
+<p>$$PAI = \frac{k_{found}}{k_{total}}$$</p>
+<ul>
+<li>$k_{found}$：数据集中发现的通路基因数</li>
+<li>$k_{total}$：通路总基因数</li>
+</ul>
+<p><strong>6. Z-score计算</strong></p>
+<p>$$Z = \frac{CECI - \mu_{random}}{\sigma_{random}}$$</p>
+<p>其中：<br />
+- $\mu_{random}$：随机基因集的CECI均值（默认7.908）<br />
+- $\sigma_{random}$：随机基因集的CECI标准差（默认2.0605）</p>
+<p>如果$|Z| &gt; 1.96$（α=0.05），则认为通路显著激活或抑制。</p>
+<p><strong>7. 余弦相似度</strong></p>
+<p>对于两个通路$A$和$B$，计算相关性向量的余弦相似度：</p>
+<p>$$cosine_similarity = \frac{\sum_{i \in A, j \in B} r_{ij}^2}{\sqrt{|A|} \times \sqrt{|B|}}$$</p>
+<p>考虑重叠基因后：</p>
+<p>$$adjusted_cosine = \frac{cosine_similarity + |A \cap B|}{|A \cap B| + 1}$$</p>
+<p><strong>8. 聚类分析</strong></p>
+<p><strong>K-means聚类</strong>：</p>
+<p>将相关性矩阵转换为距离矩阵：</p>
+<p>$$d_{ij} = 1 - |r_{ij}|$$</p>
+<p>然后使用K-means算法进行聚类。</p>
+<p><strong>Elbow方法</strong>：</p>
+<p>计算不同K值下的类内平方和（WCSS）：</p>
+<p>$$WCSS = \sum_{i=1}^{K}\sum_{x \in C_i} ||x - \mu_i||^2$$</p>
+<p>选择WCSS下降最快的K值。</p>
+<p><strong>Silhouette分析</strong>：</p>
+<p>对于每个基因$i$：</p>
+<p>$$s(i) = \frac{b(i) - a(i)}{\max(a(i), b(i))}$$</p>
+<p>其中：<br />
+- $a(i)$：基因$i$到同一聚类内其他基因的平均距离<br />
+- $b(i)$：基因$i$到最近其他聚类的最小平均距离</p>
+<p>选择平均Silhouette分数最高的K值。</p>
+<p><strong>9. PCA（主成分分析）</strong></p>
+<p>对相关性矩阵进行PCA：</p>
+<ol>
+<li>标准化数据（如果需要）</li>
+<li>计算协方差矩阵</li>
+<li>计算特征值和特征向量</li>
+<li>选择前$k$个主成分</li>
+</ol>
+<p><strong>10. t-SNE（t-Distributed Stochastic Neighbor Embedding）</strong></p>
+<p>t-SNE使用t分布来建模低维空间中的相似性：</p>
+<p>$$p_{j|i} = \frac{\exp(-||x_i - x_j||^2 / 2\sigma_i^2)}{\sum_{k \neq i}\exp(-||x_i - x_k||^2 / 2\sigma_i^2)}$$</p>
+<p>$$q_{j|i} = \frac{(1 + ||y_i - y_j||^2)^{-1}}{\sum_{k \neq i}(1 + ||y_i - y_k||^2)^{-1}}$$</p>
+<p>通过最小化KL散度来优化：</p>
+<p>$$KL(P||Q) = \sum_i \sum_j p_{j|i} \log \frac{p_{j|i}}{q_{j|i}}$$</p>
+<h4 id="342">3.4.2 代码实现<a class="headerlink" href="#342" title="Permanent link">&para;</a></h4>
+<p><strong>1. 核心类结构</strong></p>
+<pre><code class="language-python">class IVCCAAnalyzer:
+    def __init__(self):
+        self.data = None
+        self.gene_names = None
+        self.sample_names = None
+        self.correlation_matrix = None
+
+    def load_data(self, file_path: str) -&gt; Dict:
+        &quot;&quot;&quot;加载数据（Excel/CSV/TSV）&quot;&quot;&quot;
+        # 读取文件
+        # 提取基因名称和样本名称
+        # 转换为数值矩阵
+        pass
+
+    def calculate_correlations(self, method: str = 'pearson') -&gt; Dict:
+        &quot;&quot;&quot;计算相关性矩阵&quot;&quot;&quot;
+        # 使用pandas的corr方法
+        # 处理NaN值
+        # 计算统计信息
+        pass
+
+    def sort_correlation_matrix(self) -&gt; Dict:
+        &quot;&quot;&quot;排序相关性矩阵&quot;&quot;&quot;
+        # 计算每个基因的平均绝对相关性
+        # 排序
+        # 返回排序后的矩阵和索引
+        pass
+
+    def perform_pca(self, n_components: int = 3) -&gt; Dict:
+        &quot;&quot;&quot;执行PCA&quot;&quot;&quot;
+        # 使用sklearn的PCA
+        # 计算主成分
+        # 生成可视化
+        pass
+
+    def perform_tsne(self, n_components: int = 2) -&gt; Dict:
+        &quot;&quot;&quot;执行t-SNE&quot;&quot;&quot;
+        # 使用sklearn的TSNE
+        # 可选的PCA初始化
+        # 生成可视化
+        pass
+
+    def multi_pathway_analysis(self, pathway_files: List[str]) -&gt; Dict:
+        &quot;&quot;&quot;多通路分析&quot;&quot;&quot;
+        # 加载通路基因列表
+        # 计算PCI_A和PCI_B
+        # 计算CECI和Z-score
+        # 返回排序后的结果
+        pass
+</code></pre>
+<p><strong>2. 相关性计算实现</strong></p>
+<pre><code class="language-python">def calculate_correlations(self, method: str = 'pearson') -&gt; Dict:
+    &quot;&quot;&quot;计算相关性矩阵&quot;&quot;&quot;
+    if method == 'pearson':
+        self.correlation_matrix = pd.DataFrame(self.data).corr(method='pearson').values
+    elif method == 'spearman':
+        self.correlation_matrix = pd.DataFrame(self.data).corr(method='spearman').values
+    else:  # kendall
+        self.correlation_matrix = pd.DataFrame(self.data).corr(method='kendall').values
+
+    # 处理NaN
+    self.correlation_matrix = np.nan_to_num(self.correlation_matrix, nan=0.0)
+
+    # 计算统计信息
+    corr_values = self.correlation_matrix[np.triu_indices_from(self.correlation_matrix, k=1)]
+    stats = {
+        &quot;mean&quot;: float(np.mean(corr_values)),
+        &quot;std&quot;: float(np.std(corr_values)),
+        &quot;min&quot;: float(np.min(corr_values)),
+        &quot;max&quot;: float(np.max(corr_values))
+    }
+
+    return {&quot;status&quot;: &quot;success&quot;, &quot;statistics&quot;: stats}
+</code></pre>
+<p><strong>3. 通路分析实现</strong></p>
+<pre><code class="language-python">def multi_pathway_analysis(self, pathway_files: List[str], 
+                          sorted_genes: List[str] = None,
+                          sorted_correlations: List[float] = None) -&gt; Dict:
+    &quot;&quot;&quot;多通路分析&quot;&quot;&quot;
+    results = []
+
+    for pathway_file, pathway_genes in zip(pathway_files, pathway_genes_list):
+        # 找到通路基因在数据集中的索引
+        pathway_indices = [i for i, gene in enumerate(self.gene_names) 
+                          if gene in pathway_genes]
+
+        if len(pathway_indices) &lt; min_genes_threshold:
+            continue
+
+        # 计算PCI_A（通路内相关性）
+        pathway_corr = self.correlation_matrix[np.ix_(pathway_indices, pathway_indices)]
+        abs_pathway_corr = np.abs(pathway_corr)
+        np.fill_diagonal(abs_pathway_corr, 0)
+        sum_abs_correlations = np.sum(abs_pathway_corr, axis=1)
+        avg_abs_correlation = sum_abs_correlations / (len(pathway_indices) - 1)
+        pci_a = float(np.mean(avg_abs_correlation))
+
+        # 计算PCI_B（从全局排序中提取）
+        if sorted_genes and sorted_correlations:
+            pci_b_values = []
+            for gene in pathway_genes:
+                if gene in sorted_genes:
+                    idx = sorted_genes.index(gene)
+                    pci_b_values.append(sorted_correlations[idx])
+            pci_b = float(np.mean(pci_b_values)) if pci_b_values else None
+        else:
+            pci_b = None
+
+        # 计算PAI
+        pai = len(pathway_indices) / len(pathway_genes)
+
+        # 计算CECI
+        if pci_b is not None:
+            ceci = pai * pci_b * 100
+        else:
+            ceci = pai * pci_a * 100
+
+        # 计算Z-score
+        z_score = (ceci - 7.908) / 2.0605
+
+        results.append({
+            &quot;pathway_file&quot;: pathway_file,
+            &quot;pci_a&quot;: pci_a,
+            &quot;pci_b&quot;: pci_b,
+            &quot;ceci&quot;: float(ceci),
+            &quot;z_score&quot;: float(z_score)
+        })
+
+    # 按CECI排序
+    results.sort(key=lambda x: x[&quot;ceci&quot;], reverse=True)
+    return {&quot;status&quot;: &quot;success&quot;, &quot;pathways&quot;: results}
+</code></pre>
+<p><strong>4. 可视化实现</strong></p>
+<pre><code class="language-python">def create_correlation_heatmap(self, sorted: bool = False) -&gt; Dict:
+    &quot;&quot;&quot;创建相关性热图&quot;&quot;&quot;
+    if sorted:
+        sort_result = self.sort_correlation_matrix()
+        matrix = np.array(sort_result[&quot;sorted_matrix&quot;])
+        gene_names = sort_result[&quot;sorted_gene_names&quot;]
+    else:
+        matrix = self.correlation_matrix
+        gene_names = self.gene_names
+
+    # 创建mask（只显示下三角）
+    mask = np.triu(np.ones_like(matrix, dtype=bool), k=1)
+
+    # 使用seaborn绘制热图
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.heatmap(
+        matrix, mask=mask,
+        cmap='RdYlBu_r', center=0,
+        vmin=-1, vmax=1,
+        square=True, linewidths=0.5,
+        xticklabels=gene_names[:50],  # 限制显示
+        yticklabels=gene_names[:50]
+    )
+
+    # 转换为base64
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png', dpi=300)
+    return base64.b64encode(buffer.getvalue()).decode()
+</code></pre>
+<h4 id="343-api">3.4.3 API端点<a class="headerlink" href="#343-api" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>POST /api/ivcca/load-data</code>：加载数据</li>
+<li><code>POST /api/ivcca/calculate-correlations</code>：计算相关性矩阵</li>
+<li><code>POST /api/ivcca/sort-matrix</code>：排序矩阵</li>
+<li><code>POST /api/ivcca/heatmap</code>：生成热图</li>
+<li><code>POST /api/ivcca/pca</code>：执行PCA</li>
+<li><code>POST /api/ivcca/tsne</code>：执行t-SNE</li>
+<li><code>POST /api/ivcca/pathway-analysis</code>：通路分析</li>
+<li><code>POST /api/ivcca/network</code>：网络分析</li>
+</ul>
+<h3 id="35">3.5 局限性<a class="headerlink" href="#35" title="Permanent link">&para;</a></h3>
+<h4 id="351">3.5.1 方法学局限性<a class="headerlink" href="#351" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>相关性不代表因果关系</strong>：</li>
+<li>高相关性可能是由于共同的上游调控因子</li>
+<li>
+<p>无法区分直接和间接相关</p>
+</li>
+<li>
+<p><strong>线性相关假设</strong>：</p>
+</li>
+<li>Pearson相关系数只能检测线性相关</li>
+<li>
+<p>非线性相关可能被遗漏</p>
+</li>
+<li>
+<p><strong>样本量要求</strong>：</p>
+</li>
+<li>小样本量可能导致相关性估计不准确</li>
+<li>
+<p>建议样本量 ≥ 30</p>
+</li>
+<li>
+<p><strong>多重比较问题</strong>：</p>
+</li>
+<li>大量基因对比较需要进行多重比较校正</li>
+<li>当前实现未包含FDR校正</li>
+</ol>
+<h4 id="352">3.5.2 功能局限性<a class="headerlink" href="#352" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>通路分析</strong>：</li>
+<li>依赖通路数据库的完整性和准确性</li>
+<li>通路边界定义可能不精确</li>
+<li>
+<p>CECI值的解释需要生物学背景</p>
+</li>
+<li>
+<p><strong>聚类分析</strong>：</p>
+</li>
+<li>K-means假设聚类是球形的</li>
+<li>最优K值可能不唯一</li>
+<li>
+<p>初始化敏感性</p>
+</li>
+<li>
+<p><strong>降维分析</strong>：</p>
+</li>
+<li>PCA只能捕获线性关系</li>
+<li>t-SNE结果可能不稳定（随机性）</li>
+</ol>
+<h4 id="353">3.5.3 技术局限性<a class="headerlink" href="#353" title="Permanent link">&para;</a></h4>
+<ol>
+<li><strong>数据规模</strong>：</li>
+<li>大型数据集（&gt;10000基因）计算时间较长</li>
+<li>
+<p>内存占用较大（相关性矩阵O(n²)）</p>
+</li>
+<li>
+<p><strong>性能优化</strong>：</p>
+</li>
+<li>未实现并行计算</li>
+<li>缺乏缓存机制</li>
+<li>
+<p>某些操作可以进一步优化</p>
+</li>
+<li>
+<p><strong>平台依赖</strong>：</p>
+</li>
+<li>需要Python环境</li>
+<li>依赖多个科学计算库</li>
+<li>某些功能需要额外安装</li>
+</ol>
+<hr />
+<h2 id="_6">技术架构<a class="headerlink" href="#_6" title="Permanent link">&para;</a></h2>
+<h3 id="_7">系统架构<a class="headerlink" href="#_7" title="Permanent link">&para;</a></h3>
+<pre><code>┌─────────────────┐
+│   Frontend      │
+│  (Next.js/React)│
+└────────┬────────┘
+         │ HTTP/REST API
+┌────────▼────────┐
+│   Backend       │
+│  (FastAPI/Python)│
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │         │
+┌───▼───┐ ┌──▼────┐
+│MongoDB│ │GProfiler│
+│       │ │  API   │
+└───────┘ └────────┘
+</code></pre>
+<h3 id="_8">技术栈<a class="headerlink" href="#_8" title="Permanent link">&para;</a></h3>
+<p><strong>前端</strong>：<br />
+- Next.js 15.3.5<br />
+- React + TypeScript<br />
+- Tailwind CSS<br />
+- Plotly.js（交互式图表）</p>
+<p><strong>后端</strong>：<br />
+- FastAPI 0.68.0<br />
+- Python 3.9+<br />
+- pandas, NumPy, SciPy<br />
+- scikit-learn<br />
+- matplotlib, seaborn<br />
+- GProfiler Python客户端</p>
+<p><strong>数据库</strong>：<br />
+- MongoDB（基因表达数据）<br />
+- 索引优化</p>
+<p><strong>部署</strong>：<br />
+- Docker容器化<br />
+- Nginx反向代理<br />
+- 支持云部署</p>
+<h3 id="_9">数据流<a class="headerlink" href="#_9" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>基因搜索</strong>：<br />
+<code>用户输入 → API请求 → MongoDB查询 → 数据处理 → JSON响应 → 前端展示</code></p>
+</li>
+<li>
+<p><strong>主题分析</strong>：<br />
+<code>用户上传基因列表 → 后端解析 → GProfiler API → 富集结果 → 主题分配 → 聚合 → 可视化 → 返回图片</code></p>
+</li>
+<li>
+<p><strong>IVCCA分析</strong>：<br />
+<code>用户上传数据 → 数据加载 → 相关性计算 → 分析（聚类/降维/通路） → 可视化 → 返回结果</code></p>
+</li>
+</ol>
+<hr />
+<h2 id="_10">项目总结与展望<a class="headerlink" href="#_10" title="Permanent link">&para;</a></h2>
+<h3 id="_11">主要贡献<a class="headerlink" href="#_11" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>数据整合</strong>：整合了9个组织的基因表达数据，提供统一的搜索接口</li>
+<li><strong>功能创新</strong>：引入了主题聚合概念，简化了GO富集分析结果的解读</li>
+<li><strong>算法转换</strong>：成功将MATLAB IVCCA转换为Python实现，保持了算法一致性</li>
+<li><strong>平台整合</strong>：将三个独立的功能模块整合在一个平台中</li>
+</ol>
+<h3 id="_12">技术亮点<a class="headerlink" href="#_12" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Web化</strong>：将命令行工具转换为易用的Web应用</li>
+<li><strong>可视化增强</strong>：提供丰富的图表和交互式可视化</li>
+<li><strong>性能优化</strong>：使用索引、向量化计算等技术提高性能</li>
+<li><strong>可扩展性</strong>：模块化设计，易于添加新功能</li>
+</ol>
+<h3 id="_13">未来改进方向<a class="headerlink" href="#_13" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>数据扩展</strong>：</li>
+<li>支持更多组织/器官</li>
+<li>支持时间序列数据</li>
+<li>
+<p>支持单细胞数据</p>
+</li>
+<li>
+<p><strong>功能增强</strong>：</p>
+</li>
+<li>批量基因搜索</li>
+<li>更多统计检验方法</li>
+<li>
+<p>机器学习预测功能</p>
+</li>
+<li>
+<p><strong>性能优化</strong>：</p>
+</li>
+<li>并行计算支持</li>
+<li>缓存机制</li>
+<li>
+<p>增量更新</p>
+</li>
+<li>
+<p><strong>用户体验</strong>：</p>
+</li>
+<li>结果导出功能</li>
+<li>报告生成</li>
+<li>协作功能</li>
+</ol>
+<h3 id="_14">应用价值<a class="headerlink" href="#_14" title="Permanent link">&para;</a></h3>
+<p>该平台已在以下场景中应用：<br />
+- 药物毒性评估<br />
+- 疾病机制研究<br />
+- 生物标志物发现<br />
+- 通路激活分析</p>
+<hr />
+<h2 id="_15">附录：关键公式汇总<a class="headerlink" href="#_15" title="Permanent link">&para;</a></h2>
+<h3 id="_16">基因搜索<a class="headerlink" href="#_16" title="Permanent link">&para;</a></h3>
+<p>无复杂数学公式，主要使用数据库索引优化。</p>
+<h3 id="_17">主题分析<a class="headerlink" href="#_17" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>富集分析P值</strong>（超几何分布）：<br />
+   $$P(X \geq k) = \sum_{i=k}^{min(n, M)} \frac{\binom{M}{i} \binom{N-M}{n-i}}{\binom{N}{n}}$$</p>
+</li>
+<li>
+<p><strong>分数计算</strong>：<br />
+   $$Score = -\log_{10}(p_value)$$</p>
+</li>
+<li>
+<p><strong>主题累积分数</strong>：<br />
+   $$Cumulative_Score(T) = \sum_{i=1}^{n} Score(GO_i)$$</p>
+</li>
+</ol>
+<h3 id="ivcca">IVCCA<a class="headerlink" href="#ivcca" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Pearson相关系数</strong>：<br />
+   $$r_{XY} = \frac{\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2 \sum_{i=1}^{n}(y_i - \bar{y})^2}}$$</p>
+</li>
+<li>
+<p><strong>PCI_A</strong>：<br />
+   $$PCI_A = \frac{1}{k}\sum_{i \in P} \frac{1}{k-1}\sum_{j \in P, j \neq i} |r_{ij}|$$</p>
+</li>
+<li>
+<p><strong>CECI</strong>：<br />
+   $$CECI = \frac{k_{found}}{k_{total}} \times PCI_B \times 100$$</p>
+</li>
+<li>
+<p><strong>Z-score</strong>：<br />
+   $$Z = \frac{CECI - 7.908}{2.0605}$$</p>
+</li>
+<li>
+<p><strong>余弦相似度</strong>：<br />
+   $$cosine_similarity = \frac{\sum_{i \in A, j \in B} r_{ij}^2}{\sqrt{|A|} \times \sqrt{|B|}}$$</p>
+</li>
+</ol>
+<hr />
+<p><strong>文档版本</strong>：1.0<br />
+<strong>最后更新</strong>：2024年<br />
+<strong>作者</strong>：基于GenoCorr平台开发文档整理</p>
+    
+    <script>
+        // 打印时的提示
+        window.onbeforeprint = function() {
+            console.log("打印提示：请选择'另存为PDF'或'保存为PDF'");
+        };
+    </script>
+</body>
+</html>
