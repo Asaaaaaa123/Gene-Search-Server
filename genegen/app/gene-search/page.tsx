@@ -74,7 +74,7 @@ export default function GeneSearch() {
         try {
           const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'GET',
-            signal: AbortSignal.timeout(3000) // 3 second timeout for each endpoint
+            signal: AbortSignal.timeout(15000) // slow TLS / cold start through reverse proxy
           });
           
           if (response.ok) {
