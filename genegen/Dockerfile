@@ -28,16 +28,8 @@ RUN set -a \
   && set +a \
   && npm run build
 
-# Fail the image if Edge middleware still bundles Clerk (stale source or clerkMiddleware).
-RUN node -e "\
-const fs=require('fs');\
-const p='.next/server/middleware.js';\
-if(!fs.existsSync(p)) process.exit(0);\
-const s=fs.readFileSync(p,'utf8');\
-if(/clerk|publishableKey|throwMissingPublishableKeyError/i.test(s)){\
-  console.error('Build error: Clerk must not be in middleware — remove clerkMiddleware / middleware.ts');\
-  process.exit(1);\
-}"
+# Remove Edge middleware output so Coolify health checks never hit Clerk (fixes bad caches / old middleware.ts).
+RUN node scripts/strip-edge-middleware.cjs
 
 # Production image, copy all the files and run next
 FROM base AS runner
