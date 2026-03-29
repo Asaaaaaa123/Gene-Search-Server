@@ -29,7 +29,7 @@ GenoCorr 平台采用**三层客户端-服务器架构**（Three-Tier Client-Ser
 │                  (React 19.0 + TypeScript)                    │
 └────────────────────┬──────────────────────────────────────────┘
                      │ HTTP/REST API (JSON)
-                     │ Port: 8050
+                     │ Port: 8000
 ┌────────────────────▼──────────────────────────────────────────┐
 │                   业务逻辑层 (Business Logic Layer)             │
 │                   FastAPI 0.68.0 Backend                      │
@@ -119,7 +119,7 @@ export default function GeneSearch() {
   const [isLoading, setIsLoading] = useState(false);
   
   // API调用
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8050';
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   
   // 事件处理函数
   const handleSearch = async () => {
@@ -1498,7 +1498,7 @@ genes = [doc["_id"] for doc in collection.aggregate(pipeline)]
 │  │   Container  │◄──►│   Container  │  │
 │  │              │    │              │  │
 │  │ Next.js      │    │ FastAPI      │  │
-│  │ Port: 3000   │    │ Port: 8050   │  │
+│  │ Port: 3000   │    │ Port: 8000   │  │
 │  └──────────────┘    └──────┬───────┘  │
 │                             │          │
 │                             ▼          │
@@ -1539,7 +1539,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8050"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Dockerfile.frontend
 FROM node:18-alpine

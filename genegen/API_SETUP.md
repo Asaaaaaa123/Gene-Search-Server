@@ -6,14 +6,14 @@ This application requires a backend API server to function properly. The fronten
 ## Quick Setup
 
 ### 1. Backend Server
-Ensure your backend server is running and accessible. The default configuration expects the backend at `http://localhost:8050`.
+Ensure your backend server is running and accessible. The default configuration expects the backend at `http://localhost:8000`.
 
 ### 2. Environment Configuration
 Create a `.env.local` file in the root directory with the following content:
 
 ```bash
 # For local development
-NEXT_PUBLIC_API_URL=http://localhost:8050
+NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # Clerk (sign-in / sign-up) — create an application at https://dashboard.clerk.com
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
@@ -69,13 +69,13 @@ Your backend should have these endpoints available:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `NEXT_PUBLIC_API_URL` | Backend API base URL | `http://localhost:8050` | Yes |
+| `NEXT_PUBLIC_API_URL` | Backend API base URL | `http://localhost:8000` | Yes |
 
 ## Development vs Production
 
 ### Development
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8050
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ### Production/Cloud
@@ -86,7 +86,7 @@ NEXT_PUBLIC_API_URL=https://your-production-api.com
 ## Backend Requirements
 
 - **Framework**: FastAPI (Python)
-- **Port**: 8050 (default)
+- **Port**: 8000 (default)
 - **CORS**: Must allow requests from your frontend domain
 - **Endpoints**: Must implement the required API endpoints listed above
 

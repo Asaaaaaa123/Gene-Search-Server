@@ -357,7 +357,7 @@ import requests
 # 1. 加载数据
 with open('data.xlsx', 'rb') as f:
     response = requests.post(
-        'http://localhost:8050/api/ivcca/load-data',
+        'http://localhost:8000/api/ivcca/load-data',
         files={'file': f}
     )
 data = response.json()
@@ -365,14 +365,14 @@ analyzer_id = data['analyzer_id']
 
 # 2. 计算相关性
 response = requests.post(
-    'http://localhost:8050/api/ivcca/calculate-correlation',
+    'http://localhost:8000/api/ivcca/calculate-correlation',
     data={'analyzer_id': analyzer_id, 'method': 'pearson'}
 )
 corr_result = response.json()
 
 # 3. 生成热图
 response = requests.post(
-    'http://localhost:8050/api/ivcca/heatmap',
+    'http://localhost:8000/api/ivcca/heatmap',
     data={'analyzer_id': analyzer_id, 'sorted': True}
 )
 heatmap = response.json()
@@ -380,7 +380,7 @@ image_base64 = heatmap['image_base64']
 
 # 4. PCA 分析
 response = requests.post(
-    'http://localhost:8050/api/ivcca/pca',
+    'http://localhost:8000/api/ivcca/pca',
     data={'analyzer_id': analyzer_id, 'n_components': 3}
 )
 pca_result = response.json()
@@ -393,7 +393,7 @@ pca_result = response.json()
 const formData = new FormData();
 formData.append('file', fileInput.files[0]);
 
-const loadResponse = await fetch('http://localhost:8050/api/ivcca/load-data', {
+const loadResponse = await fetch('http://localhost:8000/api/ivcca/load-data', {
   method: 'POST',
   body: formData
 });
@@ -405,7 +405,7 @@ const corrFormData = new FormData();
 corrFormData.append('analyzer_id', analyzerId);
 corrFormData.append('method', 'pearson');
 
-const corrResponse = await fetch('http://localhost:8050/api/ivcca/calculate-correlation', {
+const corrResponse = await fetch('http://localhost:8000/api/ivcca/calculate-correlation', {
   method: 'POST',
   body: corrFormData
 });
@@ -416,7 +416,7 @@ const heatmapFormData = new FormData();
 heatmapFormData.append('analyzer_id', analyzerId);
 heatmapFormData.append('sorted', 'true');
 
-const heatmapResponse = await fetch('http://localhost:8050/api/ivcca/heatmap', {
+const heatmapResponse = await fetch('http://localhost:8000/api/ivcca/heatmap', {
   method: 'POST',
   body: heatmapFormData
 });

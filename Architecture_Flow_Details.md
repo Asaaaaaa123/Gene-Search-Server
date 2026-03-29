@@ -54,7 +54,7 @@ Step 4: 创建FastAPI应用
     │
 Step 5: 启动Uvicorn服务器
     │
-    └─→ uvicorn.run(app, host="0.0.0.0", port=8050)
+    └─→ uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
 ### 1.2 前端启动流程
@@ -246,7 +246,7 @@ Step 4: 页面加载
 └─────────────────────────────────────────────────────┘
     │
     │ HTTP GET 请求
-    │ URL: http://localhost:8050/api/gene/symbol/search?gene_symbol=GAPDH
+    │ URL: http://localhost:8000/api/gene/symbol/search?gene_symbol=GAPDH
     ▼
 ┌─────────────────────────────────────────────────────┐
 │ FastAPI路由: @app.get("/api/gene/symbol/search")   │
@@ -1820,7 +1820,7 @@ NumPy优化:
     ├─→ 连接MongoDB
     ├─→ 初始化API类
     ├─→ 启动FastAPI服务器
-    └─→ 监听端口8050
+    └─→ 监听端口8000
     │
 ┌─────────────────────────────────────┐
 │ Step 2: 启动前端                    │
@@ -1872,7 +1872,7 @@ NumPy优化:
 │ Step 4: Nginx反向代理（可选）        │
 │                                     │
 │ 配置Nginx将请求转发到容器            │
-│ /api/* → backend:8050              │
+│ /api/* → backend:8000              │
 │ /* → frontend:3000                 │
 └─────────────────────────────────────┘
 ```

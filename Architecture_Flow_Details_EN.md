@@ -54,7 +54,7 @@ Step 4: Create FastAPI Application
     │
 Step 5: Start Uvicorn Server
     │
-    └─→ uvicorn.run(app, host="0.0.0.0", port=8050)
+    └─→ uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
 ### 1.2 Frontend Startup Flow
@@ -246,7 +246,7 @@ Step 4: Page Loading
 └─────────────────────────────────────────────────────┘
     │
     │ HTTP GET Request
-    │ URL: http://localhost:8050/api/gene/symbol/search?gene_symbol=GAPDH
+    │ URL: http://localhost:8000/api/gene/symbol/search?gene_symbol=GAPDH
     ▼
 ┌─────────────────────────────────────────────────────┐
 │ FastAPI Route: @app.get("/api/gene/symbol/search") │
@@ -1822,7 +1822,7 @@ NumPy optimization:
     ├─→ Connect to MongoDB
     ├─→ Initialize API classes
     ├─→ Start FastAPI server
-    └─→ Listen on port 8050
+    └─→ Listen on port 8000
     │
 ┌─────────────────────────────────────┐
 │ Step 2: Start Frontend              │
@@ -1874,7 +1874,7 @@ NumPy optimization:
 │ Step 4: Nginx Reverse Proxy (Optional) │
 │                                     │
 │ Configure Nginx to forward requests │
-│ /api/* → backend:8050              │
+│ /api/* → backend:8000              │
 │ /* → frontend:3000                 │
 └─────────────────────────────────────┘
 ```

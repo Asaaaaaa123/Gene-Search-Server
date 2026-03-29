@@ -2519,8 +2519,8 @@ def start_server():
         print("❌ 依赖项检查失败，无法启动服务器")
         return
     
-    # 使用固定端口 8050
-    port = 8050
+    # 使用固定端口 8000
+    port = 8000
     import socket
     
     def is_port_available(port):
@@ -2531,7 +2531,7 @@ def start_server():
             except OSError:
                 return False
     
-    # 检查端口 8050 是否可用
+    # 检查端口 8000 是否可用
     if not is_port_available(port):
         print(f"❌ 端口 {port} 已被占用")
         print("请停止占用该端口的其他服务，或修改前端配置使用其他端口")

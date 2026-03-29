@@ -13,7 +13,7 @@ python start_backend.py
 **方法二：直接启动**
 ```bash
 cd backend
-python -m uvicorn server:app --host 0.0.0.0 --port 8050 --reload
+python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **方法三：使用 server.py**
@@ -43,16 +43,16 @@ npm run dev
 如果遇到 "Failed to fetch" 错误：
 
 1. **检查后端是否运行**
-   - 确保后端服务器在端口 8050 上运行
-   - 访问 http://localhost:8050/docs 验证
+   - 确保后端服务器在端口 8000 上运行
+   - 访问 http://localhost:8000/docs 验证
 
 2. **检查端口占用**
    ```bash
    # Windows
-   netstat -ano | findstr :8050
+   netstat -ano | findstr :8000
    
    # Linux/Mac
-   lsof -i :8050
+   lsof -i :8000
    ```
 
 3. **停止占用端口的服务**
@@ -74,7 +74,7 @@ npm run dev
 
 创建 `.env.local` 文件（前端）：
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8050
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ## 服务器状态
@@ -87,11 +87,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8050
 
 1. 使用页面上的 "Test Connection" 按钮
 2. 检查 API 状态指示器
-3. 访问 http://localhost:8050/docs 查看 API 文档
+3. 访问 http://localhost:8000/docs 查看 API 文档
 
 ## 常见问题
 
-**Q: 端口 8050 被占用怎么办？**
+**Q: 端口 8000 被占用怎么办？**
 A: 停止占用端口的服务，或修改前端配置使用其他端口
 
 **Q: MongoDB 连接失败怎么办？**

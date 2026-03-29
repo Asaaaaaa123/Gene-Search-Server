@@ -777,7 +777,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8050:8050"
+      - "8000:8000"
     volumes:
       - ./backend/data:/app/data
     env_file:

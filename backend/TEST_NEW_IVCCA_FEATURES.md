@@ -20,7 +20,7 @@ uvicorn server:app --reload
 ### 1. 加载数据（必需的第一步）
 
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/load-data" \
+curl -X POST "http://localhost:8000/api/ivcca/load-data" \
   -F "file=@your_data.xlsx"
 ```
 
@@ -29,7 +29,7 @@ curl -X POST "http://localhost:8050/api/ivcca/load-data" \
 ### 2. 计算相关性矩阵
 
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/calculate-correlation" \
+curl -X POST "http://localhost:8000/api/ivcca/calculate-correlation" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "method=pearson"
 ```
@@ -44,7 +44,7 @@ Gene3
 ```
 
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/gene-to-genes" \
+curl -X POST "http://localhost:8000/api/ivcca/gene-to-genes" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "single_gene=YourGeneName" \
   -F "target_genes_file=@target_genes.txt"
@@ -55,7 +55,7 @@ curl -X POST "http://localhost:8050/api/ivcca/gene-to-genes" \
 准备多个通路文件（如 `pathway1.txt`, `pathway2.txt`）：
 
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/gene-to-pathways" \
+curl -X POST "http://localhost:8000/api/ivcca/gene-to-pathways" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "single_gene=YourGeneName" \
   -F "pathway_files=@pathway1.txt" \
@@ -65,7 +65,7 @@ curl -X POST "http://localhost:8050/api/ivcca/gene-to-pathways" \
 ### 5. 测试 Multi-Pathway
 
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/multi-pathway" \
+curl -X POST "http://localhost:8000/api/ivcca/multi-pathway" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "pathway_files=@pathway1.txt" \
   -F "pathway_files=@pathway2.txt" \
@@ -76,7 +76,7 @@ curl -X POST "http://localhost:8050/api/ivcca/multi-pathway" \
 ### 6. 测试 Venn Diagram
 
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/venn-diagram" \
+curl -X POST "http://localhost:8000/api/ivcca/venn-diagram" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "pathway1_file=@pathway1.txt" \
   -F "pathway2_file=@pathway2.txt"
@@ -91,7 +91,7 @@ curl -X POST "http://localhost:8050/api/ivcca/venn-diagram" \
 
 #### 2D网络图（使用所有基因）：
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/network-analysis" \
+curl -X POST "http://localhost:8000/api/ivcca/network-analysis" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "threshold=0.75" \
   -F "plot_type=2D"
@@ -99,7 +99,7 @@ curl -X POST "http://localhost:8050/api/ivcca/network-analysis" \
 
 #### 3D网络图（使用特定通路）：
 ```bash
-curl -X POST "http://localhost:8050/api/ivcca/network-analysis" \
+curl -X POST "http://localhost:8000/api/ivcca/network-analysis" \
   -F "analyzer_id=YOUR_ANALYZER_ID" \
   -F "pathway_file=@pathway1.txt" \
   -F "threshold=0.75" \
@@ -114,7 +114,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 
-API_BASE = "http://localhost:8050"
+API_BASE = "http://localhost:8000"
 
 # 1. 加载数据
 with open("data.xlsx", "rb") as f:

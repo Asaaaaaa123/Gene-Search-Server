@@ -251,7 +251,7 @@ peroxisome, pex, catalase, fatty acid oxidation, plasmalogen, glyoxysome, microb
 - 端口配置错误
 
 **解决方案**：
-- 确保后端运行在 http://localhost:8050
+- 确保后端运行在 http://localhost:8000
 - 检查 `genegen/.env.local` 中的 API URL 配置
 
 ### 问题 3: 自定义主题被意外删除

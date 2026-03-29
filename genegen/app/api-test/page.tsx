@@ -97,12 +97,12 @@ export default function ApiTest() {
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="http://localhost:8050"
+                placeholder="http://localhost:8000"
               />
             </div>
             <div className="text-sm text-gray-600">
               <p>Resolved API base: {API_BASE_URL}</p>
-              <p>NEXT_PUBLIC_API_URL (raw): {process.env.NEXT_PUBLIC_API_URL ?? 'not set — default 8050 used'}</p>
+              <p>NEXT_PUBLIC_API_URL (raw): {process.env.NEXT_PUBLIC_API_URL ?? 'not set — default 8000 used'}</p>
               <p>Current URL: {apiUrl}</p>
             </div>
           </div>
