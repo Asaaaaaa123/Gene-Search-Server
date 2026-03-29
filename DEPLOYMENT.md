@@ -43,11 +43,12 @@ CLERK_SECRET_KEY=sk_live_xxx                      # 或 sk_test_xxx
    CLERK_SECRET_KEY=sk_test_...
    ```
 
-   **运行时 Environment Variables（同样建议再填一遍，至少）：**
+   **运行时 Environment Variables（至少）：**
    ```
    CLERK_SECRET_KEY=sk_test_...
-   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+   CLERK_PUBLISHABLE_KEY=pk_test_...   # 与公钥相同；Node 在运行时读取，可不依赖构建参数
    NEXT_PUBLIC_API_URL=https://...
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...   # 可选；有构建参数时 Middleware 才能拦 /upload-csv 等
    ```
 
    后端另设：`MONGODB_URI`、`CLERK_ISSUER`（与 Clerk Frontend API URL 一致）等，见 `backend/env.example`。
