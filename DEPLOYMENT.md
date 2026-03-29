@@ -10,6 +10,8 @@
 
 **Edge 中间件：** 构建完成后会运行 `scripts/strip-edge-middleware.cjs`，删除 `.next/**/server/middleware.js` 并清空 `middleware-manifest.json`，避免健康检查请求进入含 Clerk 的 Edge 包（即使缓存或旧代码曾生成过该文件）。
 
+**Coolify 覆盖启动命令：** 若面板里把 Command 设为 `node server.js` 且未使用 `docker-entrypoint.sh`，原先 `.env.runtime` 不会加载。现已在构建阶段向 `standalone/server.js` **首行注入** `require('./genegen-boot.cjs')`，在 Next 启动前加载 `.env.runtime` 并再次执行 strip，因此与 Entrypoint 是否被覆盖无关。
+
 ---
 
 创建 `.env` 文件（或在使用 Coolify 时在环境变量中设置）：

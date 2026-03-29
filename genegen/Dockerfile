@@ -31,6 +31,12 @@ RUN set -a \
 # Remove Edge middleware output so Coolify health checks never hit Clerk (fixes bad caches / old middleware.ts).
 RUN node scripts/strip-edge-middleware.cjs
 
+# Prepend boot to standalone server.js — runs even if host overrides ENTRYPOINT to `node server.js`.
+RUN cp genegen-boot.cjs .next/standalone/genegen-boot.cjs \
+  && mkdir -p .next/standalone/scripts \
+  && cp scripts/strip-edge-middleware.cjs .next/standalone/scripts/strip-edge-middleware.cjs \
+  && node -e "const fs=require('fs');const p='.next/standalone/server.js';let s=fs.readFileSync(p,'utf8');const inj=\"require('./genegen-boot.cjs');\\n\";if(!s.includes('genegen-boot.cjs'))fs.writeFileSync(p,inj+s);"
+
 # Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
