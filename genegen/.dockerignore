@@ -2,3 +2,7 @@ node_modules
 .next
 .git
 *.md
+
+# Next local env — never bake deploy secrets from your laptop; Coolify injects env at runtime.
+.env.local
+.env*.local

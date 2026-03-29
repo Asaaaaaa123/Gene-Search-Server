@@ -4,6 +4,10 @@
 
 ### 1. 环境变量配置
 
+**若 Coolify 无法添加环境变量：** 编辑并提交 `genegen/coolify-deploy.env`（模板见 `genegen/coolify-deploy.env.example`）。Docker 构建时会 `source` 该文件，`docker-entrypoint.sh` 在容器启动时再次加载，无需在 Coolify UI 里配置。注意：真实密钥会进入 Git 与镜像层，**仅适用于私有仓库**。
+
+---
+
 创建 `.env` 文件（或在使用 Coolify 时在环境变量中设置）：
 
 ```bash
@@ -20,7 +24,7 @@ VALID_TOKENS=your_token_here,another_token_here
 # 对于 Coolify 部署，使用 Coolify 提供的域名
 NEXT_PUBLIC_API_URL=https://your-backend-service.your-coolify-domain.com
 
-# Clerk（Next.js 前端 sign-in；生产环境未使用 Next middleware 中的 Clerk，避免 Coolify 健康检查失败）
+# Clerk（Next.js 前端 sign-in；middleware.ts 仅为透传，不加载 @clerk/nextjs，避免 Edge 缺 key）
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxx   # 或 pk_test_xxx
 CLERK_SECRET_KEY=sk_live_xxx                      # 或 sk_test_xxx
 ```

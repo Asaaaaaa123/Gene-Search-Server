@@ -16,18 +16,14 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Public URL of your FastAPI backend (no trailing slash)
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# All deploy config from repo file (when Coolify UI env vars are unavailable).
+RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env — copy coolify-deploy.env.example" >&2 && exit 1)
+RUN chmod +x docker-entrypoint.sh
 
-# Clerk — required at build time (NEXT_PUBLIC_* is inlined) and CLERK_SECRET_KEY for build/prerender
-# Set the same values as Coolify "Build Arguments" + runtime "Environment Variables"
-ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-ARG CLERK_SECRET_KEY
-ENV CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
-
-RUN npm run build
+RUN set -a \
+  && . ./coolify-deploy.env \
+  && set +a \
+  && npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -49,6 +45,9 @@ RUN chown nextjs:nodejs .next
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --from=builder --chown=nextjs:nodejs /app/coolify-deploy.env /app/.env.runtime
+RUN chmod +x /app/docker-entrypoint.sh
 
 USER nextjs
 
@@ -60,4 +59,5 @@ ENV HOSTNAME="0.0.0.0"
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD wget -q -O /dev/null http://localhost:3000/ || exit 1
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "server.js"]
