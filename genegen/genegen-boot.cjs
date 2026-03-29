@@ -5,6 +5,11 @@
  */
 "use strict";
 
+// stderr so it appears before Next’s banner in `docker logs` (helps verify patched server.js).
+console.error(
+  "[GENEGEN-BOOT] loading .env.runtime + stripping Edge middleware (if this line is missing, Coolify is not running patched server.js)",
+);
+
 const fs = require("fs");
 const path = require("path");
 

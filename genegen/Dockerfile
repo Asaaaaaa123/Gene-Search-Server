@@ -23,6 +23,8 @@ RUN chmod +x docker-entrypoint.sh
 # Do not use Clerk in middleware.ts — Edge bundle breaks Coolify health checks without build-time keys.
 RUN chmod +x scripts/check-no-clerk-middleware.sh && ./scripts/check-no-clerk-middleware.sh
 
+RUN node scripts/validate-coolify-deploy.cjs
+
 RUN set -a \
   && . ./coolify-deploy.env \
   && set +a \
