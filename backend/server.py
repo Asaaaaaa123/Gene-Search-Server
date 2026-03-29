@@ -107,12 +107,22 @@ class UserPreferencesUpdate(BaseModel):
 
 app = FastAPI(title="Gene Expression Search API", version="1.0.0")
 
-# CORS: localhost for dev; production frontends must match allow_origins OR allow_origin_regex.
-_cors_extra = [
+# CORS: localhost via regex; production asagene hosts built-in; CORS_ALLOWED_ORIGINS adds more.
+_cors_builtin = [
+    "https://asagene.aurorarangers.ca",
+    "https://www.asagene.aurorarangers.ca",
+]
+_cors_env = [
     o.strip()
     for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
     if o.strip()
 ]
+_seen_origins: set[str] = set()
+_allow_origins: list[str] = []
+for _o in _cors_builtin + _cors_env:
+    if _o not in _seen_origins:
+        _seen_origins.add(_o)
+        _allow_origins.append(_o)
 # Optional single regex (e.g. ^https://asagene\.example\.com$ ) merged with localhost — use if list is awkward.
 _cors_regex_extra = os.getenv("CORS_ALLOW_ORIGIN_REGEX", "").strip()
 _localhost_cors = r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
@@ -121,7 +131,7 @@ _cors_regex = (
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_extra,
+    allow_origins=_allow_origins,
     allow_origin_regex=_cors_regex,
     allow_credentials=True,
     allow_methods=["*"],
