@@ -19,6 +19,10 @@ VALID_TOKENS=your_token_here,another_token_here
 # 这必须是后端服务的公共可访问 URL
 # 对于 Coolify 部署，使用 Coolify 提供的域名
 NEXT_PUBLIC_API_URL=https://your-backend-service.your-coolify-domain.com
+
+# Clerk（Next.js 前端 sign-in / middleware 必需；缺省会报 Missing publishableKey，容器健康检查失败）
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxx   # 或 pk_test_xxx
+CLERK_SECRET_KEY=sk_live_xxx                      # 或 sk_test_xxx
 ```
 
 ### 2. 部署到 Coolify
@@ -29,18 +33,29 @@ NEXT_PUBLIC_API_URL=https://your-backend-service.your-coolify-domain.com
    - 选择 "Docker Compose" 作为部署方式
    - 上传 `docker-compose.yml` 文件
 
-2. **设置环境变量**
-   在 Coolify 的环境变量部分设置：
+2. **设置环境变量（前端 / Next）**
+   在 Coolify 中需要同时配置 **运行时 Environment Variables** 和 **构建参数 Build Arguments**（Docker 构建阶段读不到仅写在运行时的变量）。
+
+   **前端 Dockerfile 构建参数（Build Arguments）必须包含：**
    ```
    NEXT_PUBLIC_API_URL=https://your-backend-service.your-coolify-domain.com
-   MONGODB_URI=your_mongodb_connection_string (可选)
-   VALID_TOKENS=token1,token2 (可选)
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...   # 来自 Clerk Dashboard → API Keys
+   CLERK_SECRET_KEY=sk_test_...
    ```
 
+   **运行时 Environment Variables（同样建议再填一遍，至少）：**
+   ```
+   CLERK_SECRET_KEY=sk_test_...
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+   NEXT_PUBLIC_API_URL=https://...
+   ```
+
+   后端另设：`MONGODB_URI`、`CLERK_ISSUER`（与 Clerk Frontend API URL 一致）等，见 `backend/env.example`。
+
 3. **重要提示**
-   - `NEXT_PUBLIC_API_URL` 必须在构建时设置，因为它会被嵌入到前端代码中
-   - 确保后端服务已经部署并可以访问
-   - 前端构建时会使用这个 URL
+   - `NEXT_PUBLIC_*` 在 **构建时** 写入打包结果；只配运行时、不配 Build Arguments 会导致 Clerk 报错 **Missing publishableKey**，健康检查访问 `/` 也会失败。
+   - 确保后端已部署且 URL 与 `NEXT_PUBLIC_API_URL` 一致。
+   - Coolify 若提示健康检查需要 `curl`/`wget`：根目录 `Dockerfile.frontend` 与 `genegen/Dockerfile` 的 runner 镜像已包含 `wget`。
 
 #### 方法二：分别部署前后端
 

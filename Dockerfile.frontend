@@ -21,9 +21,15 @@ COPY genegen/ .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# Add build argument for API URL with default fallback
+# Public URL of your FastAPI backend (no trailing slash)
 ARG NEXT_PUBLIC_API_URL=http://localhost:8050
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
+# Clerk — required or middleware throws and healthchecks fail (set in Coolify build args + runtime env)
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+ARG CLERK_SECRET_KEY
+ENV CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
 
 RUN npm run build
 

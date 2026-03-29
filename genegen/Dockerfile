@@ -16,9 +16,16 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Build argument for API URL
+# Public URL of your FastAPI backend (no trailing slash)
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
+# Clerk — required at build time (NEXT_PUBLIC_* is inlined) and CLERK_SECRET_KEY for build/prerender
+# Set the same values as Coolify "Build Arguments" + runtime "Environment Variables"
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+ARG CLERK_SECRET_KEY
+ENV CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
 
 RUN npm run build
 
@@ -31,6 +38,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
+# Coolify / some orchestrators expect wget or curl for HEALTHCHECK overrides
+RUN apk add --no-cache wget
 
 COPY --from=builder /app/public ./public
 
@@ -48,7 +57,7 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "const http = require('http'); const req = http.get('http://localhost:3000', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.setTimeout(5000, () => { req.destroy(); process.exit(1); });"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget -q -O /dev/null http://localhost:3000/ || exit 1
 
 CMD ["node", "server.js"]
