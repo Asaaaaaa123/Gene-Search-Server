@@ -107,10 +107,15 @@ class UserPreferencesUpdate(BaseModel):
 
 app = FastAPI(title="Gene Expression Search API", version="1.0.0")
 
-# CORS: allow browser requests from local Next.js (any port, e.g. 3050) without relying on "*"
-# with credentials (invalid per spec). Regex covers localhost / 127.0.0.1 with optional port.
+# CORS: localhost for dev; production frontends must be listed (browser blocks cross-origin otherwise).
+_cors_extra = [
+    o.strip()
+    for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=_cors_extra,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],

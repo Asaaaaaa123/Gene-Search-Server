@@ -37,6 +37,8 @@ CLERK_SECRET_KEY=sk_live_xxx                      # 或 sk_test_xxx
 
 ### 2. 部署到 Coolify
 
+**分支：** 本仓库日常开发在 **`main`**。若 Coolify 仍指向 **`master`** 且从未更新，会一直部署旧的「Initial commit」镜像（日志里 commit 为 `cb82c4a…`、构建被 skip）。请在 Coolify 里把 **Branch 改成 `main`**，或执行 `git push origin main:master` 让 `master` 与 `main` 对齐后再部署。
+
 #### 方法一：使用 Docker Compose（推荐）
 
 1. **在 Coolify 中创建新应用**
