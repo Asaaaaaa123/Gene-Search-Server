@@ -6,6 +6,8 @@
 
 **若 Coolify 无法添加环境变量：** 编辑并提交 `genegen/coolify-deploy.env`（模板见 `genegen/coolify-deploy.env.example`）。Docker 构建时会 `source` 该文件，`docker-entrypoint.sh` 在容器启动时再次加载，无需在 Coolify UI 里配置。注意：真实密钥会进入 Git 与镜像层，**仅适用于私有仓库**。
 
+**重要：** 若 Coolify 使用仓库根目录为 **Docker 构建上下文** 且 Dockerfile 为 `Dockerfile.frontend`，根目录 `.dockerignore` 里的 `*.env` 曾会排除 `genegen/coolify-deploy.env`，导致构建拿不到密钥或行为异常。已在 `.dockerignore` 中加入 `!genegen/coolify-deploy.env` 例外。部署后请在容器日志中确认出现 `[genegen] starting (...)`，以验证新镜像已生效；若仍出现 `middleware.js` + Clerk 报错，说明运行的是旧镜像或未推送最新提交，请 **Disable build cache** 后重新部署。
+
 ---
 
 创建 `.env` 文件（或在使用 Coolify 时在环境变量中设置）：

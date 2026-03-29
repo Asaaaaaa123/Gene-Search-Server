@@ -20,6 +20,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env — copy coolify-deploy.env.example" >&2 && exit 1)
 RUN chmod +x docker-entrypoint.sh
 
+# Do not use Clerk in middleware.ts — Edge bundle breaks Coolify health checks without build-time keys.
+RUN chmod +x scripts/check-no-clerk-middleware.sh && ./scripts/check-no-clerk-middleware.sh
+
 RUN set -a \
   && . ./coolify-deploy.env \
   && set +a \

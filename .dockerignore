@@ -37,6 +37,8 @@ out
 .env.local
 .env.*.local
 *.env
+# Allow the committed Coolify bundle (matches *.env above)
+!genegen/coolify-deploy.env
 
 # IDE
 .vscode

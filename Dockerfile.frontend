@@ -1,4 +1,4 @@
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -23,6 +23,8 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # All deploy config from genegen/coolify-deploy.env (see coolify-deploy.env.example).
 RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env" >&2 && exit 1)
 RUN chmod +x docker-entrypoint.sh
+
+RUN chmod +x scripts/check-no-clerk-middleware.sh && ./scripts/check-no-clerk-middleware.sh
 
 RUN set -a \
   && . ./coolify-deploy.env \
