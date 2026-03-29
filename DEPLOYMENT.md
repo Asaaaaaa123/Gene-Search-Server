@@ -200,6 +200,24 @@ docker-compose restart
 2. 验证端口是否正确暴露
 3. 检查防火墙设置
 
+### 浏览器报 API NetworkError，且直接打开后端域名是 502 Bad Gateway
+
+**含义：** `502` 是 Coolify / Traefik / Nginx **连不上你的 FastAPI 容器**（或容器已崩溃），不是 CORS。此时前端 `fetch(https://backend…)` 也会失败。
+
+**请逐项检查（后端应用）：**
+
+1. **容器端口必须是 `8050`**  
+   本仓库 `Dockerfile.backend` 与 `uvicorn` 监听 **`8050`**。在 Coolify 该服务的 **Ports / Exposes / 公开端口** 里，填 **`8050`**（不要填 3000、80、8080，除非你真的改了镜像里的端口）。
+
+2. **看后端容器日志**  
+   在 Coolify 打开该资源 → Logs。若有 Python 报错、反复重启、OOM，先修启动错误（缺依赖、`.env`、MongoDB 连不上等）。
+
+3. **确认资源对应的是「后端」镜像**  
+   应使用根目录 **`Dockerfile.backend`**（或 compose 里的 `backend` 服务），不要误用前端的 Dockerfile。
+
+4. **后端起来后再配 CORS**  
+   当 `https://backend.xxx/docs` 能在浏览器正常打开（200，不是 502）时，再在环境变量里设置 `CORS_ALLOWED_ORIGINS=https://你的前端域名` 并重启后端。
+
 
 
 
