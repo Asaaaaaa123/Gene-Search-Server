@@ -12,6 +12,7 @@ export type StoredThemeOption = {
 export type StoredCustomThemePreferences = {
   customThemes: StoredThemeOption[];
   themeKeywordOverrides: Record<string, string[]>;
+  themeMetaOverrides?: Record<string, { name: string; description: string }>;
   selectedThemes: string[];
 };
 
@@ -33,9 +34,14 @@ export function readStoredCustomTheme(
     if (typeof o.themeKeywordOverrides !== "object" || o.themeKeywordOverrides === null)
       return null;
     if (!Array.isArray(o.selectedThemes)) return null;
+    const metaOverrides =
+      typeof o.themeMetaOverrides === "object" && o.themeMetaOverrides !== null
+        ? (o.themeMetaOverrides as Record<string, { name: string; description: string }>)
+        : {};
     return {
       customThemes: o.customThemes as StoredThemeOption[],
       themeKeywordOverrides: o.themeKeywordOverrides as Record<string, string[]>,
+      themeMetaOverrides: metaOverrides,
       selectedThemes: o.selectedThemes as string[],
     };
   } catch {

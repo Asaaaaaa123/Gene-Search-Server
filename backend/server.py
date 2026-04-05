@@ -1278,8 +1278,8 @@ PREDEFINED_ONTOLOGY_THEME_ID_MAP: Dict[str, str] = {
     "development": "Neurotrophic Signaling & Growth Factors",
     "signaling": "Neurotrophic Signaling & Growth Factors",
     "transport": "Extracellular matrix & adhesion",
-    "transcription": "Metabolic re-wiring",
-    "translation": "Metabolic re-wiring",
+    "transcription": "Nucleus & Nuclear Processes",
+    "translation": "Endoplasmic Reticulum & Golgi",
     "stress_response": "Stress & cytokine response",
     "enzyme_activity": "Metabolic re-wiring",
     "binding": "Metabolic re-wiring",
@@ -1661,36 +1661,8 @@ async def generate_custom_summary_chart(
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         
-        # Theme mapping
-        theme_mapping = {
-            # Biological Processes
-            'metabolism': 'Metabolic re-wiring',
-            'cell_cycle': 'Cell-cycle & Apoptosis',
-            'apoptosis': 'Cell-cycle & Apoptosis',
-            'immune_response': 'Inflammation & immune signaling',
-            'development': 'Neurotrophic Signaling & Growth Factors',
-            'signaling': 'Neurotrophic Signaling & Growth Factors',
-            'transport': 'Extracellular matrix & adhesion',
-            'transcription': 'Metabolic re-wiring',
-            'translation': 'Metabolic re-wiring',
-            'stress_response': 'Stress & cytokine response',
-            
-            # Molecular Functions
-            'enzyme_activity': 'Metabolic re-wiring',
-            'binding': 'Metabolic re-wiring',
-            'receptor_activity': 'Neurotrophic Signaling & Growth Factors',
-            'transporter_activity': 'Extracellular matrix & adhesion',
-            'structural_molecule': 'Extracellular matrix & adhesion',
-            
-            # Cellular Components
-            'membrane': 'Membrane & Cell Surface',
-            'nucleus': 'Nucleus & Nuclear Processes',
-            'cytoplasm': 'Cytoplasm & Cytoskeleton',
-            'mitochondria': 'Mitochondria & Energy',
-            'endoplasmic_reticulum': 'Endoplasmic Reticulum & Golgi',
-            'golgi': 'Endoplasmic Reticulum & Golgi',
-            'cytoskeleton': 'Cytoplasm & Cytoskeleton'
-        }
+        # Keep mapping consistent with custom-analyze and overlap-network.
+        theme_mapping = dict(PREDEFINED_ONTOLOGY_THEME_ID_MAP)
         
         # Add custom themes to mapping (they map to themselves)
         for custom_theme in custom_theme_data:
@@ -2538,8 +2510,8 @@ def start_server():
         print("❌ 依赖项检查失败，无法启动服务器")
         return
     
-    # 使用固定端口 8000
-    port = 8000
+    # 使用固定端口 8050
+    port = 8050
     import socket
     
     def is_port_available(port):
@@ -2550,7 +2522,7 @@ def start_server():
             except OSError:
                 return False
     
-    # 检查端口 8000 是否可用
+    # 检查端口 8050 是否可用
     if not is_port_available(port):
         print(f"❌ 端口 {port} 已被占用")
         print("请停止占用该端口的其他服务，或修改前端配置使用其他端口")

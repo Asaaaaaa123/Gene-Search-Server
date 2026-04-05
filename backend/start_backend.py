@@ -25,27 +25,27 @@ def start_server():
     """启动后端服务器"""
     print("正在启动后端服务器...")
     try:
-        # 检查端口 8000 是否可用
+        # 检查端口 8050 是否可用
         import socket
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('localhost', 8000))
-                print("✅ 端口 8000 可用")
+                s.bind(('localhost', 8050))
+                print("✅ 端口 8050 可用")
             except OSError:
-                print("❌ 端口 8000 已被占用")
+                print("❌ 端口 8050 已被占用")
                 print("请停止占用该端口的其他服务")
                 return False
         
         # 启动服务器
-        print("🚀 启动服务器在 http://localhost:8000")
-        print("📚 API文档: http://localhost:8000/docs")
+        print("🚀 启动服务器在 http://localhost:8050")
+        print("📚 API文档: http://localhost:8050/docs")
         print("按 Ctrl+C 停止服务器")
         
         subprocess.run([
             sys.executable, "-m", "uvicorn", 
             "server:app", 
             "--host", "0.0.0.0", 
-            "--port", "8000",
+            "--port", "8050",
             "--reload"
         ])
         return True

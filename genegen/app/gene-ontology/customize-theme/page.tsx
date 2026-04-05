@@ -54,7 +54,10 @@ export default function CustomizeTheme() {
   const [newThemeKeywords, setNewThemeKeywords] = useState('');
   // View/Edit keywords for any theme (predefined or custom)
   const [themeKeywordOverrides, setThemeKeywordOverrides] = useState<Record<string, string[]>>({});
+  const [themeMetaOverrides, setThemeMetaOverrides] = useState<Record<string, { name: string; description: string }>>({});
   const [editKeywordsTheme, setEditKeywordsTheme] = useState<ThemeOption | null>(null);
+  const [editThemeNameDraft, setEditThemeNameDraft] = useState('');
+  const [editThemeDescriptionDraft, setEditThemeDescriptionDraft] = useState('');
   const [editKeywordsDraft, setEditKeywordsDraft] = useState('');
   const [overlapNetworkData, setOverlapNetworkData] = useState<ThemeOverlapData | null>(null);
   const [overlapNetworkLoading, setOverlapNetworkLoading] = useState(false);
@@ -74,6 +77,9 @@ export default function CustomizeTheme() {
     }
     if (ct.themeKeywordOverrides && typeof ct.themeKeywordOverrides === 'object') {
       setThemeKeywordOverrides(ct.themeKeywordOverrides);
+    }
+    if (ct.themeMetaOverrides && typeof ct.themeMetaOverrides === 'object') {
+      setThemeMetaOverrides(ct.themeMetaOverrides);
     }
     if (ct.selectedThemes && Array.isArray(ct.selectedThemes)) {
       setSelectedThemes(ct.selectedThemes);
@@ -100,6 +106,7 @@ export default function CustomizeTheme() {
             writeStoredCustomTheme(userId, {
               customThemes: ct.customThemes ?? [],
               themeKeywordOverrides: ct.themeKeywordOverrides ?? {},
+              themeMetaOverrides: ct.themeMetaOverrides ?? {},
               selectedThemes: ct.selectedThemes ?? [],
             });
           }
@@ -126,6 +133,7 @@ export default function CustomizeTheme() {
     const payload: StoredCustomThemePreferences = {
       customThemes,
       themeKeywordOverrides,
+      themeMetaOverrides,
       selectedThemes,
     };
     writeStoredCustomTheme(userId, payload);
@@ -147,6 +155,7 @@ export default function CustomizeTheme() {
   }, [
     customThemes,
     themeKeywordOverrides,
+    themeMetaOverrides,
     selectedThemes,
     isSignedIn,
     userId,
@@ -172,8 +181,8 @@ export default function CustomizeTheme() {
     { id: 'development', name: 'Development', description: 'Organism development and differentiation', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
     { id: 'signaling', name: 'Signaling', description: 'Cell signaling and communication', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
     { id: 'transport', name: 'Transport', description: 'Molecular transport and trafficking', category: 'Biological Process', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
-    { id: 'transcription', name: 'Transcription', description: 'Gene transcription and regulation', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
-    { id: 'translation', name: 'Translation', description: 'Protein translation and synthesis', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+    { id: 'transcription', name: 'Transcription', description: 'Gene transcription and regulation', category: 'Biological Process', backendThemeName: 'Nucleus & Nuclear Processes', keywords: ['nucleus', 'nuclear', 'chromatin', 'dna', 'rna', 'transcription', 'nucleolus', 'nuclear envelope', 'nuclear pore', 'chromosome'] },
+    { id: 'translation', name: 'Translation', description: 'Protein translation and synthesis', category: 'Biological Process', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['ribosome', 'translation', 'translational', 'protein synthesis', 'endoplasmic reticulum', 'er', 'secretory', 'protein folding', 'glycosylation'] },
     { id: 'stress_response', name: 'Stress Response', description: 'Cellular stress and adaptation', category: 'Biological Process', backendThemeName: 'Stress & cytokine response', keywords: ['stress', 'interferon', 'cytokine', 'inflammatory', 'defense', 'response to stress', 'cellular response to stress', 'response to cytokine', 'cytokine production'] },
     // Molecular Functions
     { id: 'enzyme_activity', name: 'Enzyme Activity', description: 'Catalytic and enzymatic functions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
@@ -270,25 +279,57 @@ export default function CustomizeTheme() {
     return theme.keywords ?? [];
   };
 
+  const getThemeName = (theme: ThemeOption): string => {
+    return themeMetaOverrides[theme.id]?.name ?? theme.name;
+  };
+
+  const getThemeDescription = (theme: ThemeOption): string => {
+    return themeMetaOverrides[theme.id]?.description ?? theme.description;
+  };
+
   const openEditKeywords = (theme: ThemeOption) => {
     setEditKeywordsTheme(theme);
+    setEditThemeNameDraft(getThemeName(theme));
+    setEditThemeDescriptionDraft(getThemeDescription(theme));
     setEditKeywordsDraft(getKeywordsForTheme(theme).join(', '));
   };
 
   const closeEditKeywords = () => {
     setEditKeywordsTheme(null);
+    setEditThemeNameDraft('');
+    setEditThemeDescriptionDraft('');
     setEditKeywordsDraft('');
   };
 
   const saveEditKeywords = () => {
     if (!editKeywordsTheme) return;
+    const editedName = editThemeNameDraft.trim();
+    if (!editedName) {
+      setError('Please enter a theme name');
+      return;
+    }
     const keywords = editKeywordsDraft.split(',').map(k => k.trim()).filter(k => k);
     if (keywords.length === 0) {
       setError('Please enter at least one keyword');
       return;
     }
-    setThemeKeywordOverrides(prev => ({ ...prev, [editKeywordsTheme.id]: keywords }));
-    setSuccess(`Keywords updated for "${editKeywordsTheme.name}"`);
+    const editedDescription = editThemeDescriptionDraft.trim() || 'Custom theme';
+    if (editKeywordsTheme.id.startsWith('custom_')) {
+      setCustomThemes(prev =>
+        prev.map(t =>
+          t.id === editKeywordsTheme.id
+            ? { ...t, name: editedName, description: editedDescription, keywords }
+            : t
+        )
+      );
+    } else {
+      setThemeKeywordOverrides(prev => ({ ...prev, [editKeywordsTheme.id]: keywords }));
+      setThemeMetaOverrides(prev => ({
+        ...prev,
+        [editKeywordsTheme.id]: { name: editedName, description: editedDescription },
+      }));
+    }
+    setSuccess(`Theme updated for "${editedName}"`);
     setTimeout(() => setSuccess(''), 3000);
     closeEditKeywords();
   };
@@ -299,13 +340,25 @@ export default function CustomizeTheme() {
       delete next[theme.id];
       return next;
     });
+    setThemeMetaOverrides(prev => {
+      const next = { ...prev };
+      delete next[theme.id];
+      return next;
+    });
+    if (editKeywordsTheme?.id === theme.id) {
+      setEditThemeNameDraft(theme.name);
+      setEditThemeDescriptionDraft(theme.description);
+    }
     if (editKeywordsTheme?.id === theme.id) setEditKeywordsDraft((theme.keywords ?? []).join(', '));
   };
 
   // Merge predefined and custom themes (used by buildCustomThemePayload)
   const allThemes = [...themeOptions, ...customThemes];
 
-  // Build custom theme payload for API: custom themes + predefined (grouped by backend name, merged keywords)
+  // Build custom theme payload for API:
+  // - always include selected custom themes
+  // - include selected predefined themes ONLY when user explicitly edited their keywords
+  // This prevents stale UI defaults from silently overriding backend theme definitions.
   const buildCustomThemePayload = (): { id: string; name: string; keywords: string[] }[] => {
     const payload: { id: string; name: string; keywords: string[] }[] = [];
     for (const theme of customThemes.filter(t => selectedThemes.includes(t.id))) {
@@ -315,6 +368,7 @@ export default function CustomizeTheme() {
     for (const themeId of selectedThemes) {
       const theme = allThemes.find(t => t.id === themeId);
       if (!theme || theme.id.startsWith('custom_')) continue;
+      if (themeKeywordOverrides[theme.id] === undefined) continue;
       const backendName = theme.backendThemeName ?? theme.name;
       const keywords = getKeywordsForTheme(theme);
       if (!byBackend[backendName]) byBackend[backendName] = [];
@@ -330,7 +384,13 @@ export default function CustomizeTheme() {
   const buildSingleThemePayload = (themeName: string): { id: string; name: string; keywords: string[] }[] => {
     const custom = customThemes.find(t => t.name === themeName);
     if (custom) return [{ id: custom.id, name: custom.name, keywords: getKeywordsForTheme(custom) }];
-    const predefined = allThemes.filter(t => !t.id.startsWith('custom_') && selectedThemes.includes(t.id) && (t.backendThemeName ?? t.name) === themeName);
+    const predefined = allThemes.filter(
+      t =>
+        !t.id.startsWith('custom_') &&
+        selectedThemes.includes(t.id) &&
+        (t.backendThemeName ?? t.name) === themeName &&
+        themeKeywordOverrides[t.id] !== undefined
+    );
     if (predefined.length === 0) return [];
     const keywords = [...new Set(predefined.flatMap(t => getKeywordsForTheme(t)))];
     return [{ id: themeName, name: themeName, keywords }];
@@ -675,8 +735,8 @@ export default function CustomizeTheme() {
                           className="rounded mt-0.5"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900">{theme.name}</div>
-                          <div className="text-sm text-gray-600">{theme.description}</div>
+                          <div className="font-medium text-gray-900">{getThemeName(theme)}</div>
+                          <div className="text-sm text-gray-600">{getThemeDescription(theme)}</div>
                           <div className="mt-2 flex flex-wrap items-center gap-1">
                             {(getKeywordsForTheme(theme).slice(0, 4)).map((kw, i) => (
                               <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-200 text-gray-700">
@@ -691,7 +751,7 @@ export default function CustomizeTheme() {
                               onClick={(e) => { e.stopPropagation(); openEditKeywords(theme); }}
                               className="text-xs text-blue-600 hover:text-blue-800 font-medium ml-0.5"
                             >
-                              Edit keywords
+                              Edit theme
                             </button>
                           </div>
                         </div>
@@ -1081,7 +1141,7 @@ export default function CustomizeTheme() {
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl font-bold text-gray-900">
-                    Keywords for &quot;{editKeywordsTheme.name}&quot;
+                    Edit Theme: &quot;{getThemeName(editKeywordsTheme)}&quot;
                   </h3>
                   <button
                     onClick={closeEditKeywords}
@@ -1093,11 +1153,31 @@ export default function CustomizeTheme() {
                   </button>
                 </div>
                 <p className="text-sm text-gray-600 mb-3">
-                  These keywords are used to match GO terms to this theme. You can add, remove, or change them (comma-separated).
+                  Update theme name, description, and keywords. Keywords are used to match GO terms (comma-separated).
                 </p>
                 <p className="text-xs text-gray-500 mb-2">
-                  Default keywords are defined in the backend (Gene Ontology analysis engine) and mirrored here. Your edits override them for this session.
+                  For predefined themes, defaults come from backend and your edits are saved as overrides for your account.
                 </p>
+                <div className="space-y-3 mb-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Theme name</label>
+                    <input
+                      type="text"
+                      value={editThemeNameDraft}
+                      onChange={(e) => setEditThemeNameDraft(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea
+                      value={editThemeDescriptionDraft}
+                      onChange={(e) => setEditThemeDescriptionDraft(e.target.value)}
+                      rows={2}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900"
+                    />
+                  </div>
+                </div>
                 <textarea
                   value={editKeywordsDraft}
                   onChange={(e) => setEditKeywordsDraft(e.target.value)}
@@ -1113,7 +1193,7 @@ export default function CustomizeTheme() {
                         onClick={() => editKeywordsTheme && resetThemeKeywords(editKeywordsTheme)}
                         className="text-sm text-gray-600 hover:text-gray-800"
                       >
-                        Reset to default keywords
+                        Reset to default theme fields
                       </button>
                     )}
                   </div>
@@ -1128,7 +1208,7 @@ export default function CustomizeTheme() {
                       onClick={saveEditKeywords}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
-                      Save keywords
+                      Save changes
                     </button>
                   </div>
                 </div>
