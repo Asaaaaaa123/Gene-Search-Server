@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const rawBackend = process.env.NEXT_PUBLIC_API_URL?.trim();
 const BACKEND_API = (rawBackend && rawBackend.length > 0
   ? rawBackend
-  : "http://localhost:8050"
+  : "http://localhost:8000"
 ).replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {

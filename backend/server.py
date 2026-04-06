@@ -2510,8 +2510,8 @@ def start_server():
         print("❌ 依赖项检查失败，无法启动服务器")
         return
     
-    # 与 Docker / Coolify 一致：可用环境变量 PORT 覆盖（默认 8050）
-    port = int(os.getenv("PORT", "8050"))
+    # 与 Docker / Coolify 一致：可用环境变量 PORT 覆盖（默认 8000）
+    port = int(os.getenv("PORT", "8000"))
     import socket
     
     def is_port_available(port):

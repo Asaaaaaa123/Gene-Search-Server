@@ -18,7 +18,7 @@ def main():
     # 切换到backend目录
     os.chdir("backend")
     
-    port = int(os.environ.get("PORT", "8050"))
+    port = int(os.environ.get("PORT", "8000"))
     # 检查端口是否可用
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

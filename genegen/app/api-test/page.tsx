@@ -97,13 +97,13 @@ export default function ApiTest() {
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="http://localhost:8050"
+                placeholder="http://localhost:8000"
               />
             </div>
             <div className="text-sm text-gray-600">
               <p>Same-origin fetch base: {API_BASE_URL || '(empty — use paths like /api/health)'}</p>
               <p>Proxy target (NEXT_PUBLIC_API_URL): {API_PUBLIC_BASE_URL}</p>
-              <p>NEXT_PUBLIC_API_URL (raw): {process.env.NEXT_PUBLIC_API_URL ?? 'not set — localhost:8050 used at build for rewrites'}</p>
+              <p>NEXT_PUBLIC_API_URL (raw): {process.env.NEXT_PUBLIC_API_URL ?? 'not set — localhost:8000 used at build for rewrites'}</p>
               <p>Current URL: {apiUrl}</p>
             </div>
           </div>

@@ -5,13 +5,13 @@ services:
       dockerfile: Dockerfile.backend
     # Host:container — container side must match PORT (uvicorn listen port)
     ports:
-      - "${BACKEND_PUBLISH_PORT:-8050}:${PORT:-8050}"
+      - "${BACKEND_PUBLISH_PORT:-8000}:${PORT:-8000}"
     volumes:
       - ./backend/data:/app/data:ro  # Read-only for security
     env_file:
       - .env
     environment:
-      - PORT=${PORT:-8050}
+      - PORT=${PORT:-8000}
       - MONGODB_URI=${MONGODB_URI:-}
       - VALID_TOKENS=${VALID_TOKENS:-}
     networks:
@@ -21,7 +21,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/api/health', timeout=8)\"",
+          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=8)\"",
         ]
       interval: 15s
       timeout: 10s
@@ -41,7 +41,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8050}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
         - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
         - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
     ports:

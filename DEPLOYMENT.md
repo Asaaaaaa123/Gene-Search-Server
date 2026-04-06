@@ -100,7 +100,7 @@ docker-compose -f docker-compose.prod.yml down
 ### 后端配置
 
 - **Workers**: 默认 2 个 worker，可通过 `WORKERS` 环境变量调整（推荐：CPU 核心数 × 2）
-- **端口**: **8050**（镜像内默认；可通过环境变量 **`PORT`** 改为 `8000` 等与反向代理一致的值）
+- **端口**: **8000**（镜像内默认；可通过环境变量 **`PORT`** 改为 `8000` 等与反向代理一致的值）
 - **健康检查**: Docker 使用轻量 **`GET /api/health`**（启动宽限期约 120s，避免慢启动时误判失败）；浏览器验证仍可用 **`/docs`**
 - **资源限制**: 
   - CPU: 0.5-2 核心
@@ -122,7 +122,7 @@ docker-compose -f docker-compose.prod.yml down
 
 **解决**:
 1. 确保 `NEXT_PUBLIC_API_URL` 设置为后端的**公共可访问 URL**
-2. 浏览器无法访问 Docker 内部网络地址（如 `http://backend:8050`）
+2. 浏览器无法访问 Docker 内部网络地址（如 `http://backend:8000`）
 3. 必须使用完整的公共 URL（如 `https://api.example.com`）
 
 ### Q: 如何查看服务状态？
@@ -206,9 +206,9 @@ docker-compose restart
 
 **请逐项检查（后端应用）：**
 
-1. **容器端口必须与 `uvicorn` 监听端口一致（默认 `8050`）**  
-   本仓库 `Dockerfile.backend` 默认 **`PORT=8050`**。在 Coolify 该资源的 **Ports / 容器端口 / Private Port** 中，请填 **`8050`**，与 Traefik 转发的目标端口一致。  
-   若面板或旧文档写的是 **`8000`**，任选其一即可：**(A)** 在 Coolify 环境变量中设置 **`PORT=8000`** 并重建镜像，且把容器端口改成 **`8000`**；**(B)** 保持镜像默认，把 Coolify 容器端口改为 **`8050`**。  
+1. **容器端口必须与 `uvicorn` 监听端口一致（默认 `8000`）**  
+   本仓库 `Dockerfile.backend` 默认 **`PORT=8000`**。在 Coolify 该资源的 **Ports / 容器端口 / Private Port** 中，请填 **`8000`**，与 Traefik 转发的目标端口一致。  
+   若面板或旧文档写的是 **`8000`**，任选其一即可：**(A)** 在 Coolify 环境变量中设置 **`PORT=8000`** 并重建镜像，且把容器端口改成 **`8000`**；**(B)** 保持镜像默认，把 Coolify 容器端口改为 **`8000`**。  
    端口不一致时会出现 **502**、**no available server**、或前端 **NetworkError**（浏览器连不上 API）。
 
 2. **看后端容器日志**  

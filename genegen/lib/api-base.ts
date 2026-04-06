@@ -6,7 +6,7 @@
  * Use API_PUBLIC_BASE_URL for display, opening /docs in a new tab, or direct links.
  */
 const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
-const fallback = 'http://localhost:8050';
+const fallback = 'http://localhost:8000';
 export const API_PUBLIC_BASE_URL = (raw && raw.length > 0 ? raw : fallback).replace(
   /\/+$/,
   '',

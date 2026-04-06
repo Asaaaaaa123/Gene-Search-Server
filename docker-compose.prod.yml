@@ -7,11 +7,11 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "${BACKEND_PUBLISH_PORT:-8050}:${PORT:-8050}"
+      - "${BACKEND_PUBLISH_PORT:-8000}:${PORT:-8000}"
     volumes:
       - ./backend/data:/app/data:ro  # Read-only for security
     environment:
-      - PORT=${PORT:-8050}
+      - PORT=${PORT:-8000}
       - MONGODB_URI=${MONGODB_URI}
       - VALID_TOKENS=${VALID_TOKENS}
       - WORKERS=4  # Adjust based on CPU cores (2-4x CPU cores recommended)
@@ -22,7 +22,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/api/health', timeout=8)\"",
+          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=8)\"",
         ]
       interval: 15s
       timeout: 10s

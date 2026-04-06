@@ -300,7 +300,7 @@ export default function IVCCAPage() {
         err instanceof TypeError && (err.message === 'Failed to fetch' || (err as any).name === 'TypeError');
       const message =
         isNetwork
-          ? 'Cannot reach the backend. Start the Python API (e.g. cd backend && python -m uvicorn server:app --reload --port 8050) and ensure NEXT_PUBLIC_API_URL is set if you use a custom URL.'
+          ? 'Cannot reach the backend. Start the Python API (e.g. cd backend && python -m uvicorn server:app --reload --port 8000) and ensure NEXT_PUBLIC_API_URL is set if you use a custom URL.'
           : (err instanceof Error ? err.message : 'Failed to load IVCCA dataset');
       setError(message);
       setPreview(null);

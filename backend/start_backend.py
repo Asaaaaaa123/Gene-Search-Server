@@ -25,7 +25,7 @@ def start_server():
     """启动后端服务器"""
     print("正在启动后端服务器...")
     try:
-        port = int(os.environ.get("PORT", "8050"))
+        port = int(os.environ.get("PORT", "8000"))
         # 检查端口是否可用
         import socket
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
