@@ -18,20 +18,21 @@ def main():
     # 切换到backend目录
     os.chdir("backend")
     
-    # 检查端口 8050 是否可用
+    port = int(os.environ.get("PORT", "8050"))
+    # 检查端口是否可用
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.bind(('localhost', 8050))
-            print("✅ 端口 8050 可用")
+            s.bind(('localhost', port))
+            print(f"✅ 端口 {port} 可用")
         except OSError:
-            print("❌ 端口 8050 已被占用")
+            print(f"❌ 端口 {port} 已被占用")
             print("请停止占用该端口的其他服务")
             return
     
     # 启动服务器
-    print("🚀 启动服务器在 http://localhost:8050")
-    print("📚 API文档: http://localhost:8050/docs")
+    print(f"🚀 启动服务器在 http://localhost:{port}")
+    print(f"📚 API文档: http://localhost:{port}/docs")
     print("按 Ctrl+C 停止服务器")
     
     try:
@@ -39,7 +40,7 @@ def main():
             sys.executable, "-m", "uvicorn", 
             "server:app", 
             "--host", "0.0.0.0", 
-            "--port", "8050",
+            "--port", str(port),
             "--reload"
         ])
     except KeyboardInterrupt:

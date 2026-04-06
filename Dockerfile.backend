@@ -22,17 +22,18 @@ COPY backend/ .
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Expose port
+# Default listen port (override in Coolify / compose with PORT=8000 if your proxy expects 8000)
+ENV PORT=8050
 EXPOSE 8050
 
 # Switch to non-root user
 USER appuser
 
-# Health check (using Python since curl might not be available)
+# Health check must match the port the app listens on (respects PORT env at runtime)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8050/docs')" || exit 1
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/docs')" || exit 1
 
 # Production command with multiple workers
 # For production, use multiple workers for better performance
 # Adjust WORKERS based on your server's CPU cores (typically 2-4x CPU cores)
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port 8050 --workers ${WORKERS:-2} --no-access-log"]
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8050} --workers ${WORKERS:-2} --no-access-log"]
