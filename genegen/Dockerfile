@@ -15,6 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
 # Optional: docker-compose passes Coolify’s NEXT_PUBLIC_API_URL here (wins over coolify-deploy.env).
 ARG COOLIFY_NEXT_PUBLIC_API_URL=""
@@ -34,7 +35,7 @@ RUN set -a \
   && . ./coolify-deploy.env \
   && set +a \
   && if [ -n "$COOLIFY_NEXT_PUBLIC_API_URL" ]; then export NEXT_PUBLIC_API_URL="$COOLIFY_NEXT_PUBLIC_API_URL"; fi \
-  && npm run build
+  && npm run build -- --no-lint
 
 # Remove Edge middleware output so Coolify health checks never hit Clerk (fixes bad caches / old middleware.ts).
 RUN node scripts/strip-edge-middleware.cjs

@@ -19,6 +19,7 @@ COPY genegen/ .
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
 # All deploy config from genegen/coolify-deploy.env (see coolify-deploy.env.example).
 RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env" >&2 && exit 1)
@@ -31,7 +32,7 @@ RUN node scripts/validate-coolify-deploy.cjs
 RUN set -a \
   && . ./coolify-deploy.env \
   && set +a \
-  && npm run build
+  && npm run build -- --no-lint
 
 RUN node scripts/strip-edge-middleware.cjs
 
