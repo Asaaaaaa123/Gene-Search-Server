@@ -29,9 +29,10 @@ EXPOSE 8050
 # Switch to non-root user
 USER appuser
 
-# Health check must match the port the app listens on (respects PORT env at runtime)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/docs')" || exit 1
+# Grace period: server.py pulls in heavy deps (pandas/matplotlib/gprofiler) before uvicorn binds — 40s is often too short on Coolify.
+# Use /api/health (light) instead of /docs (Swagger UI).
+HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=5 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/api/health', timeout=8)" || exit 1
 
 # Production command with multiple workers
 # For production, use multiple workers for better performance

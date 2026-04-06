@@ -101,7 +101,7 @@ docker-compose -f docker-compose.prod.yml down
 
 - **Workers**: 默认 2 个 worker，可通过 `WORKERS` 环境变量调整（推荐：CPU 核心数 × 2）
 - **端口**: **8050**（镜像内默认；可通过环境变量 **`PORT`** 改为 `8000` 等与反向代理一致的值）
-- **健康检查**: 每 30 秒检查 `/docs` 端点
+- **健康检查**: Docker 使用轻量 **`GET /api/health`**（启动宽限期约 120s，避免慢启动时误判失败）；浏览器验证仍可用 **`/docs`**
 - **资源限制**: 
   - CPU: 0.5-2 核心
   - 内存: 512MB-2GB

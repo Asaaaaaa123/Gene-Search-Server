@@ -21,12 +21,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/docs')\"",
+          "python -c \"import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8050') + '/api/health', timeout=8)\"",
         ]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 120s
     deploy:
       resources:
         limits:
