@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { API_BASE_URL } from '@/lib/api-base';
+import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 
 export default function ApiTest() {
+  /** Empty string = same-origin /api proxy (recommended). Set full URL to test backend directly. */
   const [apiUrl, setApiUrl] = useState(API_BASE_URL);
   const [testResults, setTestResults] = useState<any[]>([]);
   const [isTesting, setIsTesting] = useState(false);
@@ -62,8 +63,7 @@ export default function ApiTest() {
   const runAllTests = async () => {
     setTestResults([]);
     
-    // Test basic endpoints
-    await runTest('/');
+    // Same-origin proxy: only /api/* hits FastAPI ("/" is the Next.js page).
     await runTest('/api/health');
     await runTest('/api/test');
     await runTest('/api/gene/symbols');
@@ -101,8 +101,9 @@ export default function ApiTest() {
               />
             </div>
             <div className="text-sm text-gray-600">
-              <p>Resolved API base: {API_BASE_URL}</p>
-              <p>NEXT_PUBLIC_API_URL (raw): {process.env.NEXT_PUBLIC_API_URL ?? 'not set — default 8050 used'}</p>
+              <p>Same-origin fetch base: {API_BASE_URL || '(empty — use paths like /api/health)'}</p>
+              <p>Proxy target (NEXT_PUBLIC_API_URL): {API_PUBLIC_BASE_URL}</p>
+              <p>NEXT_PUBLIC_API_URL (raw): {process.env.NEXT_PUBLIC_API_URL ?? 'not set — localhost:8050 used at build for rewrites'}</p>
               <p>Current URL: {apiUrl}</p>
             </div>
           </div>

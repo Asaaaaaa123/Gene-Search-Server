@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { fetchWithClerk } from '@/lib/clerk-fetch';
-import { API_BASE_URL } from '@/lib/api-base';
+import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 import {
   readStoredCustomTheme,
   writeStoredCustomTheme,
@@ -433,7 +433,7 @@ export default function CustomizeTheme() {
       setOverlapNetworkData(data);
     } catch (e) {
       console.error('Overlap network error:', e);
-      setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check that the backend at ${API_BASE_URL} is running and has been restarted.`);
+      setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check backend at ${API_PUBLIC_BASE_URL} and that the frontend proxy target (NEXT_PUBLIC_API_URL) is set at build.`);
     } finally {
       setOverlapNetworkLoading(false);
     }

@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import Link from 'next/link';
-import { API_BASE_URL } from '@/lib/api-base';
+import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetwork';
 
 interface OntologyResult {
@@ -82,8 +82,8 @@ export default function DefaultTheme() {
     setThemeChart('');
 
     try {
-      console.log('API_BASE_URL:', API_BASE_URL);
-      console.log('Making request to:', `${API_BASE_URL}/api/ontology/analyze`);
+      console.log('API proxy base:', API_BASE_URL || '(same-origin)');
+      console.log('Making request to:', `/api/ontology/analyze (→ ${API_PUBLIC_BASE_URL})`);
       console.log('Selected file:', selectedFile.name, 'Size:', selectedFile.size);
       
       const formData = new FormData();
@@ -223,7 +223,7 @@ export default function DefaultTheme() {
       setOverlapNetworkData(data);
     } catch (e) {
       console.error('Overlap network error:', e);
-      setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check that the backend at ${API_BASE_URL} is running and has been restarted.`);
+      setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check backend at ${API_PUBLIC_BASE_URL} and NEXT_PUBLIC_API_URL at frontend build.`);
     } finally {
       setOverlapNetworkLoading(false);
     }

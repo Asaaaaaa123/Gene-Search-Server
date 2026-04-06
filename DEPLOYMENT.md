@@ -26,8 +26,8 @@ MONGODB_URI=mongodb://username:password@host:27017/gene_search_db
 VALID_TOKENS=your_token_here,another_token_here
 
 # 前端 API URL（必需！）
-# 这必须是后端服务的公共可访问 URL
-# 对于 Coolify 部署，使用 Coolify 提供的域名
+# 必须是后端 FastAPI 的**公网根 URL**（Next 在**服务端**把浏览器的 `/api/*` 代理到这里）
+# 浏览器不再直连该域名，因此可避免因 CORS / 502 无 CORS 头导致的 “NetworkError”
 NEXT_PUBLIC_API_URL=https://your-backend-service.your-coolify-domain.com
 
 # Clerk（Next.js 前端 sign-in；不要使用含 clerkMiddleware 的 middleware.ts，否则 Coolify 健康检查会失败）

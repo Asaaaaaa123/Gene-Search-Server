@@ -10,20 +10,15 @@ const nextConfig: NextConfig = {
   // Only use standalone in production
   ...(process.env.NODE_ENV === 'production' ? { output: 'standalone' } : {}),
 
-  // In dev: proxy API routes to backends so same-origin requests work (avoids 404 when backend has new routes)
-  ...(process.env.NODE_ENV === 'development'
-    ? {
-        async rewrites() {
-          return [
-            // Proxy all /api/* to FastAPI (auth, test, gene, ontology, ivcca, …)
-            {
-              source: "/api/:path*",
-              destination: `${BACKEND_API}/api/:path*`,
-            },
-          ];
-        },
-      }
-    : {}),
+  // Proxy /api/* → FastAPI in dev and production (browser uses same-origin; no CORS).
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${BACKEND_API}/api/:path*`,
+      },
+    ];
+  },
 
   webpack: (config, { isServer }) => {
     // Fix for plotly.js in Next.js

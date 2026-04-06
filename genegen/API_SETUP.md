@@ -1,19 +1,19 @@
 # API Connection Setup Guide
 
 ## Overview
-This application requires a backend API server to function properly. The frontend communicates with the backend through HTTP requests.
+This application requires a backend API server. In the browser, requests go to **same-origin** paths under `/api/*`; Next.js **rewrites** those to your FastAPI base URL from `NEXT_PUBLIC_API_URL` (set at **build** time). That avoids cross-origin (CORS) issues in production.
 
 ## Quick Setup
 
 ### 1. Backend Server
-Ensure your backend server is running and accessible. The default configuration expects the backend at `http://localhost:8000`.
+Ensure your backend server is running. Local default rewrite target is `http://localhost:8050` (see `next.config.ts` / `NEXT_PUBLIC_API_URL`).
 
 ### 2. Environment Configuration
 Create a `.env.local` file in the root directory with the following content:
 
 ```bash
 # For local development
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8050
 
 # Clerk (sign-in / sign-up) — create an application at https://dashboard.clerk.com
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
@@ -69,13 +69,13 @@ Your backend should have these endpoints available:
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `NEXT_PUBLIC_API_URL` | Backend API base URL | `http://localhost:8000` | Yes |
+| `NEXT_PUBLIC_API_URL` | Backend API base URL | `http://localhost:8050` | Yes |
 
 ## Development vs Production
 
 ### Development
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8050
 ```
 
 ### Production/Cloud

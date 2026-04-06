@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, RefObject } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { API_BASE_URL } from '@/lib/api-base';
+import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 
 // Dynamically import Plotly to avoid SSR issues and improve initial page load
 // Lazy load only when charts are needed
@@ -1083,9 +1083,9 @@ export default function IVCCAPage() {
             </div>
           </div>
           <div className="rounded-full bg-indigo-50 px-4 py-2 text-xs font-medium text-indigo-700">
-            API base:{' '}
+            Backend (via /api proxy):{' '}
             <span className="font-semibold">
-              {API_BASE_URL}
+              {API_PUBLIC_BASE_URL}
             </span>
           </div>
         </div>

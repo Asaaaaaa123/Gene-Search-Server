@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { API_BASE_URL } from '@/lib/api-base';
+import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 interface GeneData {
   organ: string;
   gene_symbol: string;
@@ -61,11 +61,8 @@ export default function GeneSearch() {
       
       // Try multiple endpoints to determine connection status
       // Try fast endpoints first to avoid blocking on slow data endpoints
-      const endpoints = [
-        '/',
-        '/api/health',
-        '/docs'
-      ];
+      // Same-origin only: `/` and `/docs` hit Next.js, not FastAPI. Proxy covers `/api/*`.
+      const endpoints = ['/api/health'];
       
       let connected = false;
       let lastError = '';
@@ -181,7 +178,7 @@ export default function GeneSearch() {
         if (error.name === 'AbortError') {
           setError('Search request timed out. Please try again.');
         } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          setError(`Unable to connect to the server at ${API_BASE_URL}. Please check if the backend is running.`);
+          setError(`Unable to connect to the API (proxied to ${API_PUBLIC_BASE_URL}). Check backend and redeploy frontend with correct NEXT_PUBLIC_API_URL.`);
         } else {
           setError(`Failed to search for gene: ${error.message}`);
         }
@@ -394,7 +391,9 @@ export default function GeneSearch() {
               <h3 className="text-sm font-medium text-red-800">API Connection Issue</h3>
               <p className="text-sm text-red-700 mt-1">{connectionDetails}</p>
               <div className="mt-2 text-xs text-red-600">
-                <p><strong>Current API URL:</strong> {API_BASE_URL}</p>
+                <p>
+                  <strong>Backend (proxied via /api):</strong> {API_PUBLIC_BASE_URL}
+                </p>
                 <p><strong>Environment:</strong> {process.env.NODE_ENV || 'development'}</p>
               </div>
               <div className="mt-2 text-xs text-red-600">
@@ -403,7 +402,10 @@ export default function GeneSearch() {
                   <li>Ensure your backend server is running</li>
                   <li>Check if the API URL is correct</li>
                   <li>Verify no firewall is blocking the connection</li>
-                  <li>For cloud deployment, update NEXT_PUBLIC_API_URL in .env.local</li>
+                  <li>
+                    Rebuild the frontend with <code className="bg-red-100 px-1 rounded">NEXT_PUBLIC_API_URL</code>{' '}
+                    set to your FastAPI public URL (used as the server-side proxy target).
+                  </li>
                 </ul>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -419,7 +421,7 @@ export default function GeneSearch() {
                 <button
                   onClick={() => {
                     // Try to open the API URL in a new tab
-                    window.open(`${API_BASE_URL}/docs`, '_blank');
+                    window.open(`${API_PUBLIC_BASE_URL}/docs`, '_blank');
                   }}
                   className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
                 >
