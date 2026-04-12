@@ -937,6 +937,8 @@ class GeneOntologyAPI:
 
     def assign_theme(self, name: str) -> Optional[str]:
         """Assign theme to GO term based on keywords"""
+        if name is None or (not isinstance(name, str)):
+            return None
         low = name.lower()
         matched_themes = []
         
@@ -966,17 +968,20 @@ class GeneOntologyAPI:
                   .sort_values("Score", ascending=False))
         return themed
 
-    def create_theme_chart(self, df: pd.DataFrame, theme_name: str) -> str:
-        """Create chart for a specific theme"""
+    def create_theme_chart(
+        self, df: pd.DataFrame, theme_key: str, chart_title: Optional[str] = None
+    ) -> str:
+        """Create chart for a specific theme (theme_key matches df['Theme'])."""
         try:
+            title = chart_title if chart_title else theme_key
             # Filter GO terms belonging to the current theme
-            sub_df = df[df["Theme"] == theme_name].sort_values("Score", ascending=True)
+            sub_df = df[df["Theme"] == theme_key].sort_values("Score", ascending=True)
 
             if sub_df.empty:
-                print(f"No data found for theme: {theme_name}")
+                print(f"No data found for theme: {theme_key}")
                 return ""
 
-            print(f"Creating chart for theme: {theme_name} with {len(sub_df)} terms")
+            print(f"Creating chart for theme: {theme_key} with {len(sub_df)} terms")
 
             # Create plot with better proportions to avoid font stretching
             fig_width = 12
@@ -988,7 +993,7 @@ class GeneOntologyAPI:
             
             # Improve font settings
             plt.xlabel("-log10(p-value)", size=12)
-            plt.title(f"Top GO Terms in Theme: {theme_name}", loc="left", fontsize=14, weight="bold")
+            plt.title(f"Top GO Terms in Theme: {title}", loc="left", fontsize=14, weight="bold")
             
             # Adjust y-axis to prevent font stretching
             plt.gca().set_ylim(-0.5, len(sub_df) - 0.5)
@@ -1003,11 +1008,11 @@ class GeneOntologyAPI:
             img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
             plt.close()
 
-            print(f"Chart created successfully for theme: {theme_name}")
+            print(f"Chart created successfully for theme: {theme_key}")
             return img_base64
             
         except Exception as e:
-            print(f"Error creating chart for theme {theme_name}: {str(e)}")
+            print(f"Error creating chart for theme {theme_key}: {str(e)}")
             # 清理matplotlib状态
             plt.close('all')
             raise e
@@ -1296,6 +1301,125 @@ PREDEFINED_ONTOLOGY_THEME_ID_MAP: Dict[str, str] = {
 }
 
 
+def build_restricted_ontology_themes_by_id(
+    original: Dict[str, List[str]],
+    selected_ids: List[str],
+    custom_theme_data: List[Dict[str, Any]],
+) -> Dict[str, List[str]]:
+    """
+    Build assign_theme keyword map keyed by UI checkbox id (e.g. transport, custom_123).
+
+    Each selected theme uses only its own keywords from custom_theme_data — no merging
+    across themes that share the same backend GO bucket (fixes edited keywords leaking).
+
+    Payload entries: { "id": str, "keywords": list[str], "name": optional }.
+    """
+    unique_ids = list(dict.fromkeys(selected_ids))
+    from_payload: Dict[str, List[str]] = {}
+    for ct in custom_theme_data:
+        if not isinstance(ct, dict):
+            continue
+        tid = ct.get("id")
+        if not tid or not isinstance(tid, str):
+            continue
+        kws = ct.get("keywords") or []
+        if not isinstance(kws, list):
+            continue
+        for k in kws:
+            if not isinstance(k, str):
+                continue
+            s = k.strip()
+            if not s:
+                continue
+            from_payload.setdefault(tid, []).append(s)
+    for tid in list(from_payload.keys()):
+        from_payload[tid] = list(dict.fromkeys(from_payload[tid]))
+
+    restricted: Dict[str, List[str]] = {}
+    for tid in unique_ids:
+        if tid in from_payload:
+            restricted[tid] = from_payload[tid]
+        else:
+            backend = PREDEFINED_ONTOLOGY_THEME_ID_MAP.get(tid)
+            if backend and backend in original:
+                restricted[tid] = list(original[backend])
+            else:
+                restricted[tid] = []
+    return restricted
+
+
+def parse_theme_labels_json(theme_labels: Optional[str]) -> Dict[str, str]:
+    """Optional JSON object mapping theme id → display label for charts."""
+    if not theme_labels:
+        return {}
+    s = str(theme_labels).strip()
+    if not s:
+        return {}
+    try:
+        d = json.loads(s)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for k, v in d.items():
+        if v is None or k is None:
+            continue
+        ks = str(k).strip()
+        vs = str(v).strip()
+        if ks and vs:
+            out[ks] = vs
+    return out
+
+
+def parse_custom_theme_form_value(custom_themes: Optional[str]) -> List[Dict[str, Any]]:
+    """Parse the custom_themes multipart field into a list of dicts (never strings)."""
+    if custom_themes is None:
+        return []
+    s = str(custom_themes).strip()
+    if not s:
+        return []
+    try:
+        parsed = json.loads(s)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(parsed, dict):
+        return [parsed]
+    if isinstance(parsed, list):
+        return [x for x in parsed if isinstance(x, dict)]
+    return []
+
+
+def parse_selected_themes_json(themes: str) -> List[str]:
+    """Parse the themes multipart field; must be a JSON array."""
+    try:
+        data = json.loads(themes)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid themes format")
+    if not isinstance(data, list):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid themes format: expected a JSON array of theme ids",
+        )
+    return [str(x) for x in data]
+
+
+def try_parse_selected_themes_form(themes: Optional[str]) -> Optional[List[Any]]:
+    """Lenient parse for optional theme lists (e.g. overlap network). Invalid input → None."""
+    if themes is None:
+        return None
+    s = str(themes).strip()
+    if not s:
+        return None
+    try:
+        data = json.loads(s)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return [str(x) for x in data]
+
+
 # Initialize ontology API
 ontology_api = GeneOntologyAPI()
 
@@ -1358,31 +1482,25 @@ async def analyze_ontology(file: UploadFile = File(...)):
 async def generate_theme_chart(
     file: UploadFile = File(...), 
     theme: str = Form(...),
+    theme_display: str = Form(None),
     custom_themes: str = Form(None)
 ):
-    """Generate chart for a specific theme"""
+    """Generate chart for a specific theme (`theme` = internal id; optional `theme_display` for title)."""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
     
-    # Parse custom themes if provided
-    custom_theme_data = []
-    if custom_themes:
-        try:
-            import json
-            custom_theme_data = json.loads(custom_themes)
-            print(f"Custom themes received for theme-chart: {custom_theme_data}")
-        except json.JSONDecodeError:
-            print("Warning: Failed to parse custom themes in theme-chart")
+    custom_theme_data = parse_custom_theme_form_value(custom_themes)
+    if custom_theme_data:
+        print(f"Custom themes received for theme-chart: {custom_theme_data}")
     
-    # Temporarily add custom themes to the ontology API
+    # Temporarily scope theme keywords (custom chart: only the requested theme is matchable)
     original_themes = ontology_api.themes.copy()
     try:
-        for custom_theme in custom_theme_data:
-            theme_name = custom_theme.get('name')
-            keywords = custom_theme.get('keywords', [])
-            if theme_name and keywords:
-                ontology_api.themes[theme_name] = keywords
-                print(f"Added custom theme '{theme_name}' with keywords: {keywords}")
+        if custom_theme_data:
+            ontology_api.themes = build_restricted_ontology_themes_by_id(
+                original_themes, [theme], custom_theme_data
+            )
+            print(f"Theme-chart restricted themes keys: {list(ontology_api.themes.keys())}")
         
         print(f"Processing theme chart request for theme: {theme}")
         
@@ -1419,7 +1537,8 @@ async def generate_theme_chart(
             )
         
         # Create chart
-        chart_base64 = ontology_api.create_theme_chart(enr_df, theme)
+        disp = theme_display.strip() if isinstance(theme_display, str) and theme_display.strip() else None
+        chart_base64 = ontology_api.create_theme_chart(enr_df, theme, chart_title=disp)
         if not chart_base64:
             raise HTTPException(status_code=400, detail=f"No data found for theme: {theme}")
         
@@ -1511,32 +1630,23 @@ async def analyze_custom_ontology(
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
     
+    original_themes = ontology_api.themes.copy()
     try:
-        # Parse selected themes
-        import json
-        selected_themes = json.loads(themes)
+        selected_themes = parse_selected_themes_json(themes)
         if not selected_themes:
             raise HTTPException(status_code=400, detail="No themes selected")
         
         print(f"Custom analysis requested for themes: {selected_themes}")
         
-        # Parse custom themes if provided
-        custom_theme_data = []
-        if custom_themes:
-            try:
-                custom_theme_data = json.loads(custom_themes)
-                print(f"Custom themes received: {custom_theme_data}")
-            except json.JSONDecodeError:
-                print("Warning: Failed to parse custom themes")
+        custom_theme_data = parse_custom_theme_form_value(custom_themes)
+        if custom_theme_data:
+            print(f"Custom themes received: {custom_theme_data}")
         
-        # Temporarily add custom themes to the ontology API
-        original_themes = ontology_api.themes.copy()
-        for custom_theme in custom_theme_data:
-            theme_name = custom_theme.get('name')
-            keywords = custom_theme.get('keywords', [])
-            if theme_name and keywords:
-                ontology_api.themes[theme_name] = keywords
-                print(f"Added custom theme '{theme_name}' with keywords: {keywords}")
+        unique_ids = list(dict.fromkeys(selected_themes))
+        ontology_api.themes = build_restricted_ontology_themes_by_id(
+            original_themes, unique_ids, custom_theme_data
+        )
+        print(f"Custom analyze restricted theme keys: {list(ontology_api.themes.keys())}")
         
         # Read file content
         content = await file.read()
@@ -1552,33 +1662,19 @@ async def analyze_custom_ontology(
         if enr_df.empty:
             return {"results": [], "message": "No significant enrichment results found"}
         
-        # Filter results based on selected themes (UI ids → backend theme names)
-        theme_mapping = dict(PREDEFINED_ONTOLOGY_THEME_ID_MAP)
-
-        # Add custom themes to mapping (they map to themselves)
-        for custom_theme in custom_theme_data:
-            theme_id = custom_theme.get('id')
-            theme_name = custom_theme.get('name')
-            if theme_id and theme_name:
-                theme_mapping[theme_id] = theme_name
-        
-        print(f"Available themes in ontology: {list(ontology_api.themes.keys())}")
-        
         # Assign themes and filter by selected themes
         enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
-        selected_theme_names = [theme_mapping.get(theme_id, theme_id) for theme_id in selected_themes]
         
         print(f"Selected theme IDs: {selected_themes}")
-        print(f"Mapped theme names: {selected_theme_names}")
         print(f"Available themes in data: {enr_df['Theme'].dropna().unique().tolist()}")
         
         # Filter enrichment results to only include selected themes
-        filtered_df = enr_df[enr_df["Theme"].isin(selected_theme_names)]
+        filtered_df = enr_df[enr_df["Theme"].isin(unique_ids)].copy()
         
         print(f"Filtered dataframe shape: {filtered_df.shape}")
         
         if filtered_df.empty:
-            return {"results": [], "message": f"No enrichment results found for selected themes: {selected_theme_names}"}
+            return {"results": [], "message": f"No enrichment results found for selected themes: {unique_ids}"}
         
         # Aggregate results for selected themes
         themed = ontology_api.aggregate(filtered_df)
@@ -1594,58 +1690,44 @@ async def analyze_custom_ontology(
         
         print(f"Custom analysis completed with {len(results)} results")
         
-        # Restore original themes
-        ontology_api.themes = original_themes
-        
         return {"results": results}
         
-    except json.JSONDecodeError:
-        # Restore original themes on error
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
-        raise HTTPException(status_code=400, detail="Invalid themes format")
+    except HTTPException:
+        raise
     except Exception as e:
-        # Restore original themes on error
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
         raise HTTPException(status_code=500, detail=f"Error analyzing genes: {str(e)}")
+    finally:
+        ontology_api.themes = original_themes
 
 @app.post("/api/ontology/custom-summary-chart")
 async def generate_custom_summary_chart(
     file: UploadFile = File(...), 
     themes: str = Form(...),
-    custom_themes: str = Form(None)
+    custom_themes: str = Form(None),
+    theme_labels: str = Form(None),
 ):
     """Generate summary chart for custom theme selection"""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
     
+    original_themes = ontology_api.themes.copy()
     try:
-        # Parse selected themes
-        import json
-        selected_themes = json.loads(themes)
+        selected_themes = parse_selected_themes_json(themes)
         if not selected_themes:
             raise HTTPException(status_code=400, detail="No themes selected")
         
         print(f"Custom summary chart requested for themes: {selected_themes}")
         
-        # Parse custom themes if provided
-        custom_theme_data = []
-        if custom_themes:
-            try:
-                custom_theme_data = json.loads(custom_themes)
-                print(f"Custom themes received: {custom_theme_data}")
-            except json.JSONDecodeError:
-                print("Warning: Failed to parse custom themes")
+        custom_theme_data = parse_custom_theme_form_value(custom_themes)
+        if custom_theme_data:
+            print(f"Custom themes received: {custom_theme_data}")
         
-        # Temporarily add custom themes to the ontology API
-        original_themes = ontology_api.themes.copy()
-        for custom_theme in custom_theme_data:
-            theme_name = custom_theme.get('name')
-            keywords = custom_theme.get('keywords', [])
-            if theme_name and keywords:
-                ontology_api.themes[theme_name] = keywords
-                print(f"Added custom theme '{theme_name}' with keywords: {keywords}")
+        unique_ids = list(dict.fromkeys(selected_themes))
+        labels_map = parse_theme_labels_json(theme_labels)
+        ontology_api.themes = build_restricted_ontology_themes_by_id(
+            original_themes, unique_ids, custom_theme_data
+        )
+        print(f"Custom summary chart restricted theme keys: {list(ontology_api.themes.keys())}")
         
         # Read file content
         content = await file.read()
@@ -1661,71 +1743,50 @@ async def generate_custom_summary_chart(
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         
-        # Keep mapping consistent with custom-analyze and overlap-network.
-        theme_mapping = dict(PREDEFINED_ONTOLOGY_THEME_ID_MAP)
-        
-        # Add custom themes to mapping (they map to themselves)
-        for custom_theme in custom_theme_data:
-            theme_id = custom_theme.get('id')
-            theme_name = custom_theme.get('name')
-            if theme_id and theme_name:
-                theme_mapping[theme_id] = theme_name
-        
-        print(f"Custom summary chart - Available themes in ontology: {list(ontology_api.themes.keys())}")
-        
         # Assign themes and filter by selected themes
         enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
-        selected_theme_names = [theme_mapping.get(theme_id, theme_id) for theme_id in selected_themes]
         
         # Filter enrichment results to only include selected themes
-        filtered_df = enr_df[enr_df["Theme"].isin(selected_theme_names)]
+        filtered_df = enr_df[enr_df["Theme"].isin(unique_ids)].copy()
         
         if filtered_df.empty:
-            # Restore original themes before raising exception
-            ontology_api.themes = original_themes
-            raise HTTPException(status_code=400, detail=f"No enrichment results found for selected themes: {selected_theme_names}")
+            raise HTTPException(status_code=400, detail=f"No enrichment results found for selected themes: {unique_ids}")
         
         # Aggregate results for selected themes
         themed = ontology_api.aggregate(filtered_df)
         
         if themed.empty:
-            # Restore original themes before raising exception
-            ontology_api.themes = original_themes
             raise HTTPException(status_code=400, detail="No themes could be aggregated")
+        
+        if labels_map:
+            tdf = themed.reset_index()
+            id_col = "Theme" if "Theme" in tdf.columns else tdf.columns[0]
+            tdf["plot_label"] = tdf[id_col].astype(str).map(lambda tid: labels_map.get(tid, tid))
+            themed = (
+                tdf.groupby("plot_label", as_index=True)[["Score", "Terms"]]
+                .sum()
+                .sort_values("Score", ascending=False)
+            )
         
         # Generate summary chart
         chart_base64 = ontology_api.create_summary_chart(themed)
         
         if not chart_base64:
-            # Restore original themes before raising exception
-            ontology_api.themes = original_themes
             raise HTTPException(status_code=500, detail="Failed to generate custom summary chart")
         
         print("Successfully generated custom summary chart")
         
-        # Restore original themes
-        ontology_api.themes = original_themes
-        
         return {"chart": chart_base64}
         
-    except json.JSONDecodeError:
-        # Restore original themes on error
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
-        raise HTTPException(status_code=400, detail="Invalid themes format")
     except HTTPException:
-        # Restore original themes on error
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
         raise
     except Exception as e:
-        # Restore original themes on error
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
         print(f"Error generating custom summary chart: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    finally:
+        ontology_api.themes = original_themes
 
 @app.post("/api/ontology/theme-overlap-network")
 async def get_theme_overlap_network(
@@ -1736,50 +1797,29 @@ async def get_theme_overlap_network(
     """Return theme-theme gene overlap network (nodes, edges with shared gene count) for default or custom themes."""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
+    original_themes = ontology_api.themes.copy()
     try:
-        import json
         content = await file.read()
         file_content = content.decode('utf-8')
         genes = ontology_api.load_genes_from_file(file_content)
         if not genes:
             raise HTTPException(status_code=400, detail="No valid genes found in file")
 
-        selected_themes = None
-        custom_theme_data = []
-        theme_mapping = dict(PREDEFINED_ONTOLOGY_THEME_ID_MAP)
-        original_themes = ontology_api.themes.copy()
+        selected_themes = try_parse_selected_themes_form(themes)
+        custom_theme_data = parse_custom_theme_form_value(custom_themes)
 
-        if themes:
-            try:
-                selected_themes = json.loads(themes)
-            except json.JSONDecodeError:
-                pass
-        if custom_themes:
-            try:
-                custom_theme_data = json.loads(custom_themes)
-            except json.JSONDecodeError:
-                pass
-
-        if custom_theme_data:
-            for ct in custom_theme_data:
-                name = ct.get('name')
-                kw = ct.get('keywords', [])
-                if name and kw:
-                    ontology_api.themes[name] = kw
-            for ct in custom_theme_data:
-                tid, tname = ct.get('id'), ct.get('name')
-                if tid and tname:
-                    theme_mapping[tid] = tname
+        selected_names: List[str] = []
+        if selected_themes:
+            selected_names = list(dict.fromkeys(selected_themes))
+            ontology_api.themes = build_restricted_ontology_themes_by_id(
+                original_themes, selected_names, custom_theme_data
+            )
 
         enr_df = ontology_api.enrich_with_genes(genes)
         if enr_df.empty:
-            ontology_api.themes = original_themes
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
 
         if selected_themes:
-            selected_names = list(
-                dict.fromkeys(theme_mapping.get(t, t) for t in selected_themes)
-            )
             theme_genes = ontology_api.gene_sets_for_selected_themes(
                 enr_df, selected_names, query_genes=genes
             )
@@ -1789,7 +1829,6 @@ async def get_theme_overlap_network(
             enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
             enr_df = enr_df.dropna(subset=["Theme"])
             if enr_df.empty:
-                ontology_api.themes = original_themes
                 raise HTTPException(
                     status_code=400,
                     detail="No GO terms could be assigned to a theme for overlap network",
@@ -1798,18 +1837,15 @@ async def get_theme_overlap_network(
             theme_list = None
 
         network = ontology_api.compute_theme_overlap_network(theme_genes, theme_list=theme_list)
-        ontology_api.themes = original_themes
         return network
     except HTTPException:
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
         raise
     except Exception as e:
-        if 'original_themes' in locals():
-            ontology_api.themes = original_themes
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        ontology_api.themes = original_themes
 
 @app.get("/api/debug/themes")
 async def debug_themes():

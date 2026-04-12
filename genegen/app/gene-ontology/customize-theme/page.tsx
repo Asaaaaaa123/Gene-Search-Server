@@ -355,46 +355,57 @@ export default function CustomizeTheme() {
   // Merge predefined and custom themes (used by buildCustomThemePayload)
   const allThemes = [...themeOptions, ...customThemes];
 
-  // Build custom theme payload for API:
-  // - always include selected custom themes
-  // - include selected predefined themes ONLY when user explicitly edited their keywords
-  // This prevents stale UI defaults from silently overriding backend theme definitions.
+  /** Map API result key (checkbox id, or legacy backend display name) → theme row. */
+  const resolveThemeOption = (themeKey: string): ThemeOption | undefined => {
+    const byId = allThemes.find(x => x.id === themeKey);
+    if (byId) return byId;
+    return allThemes.find(
+      x =>
+        !x.id.startsWith('custom_') &&
+        (x.backendThemeName === themeKey || x.name === themeKey)
+    );
+  };
+
+  // One payload row per selected checkbox id — keywords are never merged across rows
+  // that share the same backend bucket (e.g. Transport vs Transporter Activity).
   const buildCustomThemePayload = (): { id: string; name: string; keywords: string[] }[] => {
     const payload: { id: string; name: string; keywords: string[] }[] = [];
-    for (const theme of customThemes.filter(t => selectedThemes.includes(t.id))) {
-      payload.push({ id: theme.id, name: theme.name, keywords: getKeywordsForTheme(theme) });
-    }
-    const byBackend: Record<string, string[]> = {};
     for (const themeId of selectedThemes) {
       const theme = allThemes.find(t => t.id === themeId);
-      if (!theme || theme.id.startsWith('custom_')) continue;
-      if (themeKeywordOverrides[theme.id] === undefined) continue;
-      const backendName = theme.backendThemeName ?? theme.name;
-      const keywords = getKeywordsForTheme(theme);
-      if (!byBackend[backendName]) byBackend[backendName] = [];
-      byBackend[backendName] = [...new Set([...byBackend[backendName], ...keywords])];
-    }
-    for (const [name, keywords] of Object.entries(byBackend)) {
-      payload.push({ id: name, name, keywords });
+      if (!theme) continue;
+      payload.push({
+        id: theme.id,
+        name: theme.id.startsWith('custom_') ? theme.name : theme.backendThemeName ?? theme.name,
+        keywords: getKeywordsForTheme(theme),
+      });
     }
     return payload;
   };
 
-  // Single-theme payload for theme chart (so backend uses our keywords for that theme)
-  const buildSingleThemePayload = (themeName: string): { id: string; name: string; keywords: string[] }[] => {
-    const custom = customThemes.find(t => t.name === themeName);
-    if (custom) return [{ id: custom.id, name: custom.name, keywords: getKeywordsForTheme(custom) }];
-    const predefined = allThemes.filter(
-      t =>
-        !t.id.startsWith('custom_') &&
-        selectedThemes.includes(t.id) &&
-        (t.backendThemeName ?? t.name) === themeName &&
-        themeKeywordOverrides[t.id] !== undefined
-    );
-    if (predefined.length === 0) return [];
-    const keywords = [...new Set(predefined.flatMap(t => getKeywordsForTheme(t)))];
-    return [{ id: themeName, name: themeName, keywords }];
+  const buildThemeLabelsPayload = (): Record<string, string> => {
+    const labels: Record<string, string> = {};
+    for (const themeId of selectedThemes) {
+      const theme = allThemes.find(t => t.id === themeId);
+      if (theme) labels[theme.id] = getThemeName(theme);
+    }
+    return labels;
   };
+
+  const resultThemeLabel = (themeKey: string): string => {
+    const theme = resolveThemeOption(themeKey);
+    return theme ? getThemeName(theme) : themeKey;
+  };
+
+  /** Keywords for detailed chart — must not depend on current checkbox selection. */
+  const buildSingleThemePayloadFromTheme = (
+    theme: ThemeOption
+  ): { id: string; name: string; keywords: string[] }[] => [
+    {
+      id: theme.id,
+      name: theme.id.startsWith('custom_') ? theme.name : theme.backendThemeName ?? theme.name,
+      keywords: getKeywordsForTheme(theme),
+    },
+  ];
 
   const generateOverlapNetwork = async () => {
     if (!selectedFile) return;
@@ -430,7 +441,14 @@ export default function CustomizeTheme() {
         return;
       }
       const data: ThemeOverlapData = await response.json();
-      setOverlapNetworkData(data);
+      const labels = buildThemeLabelsPayload();
+      setOverlapNetworkData({
+        ...data,
+        nodes: data.nodes.map(n => ({
+          ...n,
+          label: labels[n.id] ?? n.label ?? n.id,
+        })),
+      });
     } catch (e) {
       console.error('Overlap network error:', e);
       setError(`Failed to generate overlap network: ${e instanceof Error ? e.message : 'Unknown error'}. Check backend at ${API_PUBLIC_BASE_URL} and that the frontend proxy target (NEXT_PUBLIC_API_URL) is set at build.`);
@@ -473,11 +491,20 @@ export default function CustomizeTheme() {
         body: formData,
       });
 
+      const responseText = await response.text();
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        let detail = `HTTP ${response.status}`;
+        try {
+          const errJson = JSON.parse(responseText) as { detail?: unknown };
+          if (typeof errJson?.detail === 'string') detail = errJson.detail;
+          else if (errJson?.detail !== undefined) detail = JSON.stringify(errJson.detail);
+        } catch {
+          if (responseText) detail = `${detail}: ${responseText.slice(0, 400)}`;
+        }
+        throw new Error(detail);
       }
 
-      const data = await response.json();
+      const data = JSON.parse(responseText) as { results?: OntologyResult[]; message?: string };
       console.log('API response data:', data);
       
       const results = data.results || [];
@@ -503,9 +530,15 @@ export default function CustomizeTheme() {
     }
   };
 
-  const generateThemeChart = async (themeName: string) => {
+  const generateThemeChart = async (themeKey: string) => {
     if (!selectedFile) {
       setError('Please select a gene file first');
+      return;
+    }
+
+    const theme = resolveThemeOption(themeKey);
+    if (!theme) {
+      setError('Could not resolve that theme. Run "Analyze Genes" again after changing themes or keywords.');
       return;
     }
 
@@ -515,12 +548,9 @@ export default function CustomizeTheme() {
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
-      formData.append('theme', themeName);
-
-      const singleThemeData = buildSingleThemePayload(themeName);
-      if (singleThemeData.length > 0) {
-        formData.append('custom_themes', JSON.stringify(singleThemeData));
-      }
+      formData.append('theme', theme.id);
+      formData.append('theme_display', getThemeName(theme));
+      formData.append('custom_themes', JSON.stringify(buildSingleThemePayloadFromTheme(theme)));
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/theme-chart`, {
         method: 'POST',
@@ -538,7 +568,7 @@ export default function CustomizeTheme() {
       const data = await response.json();
       setCurrentChart(`data:image/png;base64,${data.chart_base64}`);
       setSubtermResults(data.subterms || []);
-      setSelectedTheme(themeName);
+      setSelectedTheme(theme.id);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(`Failed to generate chart: ${errorMessage}`);
@@ -566,6 +596,7 @@ export default function CustomizeTheme() {
       if (customThemeData.length > 0) {
         formData.append('custom_themes', JSON.stringify(customThemeData));
       }
+      formData.append('theme_labels', JSON.stringify(buildThemeLabelsPayload()));
       
       console.log('Sending request to custom-summary-chart with themes:', selectedThemes);
 
@@ -607,7 +638,10 @@ export default function CustomizeTheme() {
 
     const csvContent = [
       'Theme,Score,Terms',
-      ...results.map(result => `${result.theme},${result.score},${result.terms}`)
+      ...results.map(result => {
+        const label = resultThemeLabel(result.theme).replace(/"/g, '""');
+        return `"${label}",${result.score},${result.terms}`;
+      }),
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -880,7 +914,7 @@ export default function CustomizeTheme() {
                             : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-black'
                         } ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                       >
-                        <div className="font-bold text-black">{result.theme}</div>
+                        <div className="font-bold text-black">{resultThemeLabel(result.theme)}</div>
                         <div className="text-sm text-gray-700 mt-1">
                           Score: {safeNumberFormat(result.score)} | Terms: {result.terms}
                         </div>
@@ -893,7 +927,7 @@ export default function CustomizeTheme() {
                 {subtermResults.length > 0 && (
                   <div className="bg-white rounded-lg shadow-md p-6">
                     <h3 className="text-lg font-semibold mb-4 text-gray-900">
-                      Top GO Terms in {selectedTheme}
+                      Top GO Terms in {resultThemeLabel(selectedTheme)}
                     </h3>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
                       {subtermResults.map((subterm, index) => (
@@ -942,7 +976,7 @@ export default function CustomizeTheme() {
                         {results.map((result, index) => (
                           <tr key={index} className="hover:bg-gray-50">
                             <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                              {result.theme}
+                              {resultThemeLabel(result.theme)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                               {safeNumberFormat(result.score)}
@@ -977,12 +1011,12 @@ export default function CustomizeTheme() {
             {currentChart && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-900">
-                  {selectedTheme} - GO Terms
+                  {resultThemeLabel(selectedTheme)} - GO Terms
                 </h3>
                 <div className="flex justify-center">
                   <img 
                     src={currentChart} 
-                    alt={`${selectedTheme} GO Terms Chart`}
+                    alt={`${resultThemeLabel(selectedTheme)} GO Terms Chart`}
                     className="w-full max-w-7xl h-auto rounded-lg shadow-sm"
                     style={{ minHeight: '700px' }}
                   />
