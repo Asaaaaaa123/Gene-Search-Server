@@ -17,7 +17,7 @@ import io
 import os
 import glob
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import json
 from datetime import datetime, timezone
 import numpy as np
@@ -28,6 +28,12 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import seaborn as sns
 from gprofiler import GProfiler
+
+from ontology_publication_themes import (
+    PUBLICATION_DEFAULT_ENABLED_THEME_NAMES,
+    PUBLICATION_THEME_KEYWORDS,
+    UI_ONTOLOGY_THEME_KEYWORDS,
+)
 from ivcca_core import IVCCAAnalyzer, TwoSetCorrelation
 from clerk_auth import (
     clerk_auth_configured,
@@ -56,7 +62,7 @@ if clerk_auth_configured():
 else:
     print(
         "Clerk JWT: NOT configured — set CLERK_ISSUER in backend/.env (see env.example). "
-        "Upload / add-gene / saved preferences need this; gene search still works without it."
+        "Upload / add-gene / saved preferences need this; ChemoTox still works without it."
     )
 
 # MongoDB connection
@@ -105,7 +111,7 @@ class UserPreferencesUpdate(BaseModel):
     uploadHistoryAppend: Optional[Dict[str, Any]] = None
 
 
-app = FastAPI(title="Gene Expression Search API", version="1.0.0")
+app = FastAPI(title="ChemoTox API", version="1.0.0")
 
 # CORS: localhost via regex; aurorarangers.ca subdomains allowed by default; env can add more.
 _cors_builtin = [
@@ -822,99 +828,29 @@ class GeneOntologyAPI:
         except Exception as e:
             print(f"Error initializing GProfiler: {e}")
             raise e
-        self.themes = {
-            "Stress & cytokine response": [
-                "stress", "interferon", "cytokine", "inflammatory", "defense", "response to stress",
-                "cellular response to stress", "response to cytokine", "cytokine production"
-            ],
-            "Inflammation & immune signaling": [
-                "inflammation", "inflammatory", "tnf", "il-1", "il-6", "nf-kb", "toll-like",
-                "interleukin", "chemokine", "ccl", "cxcl", "immune response",
-                "inflammasome", "pattern recognition", "pathogen response", "immune system",
-                "inflammatory response", "immune signaling", "toll-like receptor"
-            ],
-            "Oxidative stress & redox regulation": [
-                "oxidative", "redox", "reactive oxygen", "ros", "nitrosative", "nrf2",
-                "antioxidant", "glutathione", "superoxide", "peroxidase", "peroxiredoxin",
-                "sod", "catalase", "thioredoxin", "oxidoreductase"
-            ],
-            "Extracellular matrix & adhesion": [
-                "extracellular", "matrix", "adhesion", "integrin", "collagen",
-                "remodeling", "fibronectin", "laminin", "basement membrane",
-                "mmp", "matrix metalloproteinase", "tenascin", "focal adhesion",
-                "ecm", "tissue remodeling", "stromal", "scaffold", "matrisome",
-                "cell junction", "cell adhesion", "cell-matrix", "desmosome"
-            ],
-            "Metabolic re-wiring": [
-                "metabolic", "oxidoreductase", "catabolic", "fatty",
-                "one-carbon", "biosynthetic"
-            ],
-            "Hematopoietic & immune commitment": [
-                "hematopoiet", "myeloid", "lymphoid", "leukocyte", "granulocyte",
-                "erythro", "megakary", "erythropoiet", "myelopoiet", "thrombopoiet",
-                "lymphocyte", "monocyte", "neutrophil", "eosinophil", "basophil",
-                "platelet", "erythrocyte", "anemia", "cytopenia", "pancytopenia",
-                "thrombocytopenia", "leukopenia", "neutropenia", "immune cell",
-                "blood cell", "hematologic", "hematopoiesis", "stem cell", "hsc"
-            ],
-            "Cell-cycle & Apoptosis": [
-                "cell cycle", "mitotic", "chromosome", "checkpoint",
-                "dna replication", "nuclear division", "apoptosis",
-                "programmed cell death", "caspase"
-            ],
-            "Neuronal Excitability & Synapse": [
-                "axon", "dendrite", "synapse", "neurotransmitter", "vesicle",
-                "action potential", "ion channel", "potassium", "sodium", "calcium",
-                "glutamate", "gaba", "synaptic", "neurogenesis", "axonogenesis"
-            ],
-            "Neurotrophic Signaling & Growth Factors": [
-                "neurotrophin", "ngf", "bdnf", "ntf", "trk", "trka", "trkb", "gdnf",
-                "growth factor", "igf", "egf", "fgf", "receptor tyrosine kinase"
-            ],
-            "Immune-Neuronal Crosstalk": [
-                "microglia", "macrophage", "satellite glia", "neuroimmune", "neuroinflammation",
-                "cd11b", "cd68", "csf1", "tslp", "complement", "ccr", "cxcr"
-            ],
-            "Pain & Nociception": [
-                "pain", "nociception", "nociceptor", "hyperalgesia", "allodynia",
-                "trpv1", "trpa1", "scn9a", "piezo", "itch", "sensory perception", "neuropeptide"
-            ],
-            "Oxidative Phosphorylation & Mitochondria": [
-                "mitochondrial", "oxidative phosphorylation", "electron transport chain",
-                "atp synthase", "complex i", "respiratory chain", "mitophagy"
-            ],
-            "Autophagy & Proteostasis": [
-                "autophagy", "lysosome", "proteasome", "ubiquitin", "protein folding", "chaperone"
-            ],
-            "Myelination & Schwann Cell Biology": [
-                "myelin", "schwann cell", "mbp", "mpz", "prx", "pmp22", "node of ranvier"
-            ],
-            "Membrane & Cell Surface": [
-                "membrane", "plasma membrane", "cell surface", "membrane protein",
-                "transmembrane", "integral membrane", "membrane transport", "ion channel"
-            ],
-            "Nucleus & Nuclear Processes": [
-                "nucleus", "nuclear", "chromatin", "dna", "rna", "transcription",
-                "nucleolus", "nuclear envelope", "nuclear pore", "chromosome"
-            ],
-            "Cytoplasm & Cytoskeleton": [
-                "cytoplasm", "cytoskeleton", "microtubule", "actin", "intermediate filament",
-                "microfilament", "centrosome", "centriole", "cilium", "flagellum"
-            ],
-            "Mitochondria & Energy": [
-                "mitochondria", "mitochondrial", "atp", "energy", "respiration",
-                "electron transport", "oxidative phosphorylation", "krebs cycle"
-            ],
-            "Endoplasmic Reticulum & Golgi": [
-                "endoplasmic reticulum", "er", "golgi", "golgi apparatus", "vesicle",
-                "secretory", "protein folding", "glycosylation", "trafficking"
-            ]
-        }
+        # Publication keywords only — same dict / order as t_GO_publication.THEMES (for theme assignment).
+        self.publication_themes = dict(PUBLICATION_THEME_KEYWORDS)
+        # Full map: publication + UI-only buckets for /api/ontology/custom-* and theme-id mapping.
+        self.themes = {**PUBLICATION_THEME_KEYWORDS, **UI_ONTOLOGY_THEME_KEYWORDS}
+        self.default_enabled_themes = PUBLICATION_DEFAULT_ENABLED_THEME_NAMES
+        self.default_go_aspect = "BP"
 
     def load_genes_from_file(self, file_content: str) -> List[str]:
-        """Load genes from file content"""
-        genes = [g.strip() for g in file_content.split('\n') if g.strip()]
+        """Load genes from file content (same as t_GO_publication.load_genes: splitlines + strip)."""
+        genes = [line.strip() for line in file_content.splitlines() if line.strip()]
         return genes
+
+    @staticmethod
+    def _pick_pval_column(df: pd.DataFrame) -> str:
+        """Prefer adjusted p-value, falling back to raw p-value."""
+        if "p_value_adjusted" in df.columns:
+            return "p_value_adjusted"
+        if "p_value" in df.columns:
+            return "p_value"
+        raise KeyError(
+            "No p-value column found in g:Profiler results. "
+            "Expected 'p_value' and/or 'p_value_adjusted'."
+        )
 
     def enrich(self, genes: List[str], p_thresh: float = 1e-2) -> pd.DataFrame:
         """Perform gene enrichment analysis"""
@@ -923,11 +859,15 @@ class GeneOntologyAPI:
         
         try:
             print(f"Starting enrichment analysis for {len(genes)} genes")
-            df = self.gp.profile(organism="mmusculus", query=genes)
+            df = self.gp.profile(organism="mmusculus", query=list(genes))
             print(f"GProfiler returned {len(df)} results")
-            df = df[df["p_value"] < p_thresh].sort_values("p_value").copy()
+            pcol = self._pick_pval_column(df)
+            # Match t_GO_publication.enrich: sort, then filter
+            df = df.sort_values(pcol).copy()
+            df = df[df[pcol] < p_thresh].copy()
             print(f"After filtering, {len(df)} results remain")
-            df["Score"] = -np.log10(df["p_value"])
+            df["Score"] = -np.log10(df[pcol].astype(float))
+            df["p_col_used"] = pcol
             return df
         except Exception as e:
             print(f"Error in enrichment analysis: {e}")
@@ -935,37 +875,119 @@ class GeneOntologyAPI:
             traceback.print_exc()
             return pd.DataFrame()
 
-    def assign_theme(self, name: str) -> Optional[str]:
-        """Assign theme to GO term based on keywords"""
+    def assign_themes(self, name: str) -> List[str]:
+        """Assign themes using publication + UI maps (custom / combined flows)."""
         if name is None or (not isinstance(name, str)):
-            return None
+            return []
         low = name.lower()
-        matched_themes = []
-        
-        # 检查每个主题的关键词匹配
+        matched_themes: List[str] = []
         for th, kws in self.themes.items():
             for kw in kws:
-                if kw in low:
+                if isinstance(kw, str) and kw in low:
                     matched_themes.append(th)
-                    break  # 找到一个匹配就跳出内层循环
-        
-        # 如果有多个匹配，返回第一个（优先级）
-        if matched_themes:
-            return matched_themes[0]
-        
-        return None
+                    break
+        return matched_themes
 
-    def aggregate(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Aggregate GO terms by theme"""
+    def assign_themes_publication(self, name: str) -> List[str]:
+        """Same logic as t_GO_publication.assign_themes: iterate THEMES only (no UI-only keywords)."""
+        if name is None or (not isinstance(name, str)):
+            return []
+        low = name.lower()
+        matched: List[str] = []
+        for th, kws in self.publication_themes.items():
+            for kw in kws:
+                if isinstance(kw, str) and kw in low:
+                    matched.append(th)
+                    break
+        return matched
+
+    def assign_theme(self, name: str) -> Optional[str]:
+        """Backward-compatible single-theme assignment (first match in combined theme map)."""
+        matched = self.assign_themes(name)
+        return matched[0] if matched else None
+
+    def annotate_with_themes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Explode rows using combined publication + UI theme keywords."""
         if df.empty:
             return pd.DataFrame()
-        
-        df["Theme"] = df["name"].apply(self.assign_theme)
-        themed = (df.dropna(subset=["Theme"])
-                  .groupby("Theme")
-                  .agg(Score=("Score", "sum"),
-                       Terms=("Theme", "count"))
-                  .sort_values("Score", ascending=False))
+        out = df.copy()
+        out["Themes"] = out["name"].apply(self.assign_themes)
+        out = out.explode("Themes").rename(columns={"Themes": "Theme"})
+        out = out.dropna(subset=["Theme"])
+        return out
+
+    def annotate_with_themes_publication(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Default analysis: same as t_GO_publication run_one (name → assign_themes → explode)."""
+        if df.empty:
+            return pd.DataFrame()
+        out = df.copy()
+        out["Themes"] = out["name"].apply(self.assign_themes_publication)
+        out = out.explode("Themes").rename(columns={"Themes": "Theme"})
+        out = out.dropna(subset=["Theme"])
+        return out
+
+    def filter_default_enabled_theme_terms(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Keep only themes enabled in t_GO_publication.py (for display filtering)."""
+        if df.empty or "Theme" not in df.columns:
+            return df
+        return df[df["Theme"].isin(self.default_enabled_themes)].copy()
+
+    @staticmethod
+    def filter_publication_display_themes(themed: pd.DataFrame) -> pd.DataFrame:
+        """Same as t_GO_publication themed_nonzero: Score > 0 and theme enabled."""
+        if themed.empty:
+            return themed
+        enabled = themed.index.isin(PUBLICATION_DEFAULT_ENABLED_THEME_NAMES)
+        return themed[(themed["Score"] > 0) & enabled].copy()
+
+    def filter_go_aspect(self, enr_df: pd.DataFrame, go_aspect: str) -> pd.DataFrame:
+        """Filter enrichment table by GO aspect, mirroring t_GO_publication.py behavior."""
+        if enr_df.empty:
+            return enr_df
+        go_aspect = str(go_aspect).upper().strip()
+        if go_aspect in ("ALL", ""):
+            return enr_df
+        source_map = {"BP": "GO:BP", "MF": "GO:MF", "CC": "GO:CC"}
+        if go_aspect not in source_map:
+            raise ValueError("go_aspect must be one of: 'BP', 'MF', 'CC', 'ALL'")
+        if "source" not in enr_df.columns:
+            return enr_df.iloc[0:0].copy()
+        return enr_df[enr_df["source"] == source_map[go_aspect]].copy()
+
+    def aggregate_themes_publication(self, enr_df: pd.DataFrame) -> pd.DataFrame:
+        """Same as t_GO_publication.aggregate_themes: all publication themes, then update counts."""
+        out = pd.DataFrame(
+            {
+                "Theme": list(self.publication_themes.keys()),
+                "Score": 0.0,
+                "Terms": 0,
+            }
+        ).set_index("Theme")
+        if enr_df.empty:
+            return out.sort_values("Score", ascending=False)
+        df = enr_df.copy().dropna(subset=["Theme"])
+        if df.empty:
+            return out.sort_values("Score", ascending=False)
+        agg = df.groupby("Theme", sort=False).agg(
+            Score=("Score", "sum"),
+            Terms=("Theme", "count"),
+        )
+        out.update(agg)
+        return out.sort_values("Score", ascending=False)
+
+    def aggregate(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate GO terms by theme (custom UI flows; single-theme rows)."""
+        if df.empty:
+            return pd.DataFrame()
+        source_df = df.copy()
+        if "Theme" not in source_df.columns:
+            source_df["Theme"] = source_df["name"].apply(self.assign_theme)
+        themed = (
+            source_df.dropna(subset=["Theme"])
+            .groupby("Theme", sort=False)
+            .agg(Score=("Score", "sum"), Terms=("Theme", "count"))
+            .sort_values("Score", ascending=False)
+        )
         return themed
 
     def create_theme_chart(
@@ -1118,10 +1140,13 @@ class GeneOntologyAPI:
             return pd.DataFrame()
         try:
             print(f"Starting enrichment with gene lists for {len(genes)} genes")
-            df = self.gp.profile(organism="mmusculus", query=genes, no_evidences=False)
+            df = self.gp.profile(organism="mmusculus", query=list(genes), no_evidences=False)
             print(f"GProfiler returned {len(df)} results")
-            df = df[df["p_value"] < p_thresh].sort_values("p_value").copy()
-            df["Score"] = -np.log10(df["p_value"])
+            pcol = self._pick_pval_column(df)
+            df = df.sort_values(pcol).copy()
+            df = df[df[pcol] < p_thresh].copy()
+            df["Score"] = -np.log10(df[pcol].astype(float))
+            df["p_col_used"] = pcol
             if "intersections" not in df.columns:
                 df["intersections"] = [[]] * len(df)
             else:
@@ -1239,7 +1264,8 @@ class GeneOntologyAPI:
     ) -> dict:
         """Compute nodes and edges for theme-theme gene overlap network.
         theme_list: if provided, only include these themes (and only edges between them).
-        Returns: { nodes: [{id, label}], edges: [{source, target, weight}], min_shared, max_shared }
+        Returns: { nodes: [{id, label}], edges: [{source, target, weight, genes}], min_shared, max_shared }
+        Each edge includes genes: sorted list of shared gene symbols for that theme pair.
         """
         themes = theme_list if theme_list is not None else list(theme_genes.keys())
         seen = set()
@@ -1255,9 +1281,17 @@ class GeneOntologyAPI:
         max_shared = None
         for i, a in enumerate(themes):
             for b in themes[i + 1 :]:
-                shared = len(theme_genes[a] & theme_genes[b])
+                shared_set = theme_genes[a] & theme_genes[b]
+                shared = len(shared_set)
                 if shared > 0:
-                    edges.append({"source": a, "target": b, "weight": shared})
+                    edges.append(
+                        {
+                            "source": a,
+                            "target": b,
+                            "weight": shared,
+                            "genes": sorted(shared_set),
+                        }
+                    )
                     if min_shared is None or shared < min_shared:
                         min_shared = shared
                     if max_shared is None or shared > max_shared:
@@ -1346,6 +1380,74 @@ def build_restricted_ontology_themes_by_id(
             else:
                 restricted[tid] = []
     return restricted
+
+
+def keyword_signature(keywords: List[str]) -> Tuple[str, ...]:
+    """Normalized signature so two themes with the same keyword multiset match."""
+    return tuple(sorted({k.strip().lower() for k in keywords if isinstance(k, str) and k.strip()}))
+
+
+def mirror_aggregate_for_identical_keywords(
+    themed: pd.DataFrame,
+    ordered_theme_ids: List[str],
+    restricted_themes: Dict[str, List[str]],
+) -> pd.DataFrame:
+    """
+    When multiple selected themes use the same keyword list, assign_theme only attributes
+    GO terms to the first bucket (dict iteration order). Duplicate aggregate rows so each
+    theme id still appears in results and summary charts (e.g. Transcription + Transcription2).
+    """
+    if themed.empty:
+        return themed
+    sig_groups: Dict[Tuple[str, ...], List[str]] = {}
+    for tid in ordered_theme_ids:
+        sig = keyword_signature(restricted_themes.get(tid, []))
+        if not sig:
+            continue
+        sig_groups.setdefault(sig, []).append(tid)
+
+    out = themed.copy()
+    for _sig, tids in sig_groups.items():
+        source = None
+        for tid in tids:
+            if tid in out.index:
+                source = tid
+                break
+        if source is None:
+            continue
+        row = out.loc[source].copy()
+        for tid in tids:
+            if tid not in out.index:
+                out.loc[tid] = row
+    return out.sort_values("Score", ascending=False)
+
+
+def mirror_theme_gene_sets_for_identical_keywords(
+    theme_genes: Dict[str, set],
+    ordered_theme_ids: List[str],
+    restricted_themes: Dict[str, List[str]],
+) -> Dict[str, set]:
+    """Same as mirror_aggregate but for per-theme gene sets used in overlap network."""
+    out: Dict[str, set] = {tid: set(theme_genes.get(tid) or []) for tid in ordered_theme_ids}
+    sig_groups: Dict[Tuple[str, ...], List[str]] = {}
+    for tid in ordered_theme_ids:
+        sig = keyword_signature(restricted_themes.get(tid, []))
+        if not sig:
+            continue
+        sig_groups.setdefault(sig, []).append(tid)
+    for _sig, tids in sig_groups.items():
+        source = None
+        for tid in tids:
+            if out.get(tid):
+                source = tid
+                break
+        if source is None:
+            continue
+        genes = out[source]
+        for tid in tids:
+            if not out[tid]:
+                out[tid] = set(genes)
+    return out
 
 
 def parse_theme_labels_json(theme_labels: Optional[str]) -> Dict[str, str]:
@@ -1446,15 +1548,17 @@ async def analyze_ontology(file: UploadFile = File(...)):
         # Perform enrichment
         print("Starting enrichment analysis...")
         enr_df = ontology_api.enrich(genes)
+        enr_df = ontology_api.filter_go_aspect(enr_df, ontology_api.default_go_aspect)
         if enr_df.empty:
             print("No enrichment results found")
             return {"results": [], "message": "No significant enrichment results found"}
         print(f"Enrichment analysis completed with {len(enr_df)} results")
         
-        # Assign themes and aggregate
+        # Assign themes (t_GO_publication: assign_themes → explode → aggregate_themes)
         print("Assigning themes...")
-        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
-        themed = ontology_api.aggregate(enr_df)
+        themed_terms = ontology_api.annotate_with_themes_publication(enr_df)
+        themed = ontology_api.aggregate_themes_publication(themed_terms)
+        themed = ontology_api.filter_publication_display_themes(themed)
         print(f"Theme aggregation completed with {len(themed)} themes")
         
         # Convert to list of dictionaries
@@ -1517,17 +1621,23 @@ async def generate_theme_chart(
         
         # Perform enrichment
         enr_df = ontology_api.enrich(genes)
+        enr_df = ontology_api.filter_go_aspect(enr_df, ontology_api.default_go_aspect)
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         print(f"Enrichment analysis completed with {len(enr_df)} significant terms")
         
-        # Assign themes
-        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        # Assign themes (publication-style multi-theme mapping)
+        enr_df = ontology_api.annotate_with_themes_publication(enr_df)
         themed_terms = enr_df[enr_df["Theme"].notna()]
         print(f"Assigned themes to {len(themed_terms)} terms")
         print(f"Available themes in data: {enr_df['Theme'].dropna().unique().tolist()}")
         
-        # Check if theme exists
+        # Check if theme exists (default flow: only enabled publication themes)
+        if not custom_theme_data and theme not in ontology_api.default_enabled_themes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Theme '{theme}' is disabled in the publication theme set.",
+            )
         theme_terms = enr_df[enr_df["Theme"] == theme]
         if theme_terms.empty:
             available_themes = enr_df["Theme"].dropna().unique().tolist()
@@ -1591,13 +1701,15 @@ async def generate_summary_chart(file: UploadFile = File(...)):
         
         # Perform enrichment
         enr_df = ontology_api.enrich(genes)
+        enr_df = ontology_api.filter_go_aspect(enr_df, ontology_api.default_go_aspect)
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         print(f"Enrichment analysis completed with {len(enr_df)} significant terms")
         
-        # Assign themes and aggregate
-        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
-        themed = ontology_api.aggregate(enr_df)
+        # Assign themes and aggregate (t_GO_publication pipeline)
+        themed_terms = ontology_api.annotate_with_themes_publication(enr_df)
+        themed = ontology_api.aggregate_themes_publication(themed_terms)
+        themed = ontology_api.filter_publication_display_themes(themed)
         
         if themed.empty:
             raise HTTPException(status_code=400, detail="No themes could be aggregated")
@@ -1677,15 +1789,20 @@ async def analyze_custom_ontology(
             return {"results": [], "message": f"No enrichment results found for selected themes: {unique_ids}"}
         
         # Aggregate results for selected themes
+        restricted_snapshot = dict(ontology_api.themes)
         themed = ontology_api.aggregate(filtered_df)
+        themed = mirror_aggregate_for_identical_keywords(themed, unique_ids, restricted_snapshot)
         
-        # Convert to list of dictionaries
+        # One row per selected theme id (stable order); duplicate keyword lists share the same stats
         results = []
-        for theme, row in themed.iterrows():
+        for tid in unique_ids:
+            if tid not in themed.index:
+                continue
+            row = themed.loc[tid]
             results.append({
-                "theme": theme,
+                "theme": tid,
                 "score": float(row["Score"]),
-                "terms": int(row["Terms"])
+                "terms": int(row["Terms"]),
             })
         
         print(f"Custom analysis completed with {len(results)} results")
@@ -1753,7 +1870,9 @@ async def generate_custom_summary_chart(
             raise HTTPException(status_code=400, detail=f"No enrichment results found for selected themes: {unique_ids}")
         
         # Aggregate results for selected themes
+        restricted_snapshot = dict(ontology_api.themes)
         themed = ontology_api.aggregate(filtered_df)
+        themed = mirror_aggregate_for_identical_keywords(themed, unique_ids, restricted_snapshot)
         
         if themed.empty:
             raise HTTPException(status_code=400, detail="No themes could be aggregated")
@@ -1816,25 +1935,31 @@ async def get_theme_overlap_network(
             )
 
         enr_df = ontology_api.enrich_with_genes(genes)
+        enr_df = ontology_api.filter_go_aspect(enr_df, ontology_api.default_go_aspect)
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
 
         if selected_themes:
+            restricted_snapshot = dict(ontology_api.themes)
             theme_genes = ontology_api.gene_sets_for_selected_themes(
                 enr_df, selected_names, query_genes=genes
             )
+            theme_genes = mirror_theme_gene_sets_for_identical_keywords(
+                theme_genes, selected_names, restricted_snapshot
+            )
             theme_list = selected_names
         else:
-            enr_df = enr_df.copy()
-            enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
-            enr_df = enr_df.dropna(subset=["Theme"])
+            enr_df = ontology_api.annotate_with_themes_publication(enr_df)
+            enr_df = ontology_api.filter_default_enabled_theme_terms(enr_df)
             if enr_df.empty:
                 raise HTTPException(
                     status_code=400,
                     detail="No GO terms could be assigned to a theme for overlap network",
                 )
             theme_genes = ontology_api.get_theme_gene_sets(enr_df)
-            theme_list = None
+            theme_list = [
+                t for t in ontology_api.default_enabled_themes if theme_genes.get(t)
+            ]
 
         network = ontology_api.compute_theme_overlap_network(theme_genes, theme_list=theme_list)
         return network
@@ -1913,7 +2038,7 @@ async def debug_test_enrichment(file: UploadFile = File(...)):
 async def root():
     """Root endpoint with API information"""
     return {
-        "message": "Gene Expression Search API",
+        "message": "ChemoTox API",
         "version": "1.0.0",
         "endpoints": {
             "GET /api/gene/symbols": "Get all available gene symbols",
@@ -2109,6 +2234,45 @@ async def ivcca_dendrogram(
         return {"image_base64": image_base64}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating dendrogram: {str(e)}")
+
+HERO_EXPRESSION_CSV = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "data",
+    "hero-expression.csv",
+)
+
+
+@app.get("/api/ivcca/hero-cluster")
+async def ivcca_hero_cluster():
+    """
+    Landing-page gene cluster: same pipeline as IVCCA (load → Pearson correlation → PCA on |R|).
+    Uses backend/data/hero-expression.csv (samples × genes, first column = sample ID).
+    """
+    if not os.path.isfile(HERO_EXPRESSION_CSV):
+        raise HTTPException(
+            status_code=404,
+            detail="Hero expression file missing (backend/data/hero-expression.csv)",
+        )
+    analyzer = IVCCAAnalyzer()
+    load_result = analyzer.load_data(HERO_EXPRESSION_CSV)
+    if load_result["status"] == "error":
+        raise HTTPException(status_code=400, detail=load_result["message"])
+    corr_result = analyzer.calculate_correlations(method="pearson")
+    if corr_result["status"] == "error":
+        raise HTTPException(status_code=400, detail=corr_result["message"])
+    pca_result = analyzer.perform_pca(n_components=3, n_clusters=None)
+    if pca_result["status"] == "error":
+        raise HTTPException(status_code=400, detail=pca_result["message"])
+    scores = pca_result.get("scores") or []
+    return {
+        "status": "success",
+        "gene_names": analyzer.gene_names,
+        "scores": scores,
+        "n_genes": len(analyzer.gene_names),
+        "n_samples": load_result.get("n_samples"),
+        "explained_variance": pca_result.get("explained_variance"),
+    }
+
 
 @app.post("/api/ivcca/pca")
 async def ivcca_pca(

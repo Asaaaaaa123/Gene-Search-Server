@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { siteConfig } from '@/lib/site';
 
 export default function TestFix() {
   const [testData, setTestData] = useState<any[]>([
@@ -64,7 +65,7 @@ export default function TestFix() {
             href="/gene-search" 
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700"
           >
-            ← Back to Gene Search
+            ← Back to {siteConfig.chemoTox}
           </a>
         </div>
       </div>

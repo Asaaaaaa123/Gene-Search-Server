@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Search } from 'lucide-react';
 import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
+import { PlatformPage } from '@/components/platform/PlatformPage';
+import { siteConfig } from '@/lib/site';
 interface GeneData {
   organ: string;
   gene_symbol: string;
@@ -319,67 +322,39 @@ export default function GeneSearch() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Link href="/" className="flex items-center text-gray-600 hover:text-gray-900 transition-colors">
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Back to Home
-              </Link>
-            </div>
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center mr-3">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <h1 className="text-2xl font-bold text-gray-900">Gene Expression Search</h1>
-            </div>
-            
-            {/* API Status Indicator */}
-            <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${
-                apiStatus === 'connected' ? 'bg-green-500' : 
-                apiStatus === 'disconnected' ? 'bg-red-500' : 'bg-yellow-500'
-              }`}></div>
-              <span className={`text-sm ${
-                apiStatus === 'connected' ? 'text-green-600' : 
-                apiStatus === 'disconnected' ? 'text-red-600' : 'text-yellow-600'
-              }`}>
-                {apiStatus === 'connected' ? 'Connected' : 
-                 apiStatus === 'disconnected' ? 'Disconnected' : 'Checking...'}
-              </span>
-              {apiStatus === 'disconnected' && (
-                <button
-                  onClick={() => {
-                    setApiStatus('checking');
-                    checkApiStatus();
-                  }}
-                  className="ml-2 px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-                >
-                  Retry
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  setApiStatus('checking');
-                  checkApiStatus();
-                }}
-                className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-              >
-                Test Connection
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+  const apiStatusBadge = (
+    <div className="flex items-center gap-2">
+      <span
+        className={`h-2 w-2 rounded-full ${
+          apiStatus === 'connected' ? 'bg-emerald-400' : apiStatus === 'disconnected' ? 'bg-red-400' : 'bg-amber-400'
+        }`}
+      />
+      <span className="text-sm text-zinc-300">
+        {apiStatus === 'connected' ? 'API connected' : apiStatus === 'disconnected' ? 'Disconnected' : 'Checking…'}
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          setApiStatus('checking');
+          checkApiStatus();
+        }}
+        className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs text-zinc-300 hover:bg-white/10"
+      >
+        Test
+      </button>
+    </div>
+  );
 
+  return (
+    <PlatformPage
+      title={siteConfig.chemoTox}
+      icon={
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#00FFAA]/30 to-[#22D3EE]/30 text-[#00FFAA]">
+          <Search className="h-5 w-5" />
+        </span>
+      }
+      headerRight={apiStatusBadge}
+    >
       {/* Connection Status Panel */}
       {apiStatus === 'disconnected' && (
         <div className="bg-red-50 border border-red-200 mx-4 sm:mx-6 lg:mx-8 mb-6 rounded-xl p-4">
@@ -446,16 +421,16 @@ export default function GeneSearch() {
         {/* Hero Section */}
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-            Advanced <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Gene Search</span> Platform
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">{siteConfig.chemoTox}</span>
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
             Search and analyze gene expression data across multiple tissues with intelligent filtering and comprehensive results
           </p>
         </div>
 
-        {/* Gene Search Section */}
+        {/* ChemoTox Section */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8">
-          <h3 className="text-xl font-semibold text-gray-900 mb-6">Gene Expression Analysis</h3>
+          <h3 className="text-xl font-semibold text-gray-900 mb-6">{siteConfig.chemoTox}</h3>
           
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             {/* Gene Symbol Input */}
@@ -658,6 +633,6 @@ export default function GeneSearch() {
           </div>
         </div>
       </div>
-    </div>
+    </PlatformPage>
   );
 } 

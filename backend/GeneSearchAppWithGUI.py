@@ -11,7 +11,7 @@ import numpy as np
 class GeneSearchApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gene Expression Search (Berezin Lab)")
+        self.root.title("ChemoTox (Berezin Lab)")
         self.root.geometry("800x600")
         
         # Load data

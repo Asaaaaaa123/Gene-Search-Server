@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetwork';
+import { GeneListSelector, type GeneListSource } from '../components/GeneListSelector';
 
 interface OntologyResult {
   theme: string;
@@ -13,6 +14,7 @@ interface OntologyResult {
 
 export default function DefaultTheme() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [geneListLabel, setGeneListLabel] = useState<string | null>(null);
   const [results, setResults] = useState<OntologyResult[]>([]);
   const [summaryChart, setSummaryChart] = useState<string>('');
   const [themeChart, setThemeChart] = useState<string>('');
@@ -23,7 +25,6 @@ export default function DefaultTheme() {
   const [selectedTheme, setSelectedTheme] = useState<string>('');
   const [overlapNetworkData, setOverlapNetworkData] = useState<ThemeOverlapData | null>(null);
   const [overlapNetworkLoading, setOverlapNetworkLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Safe number formatting functions for theme data
   const safeNumberFormat = (value: any, decimals: number = 3): string => {
@@ -40,33 +41,24 @@ export default function DefaultTheme() {
     ? results.filter(result => result.theme === selectedTheme)
     : results;
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setError('');
-      setResults([]);
-      setSummaryChart('');
-      setThemeChart('');
-      setCurrentStep(2);
-    }
+  const prepareGeneList = (file: File, label: string) => {
+    setSelectedFile(file);
+    setGeneListLabel(label);
+    setError('');
+    setResults([]);
+    setSummaryChart('');
+    setThemeChart('');
+    setOverlapNetworkData(null);
+    setCurrentStep(2);
   };
 
-  const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file && file.type === 'text/plain') {
-      setSelectedFile(file);
-      setError('');
-      setResults([]);
-      setSummaryChart('');
-      setThemeChart('');
-      setCurrentStep(2);
-    }
-  };
-
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
+  const handleGeneListReady = (
+    file: File,
+    _source: GeneListSource,
+    geneCount: number,
+    listName: string
+  ) => {
+    prepareGeneList(file, `${listName} (${geneCount} genes)`);
   };
 
   const analyzeGenes = async () => {
@@ -231,6 +223,7 @@ export default function DefaultTheme() {
 
   const resetAnalysis = () => {
     setSelectedFile(null);
+    setGeneListLabel(null);
     setResults([]);
     setSummaryChart('');
     setThemeChart('');
@@ -238,9 +231,6 @@ export default function DefaultTheme() {
     setOverlapNetworkData(null);
     setError('');
     setCurrentStep(1);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   const getThemeColor = (theme: string) => {
@@ -299,8 +289,8 @@ export default function DefaultTheme() {
         </div>
         <div className="text-center mb-8">
           <p className="text-lg text-gray-600 font-medium">
-            {currentStep === 1 && 'Step 1: Upload your gene list file'}
-            {currentStep === 2 && 'Step 2: Click "Analyze Genes" to perform the initial analysis'}
+            {currentStep === 1 && 'Step 1: Choose or upload your gene list'}
+            {currentStep === 2 && 'Step 2: Confirm your list, then click "Analyze Genes"'}
             {currentStep === 3 && 'Step 3: Review results and generate visualizations'}
           </p>
         </div>
@@ -308,96 +298,48 @@ export default function DefaultTheme() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        {/* File Upload Section */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 mb-8">
+        {/* Gene list selection */}
+        <div className="light-surface bg-white rounded-2xl shadow-xl border border-gray-100 p-8 mb-8 text-black">
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">Upload Gene List</h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Upload a text file containing your gene symbols (one per line) to begin the comprehensive ontology analysis
+            <h2 className="text-3xl font-bold text-black mb-3">Gene List</h2>
+            <p className="text-lg text-black max-w-2xl mx-auto">
+              Pick genes from the database, use a sample or popular preset, or upload your own .txt file (one symbol per line)
             </p>
           </div>
 
-          <div
-            className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 ${
-              selectedFile 
-                ? 'border-blue-400 bg-gradient-to-br from-blue-50 to-indigo-50' 
-                : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-            }`}
-            onDrop={handleFileDrop}
-            onDragOver={handleDragOver}
-          >
-            {selectedFile ? (
-              <div>
-                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">File Selected Successfully</h3>
-                <p className="text-gray-600 mb-6 text-lg">{selectedFile.name}</p>
-                <div className="flex gap-4 justify-center">
-                  <button
-                    onClick={analyzeGenes}
-                    disabled={isLoading}
-                    className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                  >
-                    {isLoading ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                        Analyze Genes
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={resetAnalysis}
-                    className="inline-flex items-center px-6 py-4 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all duration-200 shadow-lg"
-                  >
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Reset
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-3">Drop your file here</h3>
-                <p className="text-gray-600 mb-6">or click to browse</p>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Choose File
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt,.csv"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-            )}
-          </div>
+          <GeneListSelector
+            onFileReady={handleGeneListReady}
+            onClear={() => {
+              setSelectedFile(null);
+              setGeneListLabel(null);
+              setCurrentStep(1);
+            }}
+          />
         </div>
+
+        {selectedFile && (
+          <div className="light-surface bg-white rounded-2xl shadow-xl border border-gray-100 p-8 mb-8 text-center text-black">
+            <h3 className="text-xl font-semibold text-black mb-2">Run analysis</h3>
+            <p className="text-black mb-6">{geneListLabel}</p>
+            <div className="flex flex-wrap gap-4 justify-center">
+              <button
+                type="button"
+                onClick={analyzeGenes}
+                disabled={isLoading}
+                className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg"
+              >
+                {isLoading ? 'Analyzing…' : 'Analyze Genes'}
+              </button>
+              <button
+                type="button"
+                onClick={resetAnalysis}
+                className="inline-flex items-center px-6 py-4 bg-gray-600 text-white font-semibold rounded-xl hover:bg-gray-700 transition-all duration-200"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (

@@ -1,15 +1,42 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
 import { clerkPublishableKeyForNode } from '@/lib/clerk-env';
+import { ClientLayout } from '@/components/layout/ClientLayout';
+import { siteConfig } from '@/lib/site';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
+const geistSans = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+});
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+});
 
 export const metadata: Metadata = {
-  title: 'GeneSearch Pro - Advanced Gene Analysis Platform',
-  description: 'Professional-grade tools for researchers, scientists, and bioinformatics professionals. Analyze gene expression, explore ontology relationships, and generate publication-ready insights.',
-  keywords: 'gene analysis, bioinformatics, gene ontology, gene expression, research tools, scientific analysis',
+  title: {
+    default: `${siteConfig.name} — ${siteConfig.heroTitle}`,
+    template: `%s | ${siteConfig.name}`,
+  },
+  description: siteConfig.description,
+  keywords: [
+    'gene analysis',
+    'bioinformatics',
+    'gene ontology',
+    'thematic GO',
+    'IVCCA',
+    'gene expression',
+    'ChemoTox Explore',
+    'Thematic GO ontology',
+  ],
+  openGraph: {
+    title: siteConfig.name,
+    description: siteConfig.tagline,
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
@@ -19,8 +46,10 @@ export default function RootLayout({
 }) {
   const publishableKey = clerkPublishableKeyForNode();
   const shell = (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className="min-h-screen antialiased">
+        <ClientLayout>{children}</ClientLayout>
+      </body>
     </html>
   );
 
@@ -28,9 +57,5 @@ export default function RootLayout({
     return shell;
   }
 
-  return (
-    <ClerkProvider publishableKey={publishableKey}>
-      {shell}
-    </ClerkProvider>
-  );
+  return <ClerkProvider publishableKey={publishableKey}>{shell}</ClerkProvider>;
 }
