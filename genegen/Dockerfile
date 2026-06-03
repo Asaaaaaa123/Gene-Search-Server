@@ -15,12 +15,14 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS=--max-old-space-size=2048
+# Coolify/small VPS: 2GB heap often OOMs on plotly+Next 15 build; 4GB is safer when host has ≥6GB RAM.
+ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV GENERATE_SOURCEMAP=false
 
 # Optional: docker-compose passes Coolify’s NEXT_PUBLIC_API_URL here (wins over coolify-deploy.env).
 ARG COOLIFY_NEXT_PUBLIC_API_URL=""
 # Bump when you need Coolify to rebuild (same commit “skip build” workaround).
-LABEL genegen.coolify.deploy="2026-03-29-v3"
+LABEL genegen.coolify.deploy="2026-06-03-v4"
 
 # All deploy config from repo file (when Coolify UI env vars are unavailable).
 RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env — copy coolify-deploy.env.example" >&2 && exit 1)

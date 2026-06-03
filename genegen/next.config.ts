@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
   // Only use standalone in production
   ...(process.env.NODE_ENV === 'production' ? { output: 'standalone' } : {}),
 
+  productionBrowserSourceMaps: false,
+
   // Proxy /api/* → FastAPI in dev and production (browser uses same-origin; no CORS).
   async rewrites() {
     return [
@@ -20,59 +22,27 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  // Minimal webpack tweak (plotly); avoid heavy splitChunks — it disables Next memory opts.
   webpack: (config, { isServer }) => {
-    // Fix for plotly.js in Next.js
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
         net: false,
         tls: false,
-        buffer: require.resolve('buffer/'),
+        buffer: require.resolve("buffer/"),
       };
     }
-    
-    // Optimize plotly.js bundle - lazy load it
-    if (!isServer) {
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          chunks: 'all',
-          maxInitialRequests: 25,
-          minSize: 20000,
-          cacheGroups: {
-            default: {
-              minChunks: 2,
-              priority: -20,
-              reuseExistingChunk: true,
-            },
-            vendors: {
-              test: /[\\/]node_modules[\\/]/,
-              priority: -10,
-              reuseExistingChunk: true,
-            },
-            plotly: {
-              test: /[\\/]node_modules[\\/](plotly\.js|react-plotly\.js)[\\/]/,
-              name: 'plotly',
-              priority: 20,
-              chunks: 'async', // Lazy load - only when needed
-              reuseExistingChunk: true,
-              enforce: true,
-            },
-          },
-        },
-      };
-    }
-    
     return config;
   },
-  
-  // Optimize package imports
+
   experimental: {
-    optimizePackageImports: ['react-plotly.js'],
+    optimizePackageImports: ["react-plotly.js", "lucide-react", "framer-motion"],
+    // Lowers peak RAM during `next build` in Docker/Coolify (requires simpler webpack above).
+    webpackMemoryOptimizations: true,
+    webpackBuildWorker: true,
   },
-  
-  // Performance optimizations
+
   compress: true,
   poweredByHeader: false,
   

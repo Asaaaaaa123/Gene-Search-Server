@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
-import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetwork';
+import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetworkLazy';
 import { GeneListSelector, type GeneListSource } from '../components/GeneListSelector';
 
 interface OntologyResult {

@@ -19,7 +19,8 @@ COPY genegen/ .
 # Next.js collects completely anonymous telemetry data about general usage.
 # Learn more here: https://nextjs.org/telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
-ENV NODE_OPTIONS=--max-old-space-size=2048
+ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV GENERATE_SOURCEMAP=false
 
 # All deploy config from genegen/coolify-deploy.env (see coolify-deploy.env.example).
 RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env" >&2 && exit 1)

@@ -10,7 +10,7 @@ import {
   writeStoredCustomTheme,
   type StoredCustomThemePreferences,
 } from '@/lib/theme-preferences-storage';
-import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetwork';
+import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetworkLazy';
 
 interface OntologyResult {
   theme: string;
