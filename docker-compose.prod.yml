@@ -13,8 +13,9 @@ services:
     environment:
       - PORT=${PORT:-8000}
       - MONGODB_URI=${MONGODB_URI}
+      - CLERK_ISSUER=${CLERK_ISSUER}
       - VALID_TOKENS=${VALID_TOKENS}
-      - WORKERS=4  # Adjust based on CPU cores (2-4x CPU cores recommended)
+      - WORKERS=${WORKERS:-2}
     networks:
       - gene-search-network
     restart: unless-stopped

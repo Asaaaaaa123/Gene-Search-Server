@@ -32,10 +32,12 @@ yarn-error.log
 .next
 out
 
-# Environment files
+# Environment files (never bake local secrets into images)
 .env
 .env.local
 .env.*.local
+**/.env
+backend/.env
 *.env
 # Allow the committed Coolify bundle (matches *.env above)
 !genegen/coolify-deploy.env

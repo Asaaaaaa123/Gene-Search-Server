@@ -35,6 +35,6 @@ HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=5 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=8)" || exit 1
 
 # Production command with multiple workers
-# For production, use multiple workers for better performance
-# Adjust WORKERS based on your server's CPU cores (typically 2-4x CPU cores)
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-2} --no-access-log"]
+# Default WORKERS=1: each worker loads ~137k Excel rows + GProfiler at import (~60s startup).
+# On 4GB+ RAM hosts set WORKERS=2–4 in Coolify env.
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-1} --no-access-log"]
