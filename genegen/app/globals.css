@@ -31,6 +31,24 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Form controls don't inherit readable colors from the dark shell — set a light UI baseline */
+input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']),
+select,
+textarea {
+  color: #18181b;
+  background-color: #ffffff;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden'])::placeholder,
+textarea::placeholder {
+  color: #6b7280;
+}
+
+select option {
+  color: #18181b;
+  background-color: #ffffff;
+}
+
 /* Cosmic noise overlay */
 .cosmic-bg {
   position: relative;
@@ -87,21 +105,11 @@ body {
     0 0 0 1px rgba(0, 255, 170, 0.05);
 }
 
-/* White tool cards (ontology, etc.) — override dark body text for inputs and labels */
-.light-surface {
-  color: #000000;
-}
-
-.light-surface input,
-.light-surface select,
-.light-surface textarea {
-  color: #000000;
-  background-color: #ffffff;
-}
-
-.light-surface input::placeholder,
-.light-surface textarea::placeholder {
-  color: #6b7280;
+/* Light tool panels on dark shell — override inherited dark-theme body text */
+.light-surface,
+.platform-panel,
+.bg-white {
+  color: #18181b;
 }
 
 @media (prefers-reduced-motion: reduce) {

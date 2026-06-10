@@ -1,19 +1,26 @@
+# Root Docker Compose — Gene Search platform (backend + frontend)
+# Setup:  cp .env.example .env   → fill Clerk keys →  docker compose up -d --build
+
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    # Host:container — container side must match PORT (uvicorn listen port)
+    container_name: gene-search-backend
     ports:
       - "${BACKEND_PUBLISH_PORT:-8000}:${PORT:-8000}"
     volumes:
-      - ./backend/data:/app/data:ro  # Read-only for security
+      - ./backend/data:/app/data:ro
+      - backend-user-data:/app/user_data
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - PORT=${PORT:-8000}
-      - MONGODB_URI=${MONGODB_URI:-}
-      - VALID_TOKENS=${VALID_TOKENS:-}
+      PORT: ${PORT:-8000}
+      WORKERS: ${WORKERS:-1}
+      MONGODB_URI: ${MONGODB_URI:-}
+      CLERK_ISSUER: ${CLERK_ISSUER:-}
+      VALID_TOKENS: ${VALID_TOKENS:-}
     networks:
       - gene-search-network
     restart: unless-stopped
@@ -27,33 +34,29 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-        - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+        CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+        CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+    container_name: gene-search-frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PUBLISH_PORT:-3000}:3000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - PORT=3000
-      - HOSTNAME=0.0.0.0
-      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-      - CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}}
-      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     depends_on:
       backend:
         condition: service_healthy
@@ -61,20 +64,15 @@ services:
       - gene-search-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+      start_period: 60s
 
 networks:
   gene-search-network:
-    driver: bridge 
+    driver: bridge
+
+volumes:
+  backend-user-data:

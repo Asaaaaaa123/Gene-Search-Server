@@ -1,40 +1,33 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# System deps: build tools + DejaVu fonts for matplotlib chart rendering
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-dejavu-core \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -f
 
-# Copy requirements first for better caching
 COPY backend/requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code and data
 COPY backend/ .
 
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app/user_data /app/data \
+    && useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app
 
-# Default listen port (override in Coolify / compose with PORT=8000 if your proxy expects 8000)
 ENV PORT=8000
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
-# Switch to non-root user
 USER appuser
 
-# Grace period: server.py pulls in heavy deps (pandas/matplotlib/gprofiler) before uvicorn binds — 40s is often too short on Coolify.
-# Use /api/health (light) instead of /docs (Swagger UI).
 HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=5 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=8)" || exit 1
 
-# Production command with multiple workers
-# Default WORKERS=1: each worker loads ~137k Excel rows + GProfiler at import (~60s startup).
-# On 4GB+ RAM hosts set WORKERS=2–4 in Coolify env.
+# WORKERS=1 default: each worker loads heavy deps at import (~60s). Raise on 4GB+ hosts.
 CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-1} --no-access-log"]

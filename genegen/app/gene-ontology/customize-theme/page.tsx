@@ -6,10 +6,20 @@ import { useAuth, useUser } from '@clerk/nextjs';
 import { fetchWithClerk } from '@/lib/clerk-fetch';
 import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 import {
+  appendChartStyleToFormData,
+  chartResponseToDataUrl,
+  DEFAULT_SUMMARY_CHART_STYLE,
+  DEFAULT_THEME_CHART_STYLE,
+  downloadChartFromBase64,
+  type ChartExportFormat,
+  type ChartStyleOptions,
+} from '@/lib/chart-style';
+import {
   readStoredCustomTheme,
   writeStoredCustomTheme,
   type StoredCustomThemePreferences,
 } from '@/lib/theme-preferences-storage';
+import { ThematicGoChartPanel } from '../components/ThematicGoChartPanel';
 import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetworkLazy';
 
 interface OntologyResult {
@@ -61,6 +71,12 @@ export default function CustomizeTheme() {
   const [editKeywordsDraft, setEditKeywordsDraft] = useState('');
   const [overlapNetworkData, setOverlapNetworkData] = useState<ThemeOverlapData | null>(null);
   const [overlapNetworkLoading, setOverlapNetworkLoading] = useState(false);
+  const [summaryChartStyle, setSummaryChartStyle] = useState<ChartStyleOptions>(DEFAULT_SUMMARY_CHART_STYLE);
+  const [themeChartStyle, setThemeChartStyle] = useState<ChartStyleOptions>(DEFAULT_THEME_CHART_STYLE);
+  const [summaryChartLoading, setSummaryChartLoading] = useState(false);
+  const [themeChartLoading, setThemeChartLoading] = useState(false);
+  const [summaryExportLoading, setSummaryExportLoading] = useState(false);
+  const [themeExportLoading, setThemeExportLoading] = useState(false);
 
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const { user } = useUser();
@@ -517,8 +533,9 @@ export default function CustomizeTheme() {
       console.log('Analysis completed with results:', results);
       
       if (results.length > 0) {
-        console.log('Calling generateSummaryChart...');
-        await generateSummaryChart();
+        setSummaryChartLoading(true);
+        await generateSummaryChart(summaryChartStyle, 'png');
+        setSummaryChartLoading(false);
       } else {
         console.log('No results to generate chart for');
       }
@@ -530,19 +547,22 @@ export default function CustomizeTheme() {
     }
   };
 
-  const generateThemeChart = async (themeKey: string) => {
+  const generateThemeChart = async (
+    themeKey: string,
+    style: ChartStyleOptions = themeChartStyle,
+    format: ChartExportFormat = 'png',
+  ) => {
     if (!selectedFile) {
       setError('Please select a gene file first');
-      return;
+      return null;
     }
 
     const theme = resolveThemeOption(themeKey);
     if (!theme) {
       setError('Could not resolve that theme. Run "Analyze Genes" again after changing themes or keywords.');
-      return;
+      return null;
     }
 
-    setIsAnalyzing(true);
     setError('');
 
     try {
@@ -551,83 +571,117 @@ export default function CustomizeTheme() {
       formData.append('theme', theme.id);
       formData.append('theme_display', getThemeName(theme));
       formData.append('custom_themes', JSON.stringify(buildSingleThemePayloadFromTheme(theme)));
+      appendChartStyleToFormData(formData, style, format);
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/theme-chart`, {
         method: 'POST',
         body: formData,
       });
 
-      console.log(`Response status: ${response.status}`);
-      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error response:', errorText);
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
       const data = await response.json();
-      setCurrentChart(`data:image/png;base64,${data.chart_base64}`);
+      if (format === 'png') {
+        setCurrentChart(chartResponseToDataUrl(data.chart_base64, 'png', data.media_type));
+      }
       setSubtermResults(data.subterms || []);
       setSelectedTheme(theme.id);
+      return data as { chart_base64: string; format: ChartExportFormat; media_type?: string };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setError(`Failed to generate chart: ${errorMessage}`);
       console.error('Error generating theme chart:', error);
-    } finally {
-      setIsAnalyzing(false);
+      return null;
     }
   };
 
-  const generateSummaryChart = async () => {
+  const handleThemeChartApply = async () => {
+    if (!selectedTheme) return;
+    setThemeChartLoading(true);
+    await generateThemeChart(selectedTheme, themeChartStyle, 'png');
+    setThemeChartLoading(false);
+  };
+
+  const handleThemeChartExport = async (format: ChartExportFormat) => {
+    if (!selectedTheme) return;
+    setThemeExportLoading(true);
+    const data = await generateThemeChart(selectedTheme, themeChartStyle, format);
+    if (data?.chart_base64) {
+      downloadChartFromBase64(
+        data.chart_base64,
+        format,
+        `custom-theme-${selectedTheme}`,
+        data.media_type,
+      );
+    }
+    setThemeExportLoading(false);
+  };
+
+  const generateSummaryChart = async (
+    style: ChartStyleOptions = summaryChartStyle,
+    format: ChartExportFormat = 'png',
+  ) => {
     try {
       setError('');
-      console.log('Starting to generate summary chart...');
-      
+
       if (!selectedFile) {
         setError('No file selected');
-        return;
+        return null;
       }
 
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
-      
+
       const customThemeData = buildCustomThemePayload();
       if (customThemeData.length > 0) {
         formData.append('custom_themes', JSON.stringify(customThemeData));
       }
       formData.append('theme_labels', JSON.stringify(buildThemeLabelsPayload()));
-      
-      console.log('Sending request to custom-summary-chart with themes:', selectedThemes);
+      appendChartStyleToFormData(formData, style, format, { isSummary: true });
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/custom-summary-chart`, {
         method: 'POST',
         body: formData,
       });
 
-      console.log('Summary chart response status:', response.status);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Summary chart generation failed:', response.status, errorText);
         throw new Error(`Failed to generate summary chart: HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('Summary chart data received:', data);
-      
       if (data.chart) {
-        setSummaryChart(`data:image/png;base64,${data.chart}`);
-        console.log('Summary chart set successfully');
-      } else {
-        console.error('No chart data in response');
-        setError('No chart data received from server');
+        if (format === 'png') {
+          setSummaryChart(chartResponseToDataUrl(data.chart, 'png', data.media_type));
+        }
+        return data as { chart: string; format: ChartExportFormat; media_type?: string };
       }
-      
+      setError('No chart data received from server');
+      return null;
     } catch (error) {
       console.error('Error generating summary chart:', error);
       setError(`Failed to generate summary chart: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return null;
     }
+  };
+
+  const handleSummaryChartApply = async () => {
+    setSummaryChartLoading(true);
+    await generateSummaryChart(summaryChartStyle, 'png');
+    setSummaryChartLoading(false);
+  };
+
+  const handleSummaryChartExport = async (format: ChartExportFormat) => {
+    setSummaryExportLoading(true);
+    const data = await generateSummaryChart(summaryChartStyle, format);
+    if (data?.chart) {
+      downloadChartFromBase64(data.chart, format, 'custom-theme-summary', data.media_type);
+    }
+    setSummaryExportLoading(false);
   };
 
   const downloadResults = () => {
@@ -836,7 +890,7 @@ export default function CustomizeTheme() {
             {/* Debug button to test chart generation */}
             {results.length > 0 && (
               <button
-                onClick={generateSummaryChart}
+                onClick={() => void handleSummaryChartApply()}
                 disabled={isAnalyzing}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -881,18 +935,20 @@ export default function CustomizeTheme() {
         {results.length > 0 && (
           <>
             {/* Summary Chart Section */}
-            {summaryChart && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-900">Analysis Summary</h3>
-                <div className="flex justify-center">
-                  <img 
-                    src={summaryChart} 
-                    alt="Custom Theme Analysis Summary" 
-                    className="w-full max-w-5xl h-auto"
-                    style={{ minHeight: '300px' }}
-                  />
-                </div>
-              </div>
+            {(summaryChart || summaryChartLoading) && (
+              <ThematicGoChartPanel
+                title="Analysis Summary"
+                subtitle="Overview of selected themes and their enrichment scores"
+                defaultChartTitle="Gene Ontology Analysis Summary by Theme"
+                chartSrc={summaryChart || null}
+                loading={summaryChartLoading}
+                exportLoading={summaryExportLoading}
+                variant="summary"
+                style={summaryChartStyle}
+                onStyleChange={setSummaryChartStyle}
+                onApply={handleSummaryChartApply}
+                onExport={handleSummaryChartExport}
+              />
             )}
             
             {/* Theme Selection and Results Table */}
@@ -906,8 +962,12 @@ export default function CustomizeTheme() {
                     {results.map((result) => (
                       <button
                         key={result.theme}
-                        onClick={() => generateThemeChart(result.theme)}
-                        disabled={isAnalyzing}
+                        onClick={async () => {
+                          setThemeChartLoading(true);
+                          await generateThemeChart(result.theme, themeChartStyle, 'png');
+                          setThemeChartLoading(false);
+                        }}
+                        disabled={isAnalyzing || themeChartLoading}
                         className={`w-full text-left p-3 rounded-lg border transition-colors ${
                           selectedTheme === result.theme
                             ? 'bg-blue-50 border-blue-300 text-black'
@@ -1008,20 +1068,20 @@ export default function CustomizeTheme() {
             </div>
 
             {/* Theme Chart Display - Full Width at Bottom */}
-            {currentChart && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-900">
-                  {resultThemeLabel(selectedTheme)} - GO Terms
-                </h3>
-                <div className="flex justify-center">
-                  <img 
-                    src={currentChart} 
-                    alt={`${resultThemeLabel(selectedTheme)} GO Terms Chart`}
-                    className="w-full max-w-7xl h-auto rounded-lg shadow-sm"
-                    style={{ minHeight: '700px' }}
-                  />
-                </div>
-              </div>
+            {(currentChart || themeChartLoading) && (
+              <ThematicGoChartPanel
+                title={`${resultThemeLabel(selectedTheme)} - GO Terms`}
+                subtitle="Top enriched GO terms within the selected theme"
+                defaultChartTitle={`Top GO Terms in Theme: ${resultThemeLabel(selectedTheme)}`}
+                chartSrc={currentChart || null}
+                loading={themeChartLoading || isAnalyzing}
+                exportLoading={themeExportLoading}
+                variant="theme"
+                style={themeChartStyle}
+                onStyleChange={setThemeChartStyle}
+                onApply={handleThemeChartApply}
+                onExport={handleThemeChartExport}
+              />
             )}
           </>
         )}

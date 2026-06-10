@@ -6,10 +6,11 @@ from pydantic import BaseModel
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
+from matplotlib.font_manager import FontProperties
 matplotlib.use('Agg')  # Use non-interactive backend
 
 # 配置matplotlib以避免字体问题
-plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'sans-serif']
+plt.rcParams['font.family'] = ['DejaVu Sans', 'DejaVu Serif', 'DejaVu Sans Mono', 'sans-serif']
 plt.rcParams['font.size'] = 10
 plt.rcParams['figure.dpi'] = 100
 import base64
@@ -818,6 +819,209 @@ async def put_user_preferences(
     return data
 
 
+SUMMARY_CHART_COLORS = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD',
+    '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8C471', '#82E0AA',
+    '#F1948A', '#A9CCE3', '#FAD7A0', '#D7BDE2', '#A9DFBF', '#F9E79F',
+    '#F5B7B1', '#AED6F1',
+]
+
+VALID_CHART_FORMATS = frozenset({'png', 'pdf', 'svg'})
+
+# UI labels map to fonts bundled with matplotlib on Linux (Arial/Helvetica are not installed).
+MPL_FONT_ALIASES = {
+    'Arial': 'DejaVu Sans',
+    'Helvetica': 'DejaVu Sans',
+    'Verdana': 'DejaVu Sans',
+    'Times New Roman': 'DejaVu Serif',
+    'Georgia': 'DejaVu Serif',
+    'Courier New': 'DejaVu Sans Mono',
+    'DejaVu Sans': 'DejaVu Sans',
+    'DejaVu Serif': 'DejaVu Serif',
+    'DejaVu Sans Mono': 'DejaVu Sans Mono',
+    'STIXGeneral': 'STIXGeneral',
+    'STIX': 'STIXGeneral',
+}
+
+MPL_AVAILABLE_FONTS = frozenset(MPL_FONT_ALIASES.values())
+
+
+def resolve_matplotlib_font(family: Optional[str]) -> str:
+    """Map UI font name to an installed matplotlib font family."""
+    if not family or not str(family).strip():
+        return 'DejaVu Sans'
+    name = str(family).strip()
+    resolved = MPL_FONT_ALIASES.get(name, name)
+    if resolved in MPL_AVAILABLE_FONTS:
+        return resolved
+    return 'DejaVu Sans'
+
+
+def _mpl_font_props(style_entry: Dict[str, Any], default_size: int = 12) -> FontProperties:
+    return FontProperties(
+        family=resolve_matplotlib_font(style_entry.get('font_family')),
+        size=int(style_entry.get('font_size', default_size)),
+    )
+
+
+def parse_chart_style_options(
+    font_size: Optional[str] = None,
+    font_color: Optional[str] = None,
+    bar_color: Optional[str] = None,
+    multi_color: Optional[str] = None,
+    text_styles: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Parse optional chart styling form fields."""
+    style: Dict[str, Any] = {}
+    legacy_size = 12
+    legacy_color = '#000000'
+    if font_size is not None and str(font_size).strip():
+        try:
+            legacy_size = max(8, min(24, int(float(font_size))))
+        except (TypeError, ValueError):
+            pass
+    if font_color is not None and str(font_color).strip():
+        color = str(font_color).strip()
+        if re.match(r'^#[0-9A-Fa-f]{6}$', color):
+            legacy_color = color
+    if bar_color is not None and str(bar_color).strip():
+        color = str(bar_color).strip()
+        if re.match(r'^#[0-9A-Fa-f]{6}$', color):
+            style['bar_color'] = color
+    if multi_color is not None and str(multi_color).strip():
+        style['multi_color'] = str(multi_color).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    parsed_styles: Dict[str, Dict[str, Any]] = {}
+    for target, size_delta in (('title', 2), ('axis', 0), ('ticks', -1), ('labels', -1)):
+        parsed_styles[target] = {
+            'font_family': 'DejaVu Sans',
+            'font_size': max(8, legacy_size + size_delta),
+            'font_color': legacy_color,
+        }
+
+    if text_styles is not None and str(text_styles).strip():
+        try:
+            raw = json.loads(text_styles)
+            if isinstance(raw, dict):
+                for target in parsed_styles:
+                    entry = raw.get(target)
+                    if not isinstance(entry, dict):
+                        continue
+                    family = entry.get('font_family') or entry.get('fontFamily')
+                    size = entry.get('font_size') or entry.get('fontSize')
+                    color = entry.get('font_color') or entry.get('fontColor')
+                    if isinstance(family, str) and family.strip():
+                        parsed_styles[target]['font_family'] = resolve_matplotlib_font(family.strip())
+                    if size is not None:
+                        try:
+                            parsed_styles[target]['font_size'] = max(8, min(24, int(float(size))))
+                        except (TypeError, ValueError):
+                            pass
+                    if isinstance(color, str) and re.match(r'^#[0-9A-Fa-f]{6}$', color.strip()):
+                        parsed_styles[target]['font_color'] = color.strip()
+        except json.JSONDecodeError:
+            pass
+
+    style['text_styles'] = parsed_styles
+    return style
+
+
+def _get_axes_title(ax) -> Any:
+    """Return the Text artist that actually holds the visible title (left/center/right)."""
+    for candidate in (
+        getattr(ax, '_left_title', None),
+        getattr(ax, 'title', None),
+        getattr(ax, '_right_title', None),
+    ):
+        if candidate is None:
+            continue
+        try:
+            if candidate.get_text():
+                return candidate
+        except Exception:
+            continue
+    return ax.title
+
+
+def apply_matplotlib_text_styles(
+    ax,
+    text_styles: Dict[str, Dict[str, Any]],
+    title_text: Optional[str] = None,
+    title_loc: str = 'left',
+) -> None:
+    """Apply per-element font styling on a matplotlib axes object."""
+    title_s = text_styles.get('title', {})
+    axis_s = text_styles.get('axis', {})
+    ticks_s = text_styles.get('ticks', {})
+
+    title_fp = _mpl_font_props(title_s, 14)
+    title_color = title_s.get('font_color', '#000000')
+
+    if title_text is not None:
+        ax.set_title(
+            title_text,
+            loc=title_loc,
+            fontproperties=title_fp,
+            color=title_color,
+            fontweight='bold',
+        )
+    else:
+        title = _get_axes_title(ax)
+        title.set_fontproperties(title_fp)
+        title.set_color(title_color)
+        title.set_fontweight('bold')
+
+    axis_fp = _mpl_font_props(axis_s, 12)
+    axis_color = axis_s.get('font_color', '#000000')
+    xlabel = ax.xaxis.label
+    xlabel.set_fontproperties(axis_fp)
+    xlabel.set_color(axis_color)
+
+    tick_fp = _mpl_font_props(ticks_s, 11)
+    tick_color = ticks_s.get('font_color', '#000000')
+    tick_size = int(ticks_s.get('font_size', 11))
+    ax.tick_params(
+        axis='both',
+        labelsize=tick_size,
+        labelcolor=tick_color,
+    )
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(tick_fp)
+        label.set_color(tick_color)
+
+
+def normalize_chart_format(chart_format: Optional[str]) -> str:
+    fmt = (chart_format or 'png').strip().lower()
+    return fmt if fmt in VALID_CHART_FORMATS else 'png'
+
+
+def figure_to_base64(fmt: str = 'png') -> Tuple[str, str]:
+    """Encode the current matplotlib figure as base64."""
+    fmt = normalize_chart_format(fmt)
+    img_buffer = io.BytesIO()
+    save_kwargs: Dict[str, Any] = {'format': fmt, 'bbox_inches': 'tight'}
+    if fmt == 'png':
+        save_kwargs['dpi'] = 300
+    plt.savefig(img_buffer, **save_kwargs)
+    img_buffer.seek(0)
+    encoded = base64.b64encode(img_buffer.getvalue()).decode()
+    media_type = 'application/pdf' if fmt == 'pdf' else f'image/{fmt}'
+    return encoded, media_type
+
+
+
+def apply_chart_text_style(ax, font_size: int, font_color: str) -> None:
+    """Legacy helper — prefer apply_matplotlib_text_styles."""
+    apply_matplotlib_text_styles(
+        ax,
+        {
+            'title': {'font_size': font_size + 2, 'font_color': font_color, 'font_family': 'DejaVu Sans'},
+            'axis': {'font_size': font_size, 'font_color': font_color, 'font_family': 'DejaVu Sans'},
+            'ticks': {'font_size': max(8, font_size - 1), 'font_color': font_color, 'font_family': 'DejaVu Sans'},
+        },
+    )
+
+
 # Gene Ontology Analysis Class
 class GeneOntologyAPI:
     def __init__(self):
@@ -991,125 +1195,122 @@ class GeneOntologyAPI:
         return themed
 
     def create_theme_chart(
-        self, df: pd.DataFrame, theme_key: str, chart_title: Optional[str] = None
-    ) -> str:
+        self,
+        df: pd.DataFrame,
+        theme_key: str,
+        chart_title: Optional[str] = None,
+        style: Optional[Dict[str, Any]] = None,
+        chart_format: str = 'png',
+    ) -> Tuple[str, str]:
         """Create chart for a specific theme (theme_key matches df['Theme'])."""
         try:
+            opts = style or {}
+            text_styles = opts.get('text_styles') or {}
+            bar_color = str(opts.get('bar_color', '#3CB371'))
+            fmt = normalize_chart_format(chart_format)
+
             title = chart_title if chart_title else theme_key
-            # Filter GO terms belonging to the current theme
             sub_df = df[df["Theme"] == theme_key].sort_values("Score", ascending=True)
 
             if sub_df.empty:
                 print(f"No data found for theme: {theme_key}")
-                return ""
+                return "", 'image/png'
 
             print(f"Creating chart for theme: {theme_key} with {len(sub_df)} terms")
 
-            # Create plot with better proportions to avoid font stretching
             fig_width = 12
-            fig_height = max(6, 0.3 * len(sub_df))  # Reduced height multiplier
-            plt.figure(figsize=(fig_width, fig_height))
-            
-            # Create horizontal bar chart
-            bars = plt.barh(sub_df["name"], sub_df["Score"], color="mediumseagreen", height=0.6)
-            
-            # Improve font settings
-            plt.xlabel("-log10(p-value)", size=12)
-            plt.title(f"Top GO Terms in Theme: {title}", loc="left", fontsize=14, weight="bold")
-            
-            # Adjust y-axis to prevent font stretching
-            plt.gca().set_ylim(-0.5, len(sub_df) - 0.5)
-            
-            # Improve layout
-            plt.tight_layout(pad=1.5)
+            fig_height = max(6, 0.3 * len(sub_df))
+            _, ax = plt.subplots(figsize=(fig_width, fig_height))
 
-            # Convert to base64
-            img_buffer = io.BytesIO()
-            plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
-            img_buffer.seek(0)
-            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            ax.barh(sub_df["name"], sub_df["Score"], color=bar_color, height=0.6)
+            ax.set_xlabel("-log10(p-value)")
+            title_str = str(opts.get('chart_title_override') or f"Top GO Terms in Theme: {title}")
+            ax.set_title(title_str, loc="left", weight="bold")
+            ax.set_ylim(-0.5, len(sub_df) - 0.5)
+            plt.tight_layout(pad=1.5)
+            apply_matplotlib_text_styles(ax, text_styles, title_text=title_str, title_loc="left")
+
+            encoded, media_type = figure_to_base64(fmt)
             plt.close()
 
             print(f"Chart created successfully for theme: {theme_key}")
-            return img_base64
-            
+            return encoded, media_type
+
         except Exception as e:
             print(f"Error creating chart for theme {theme_key}: {str(e)}")
-            # 清理matplotlib状态
             plt.close('all')
             raise e
 
-    def create_summary_chart(self, themed_df: pd.DataFrame) -> str:
-        """Create summary chart showing all themes"""
+    def create_summary_chart(
+        self,
+        themed_df: pd.DataFrame,
+        style: Optional[Dict[str, Any]] = None,
+        chart_format: str = 'png',
+    ) -> Tuple[str, str]:
+        """Create summary chart showing all themes."""
         try:
             if themed_df.empty:
                 print("No data for summary chart")
-                return ""
+                return "", 'image/png'
+
+            opts = style or {}
+            text_styles = opts.get('text_styles') or {}
+            labels_s = text_styles.get('labels', {})
+            bar_color = str(opts.get('bar_color', '#4ECDC4'))
+            use_multi_color = bool(opts.get('multi_color', True))
+            fmt = normalize_chart_format(chart_format)
 
             print(f"Creating summary chart with {len(themed_df)} themes")
 
-            # Create plot with better proportions
             fig_width = 12
-            fig_height = max(8, 0.4 * len(themed_df))  # Better height calculation
-            plt.figure(figsize=(fig_width, fig_height))
-            
-            # Sort by score for better visualization
-            themed_df_sorted = themed_df.sort_values("Score", ascending=True)
-            
-            # Define distinct colors for different themes - more vibrant and distinct
-            colors = [
-                '#FF6B6B',  # Red
-                '#4ECDC4',  # Teal
-                '#45B7D1',  # Blue
-                '#96CEB4',  # Green
-                '#FFEAA7',  # Yellow
-                '#DDA0DD',  # Plum
-                '#98D8C8',  # Mint
-                '#F7DC6F',  # Gold
-                '#BB8FCE',  # Lavender
-                '#85C1E9',  # Sky Blue
-                '#F8C471',  # Orange
-                '#82E0AA',  # Light Green
-                '#F1948A',  # Salmon
-                '#A9CCE3',  # Light Blue
-                '#FAD7A0',  # Peach
-                '#D7BDE2',  # Light Purple
-                '#A9DFBF',  # Light Mint
-                '#F9E79F',  # Light Yellow
-                '#F5B7B1',  # Light Pink
-                '#AED6F1'   # Light Sky Blue
-            ]
-            
-            # Create horizontal bar chart with different colors and better bar height
-            bars = plt.barh(themed_df_sorted.index, themed_df_sorted["Score"], 
-                           color=colors[:len(themed_df_sorted)], alpha=0.9, height=0.7)
-            
-            # Add value labels on bars with better contrast
-            for i, (theme, score) in enumerate(zip(themed_df_sorted.index, themed_df_sorted["Score"])):
-                plt.text(score + 1, i, f'{score:.1f}', va='center', fontsize=10, 
-                        fontweight='bold', color='black')
-            
-            plt.xlabel("Cumulative Score (-log10(p-value))", size=12)
-            plt.title("Gene Ontology Analysis Summary by Theme", loc="left", fontsize=14, weight="bold")
-            
-            # Adjust y-axis to prevent font stretching
-            plt.gca().set_ylim(-0.5, len(themed_df_sorted) - 0.5)
-            
-            plt.tight_layout(pad=1.5)
+            fig_height = max(8, 0.4 * len(themed_df))
+            _, ax = plt.subplots(figsize=(fig_width, fig_height))
 
-            # Convert to base64
-            img_buffer = io.BytesIO()
-            plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
-            img_buffer.seek(0)
-            img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+            themed_df_sorted = themed_df.sort_values("Score", ascending=True)
+            if use_multi_color:
+                bar_colors = SUMMARY_CHART_COLORS[: len(themed_df_sorted)]
+            else:
+                bar_colors = [bar_color] * len(themed_df_sorted)
+
+            ax.barh(
+                themed_df_sorted.index,
+                themed_df_sorted["Score"],
+                color=bar_colors,
+                alpha=0.9,
+                height=0.7,
+            )
+
+            labels_fp = _mpl_font_props(labels_s, 10)
+            labels_color = labels_s.get('font_color', '#000000')
+            for i, score in enumerate(themed_df_sorted["Score"]):
+                ax.text(
+                    score + 1,
+                    i,
+                    f'{float(score):.1f}',
+                    va='center',
+                    fontproperties=labels_fp,
+                    fontweight='bold',
+                    color=labels_color,
+                )
+
+            ax.set_xlabel("Cumulative Score (-log10(p-value))")
+            title_str = str(
+                opts.get('chart_title_override')
+                or "Gene Ontology Analysis Summary by Theme"
+            )
+            ax.set_title(title_str, loc="left", weight="bold")
+            ax.set_ylim(-0.5, len(themed_df_sorted) - 0.5)
+            plt.tight_layout(pad=1.5)
+            apply_matplotlib_text_styles(ax, text_styles, title_text=title_str, title_loc="left")
+
+            encoded, media_type = figure_to_base64(fmt)
             plt.close()
 
-            print(f"Summary chart created successfully with {len(themed_df_sorted)} distinct colors")
-            return img_base64
-            
+            print(f"Summary chart created successfully with {len(themed_df_sorted)} themes")
+            return encoded, media_type
+
         except Exception as e:
             print(f"Error creating summary chart: {str(e)}")
-            # 清理matplotlib状态
             plt.close('all')
             raise e
 
@@ -1587,7 +1788,13 @@ async def generate_theme_chart(
     file: UploadFile = File(...), 
     theme: str = Form(...),
     theme_display: str = Form(None),
-    custom_themes: str = Form(None)
+    custom_themes: str = Form(None),
+    font_size: str = Form(None),
+    font_color: str = Form(None),
+    bar_color: str = Form(None),
+    chart_format: str = Form(None),
+    text_styles: str = Form(None),
+    chart_title_override: str = Form(None),
 ):
     """Generate chart for a specific theme (`theme` = internal id; optional `theme_display` for title)."""
     if not file.filename.endswith('.txt'):
@@ -1648,7 +1855,13 @@ async def generate_theme_chart(
         
         # Create chart
         disp = theme_display.strip() if isinstance(theme_display, str) and theme_display.strip() else None
-        chart_base64 = ontology_api.create_theme_chart(enr_df, theme, chart_title=disp)
+        style = parse_chart_style_options(font_size, font_color, bar_color, text_styles=text_styles)
+        if isinstance(chart_title_override, str) and chart_title_override.strip():
+            style['chart_title_override'] = chart_title_override.strip()
+        fmt = normalize_chart_format(chart_format)
+        chart_base64, media_type = ontology_api.create_theme_chart(
+            enr_df, theme, chart_title=disp, style=style, chart_format=fmt
+        )
         if not chart_base64:
             raise HTTPException(status_code=400, detail=f"No data found for theme: {theme}")
         
@@ -1664,6 +1877,8 @@ async def generate_theme_chart(
         print(f"Successfully generated chart for theme: {theme} with {len(subterms)} subterms")
         return {
             "chart_base64": chart_base64,
+            "format": fmt,
+            "media_type": media_type,
             "subterms": subterms
         }
         
@@ -1680,7 +1895,16 @@ async def generate_theme_chart(
         ontology_api.themes = original_themes
 
 @app.post("/api/ontology/summary-chart")
-async def generate_summary_chart(file: UploadFile = File(...)):
+async def generate_summary_chart(
+    file: UploadFile = File(...),
+    font_size: str = Form(None),
+    font_color: str = Form(None),
+    bar_color: str = Form(None),
+    multi_color: str = Form(None),
+    chart_format: str = Form(None),
+    text_styles: str = Form(None),
+    chart_title_override: str = Form(None),
+):
     """Generate summary chart showing all themes"""
     if not file.filename.endswith('.txt'):
         raise HTTPException(status_code=400, detail="Only .txt files are supported")
@@ -1716,13 +1940,19 @@ async def generate_summary_chart(file: UploadFile = File(...)):
         print(f"Aggregated {len(themed)} themes")
         
         # Generate summary chart
-        chart_base64 = ontology_api.create_summary_chart(themed)
+        style = parse_chart_style_options(font_size, font_color, bar_color, multi_color, text_styles)
+        if isinstance(chart_title_override, str) and chart_title_override.strip():
+            style['chart_title_override'] = chart_title_override.strip()
+        fmt = normalize_chart_format(chart_format)
+        chart_base64, media_type = ontology_api.create_summary_chart(
+            themed, style=style, chart_format=fmt
+        )
         
         if not chart_base64:
             raise HTTPException(status_code=500, detail="Failed to generate summary chart")
         
         print("Successfully generated summary chart")
-        return {"chart": chart_base64}
+        return {"chart": chart_base64, "format": fmt, "media_type": media_type}
         
     except HTTPException:
         raise
@@ -1822,6 +2052,13 @@ async def generate_custom_summary_chart(
     themes: str = Form(...),
     custom_themes: str = Form(None),
     theme_labels: str = Form(None),
+    font_size: str = Form(None),
+    font_color: str = Form(None),
+    bar_color: str = Form(None),
+    multi_color: str = Form(None),
+    chart_format: str = Form(None),
+    text_styles: str = Form(None),
+    chart_title_override: str = Form(None),
 ):
     """Generate summary chart for custom theme selection"""
     if not file.filename.endswith('.txt'):
@@ -1888,14 +2125,20 @@ async def generate_custom_summary_chart(
             )
         
         # Generate summary chart
-        chart_base64 = ontology_api.create_summary_chart(themed)
+        style = parse_chart_style_options(font_size, font_color, bar_color, multi_color, text_styles)
+        if isinstance(chart_title_override, str) and chart_title_override.strip():
+            style['chart_title_override'] = chart_title_override.strip()
+        fmt = normalize_chart_format(chart_format)
+        chart_base64, media_type = ontology_api.create_summary_chart(
+            themed, style=style, chart_format=fmt
+        )
         
         if not chart_base64:
             raise HTTPException(status_code=500, detail="Failed to generate custom summary chart")
         
         print("Successfully generated custom summary chart")
         
-        return {"chart": chart_base64}
+        return {"chart": chart_base64, "format": fmt, "media_type": media_type}
         
     except HTTPException:
         raise

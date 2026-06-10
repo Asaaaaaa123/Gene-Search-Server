@@ -1,33 +1,36 @@
 FROM node:20-alpine AS base
 
-# Install dependencies only when needed
 FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-
-# Install dependencies based on the preferred package manager
 COPY genegen/package.json genegen/package-lock.json* ./
 RUN npm ci
 
-# Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY genegen/ .
 
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-ENV NEXT_TELEMETRY_DISABLED 1
+ARG NEXT_PUBLIC_API_URL=http://backend:8000
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+ARG CLERK_PUBLISHABLE_KEY=
+ARG CLERK_SECRET_KEY=
+
+ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=4096
 ENV GENERATE_SOURCEMAP=false
 
-# All deploy config from genegen/coolify-deploy.env (see coolify-deploy.env.example).
-RUN test -f coolify-deploy.env || (echo "ERROR: Missing genegen/coolify-deploy.env" >&2 && exit 1)
+# Build env from ARGs (committed coolify-deploy.env is excluded via .dockerignore)
+RUN sh -c 'cpk="${CLERK_PUBLISHABLE_KEY:-$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}"; \
+  printf "%s\n" \
+    "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" \
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
+    "CLERK_PUBLISHABLE_KEY=${cpk}" \
+    "CLERK_SECRET_KEY=${CLERK_SECRET_KEY}" \
+    > coolify-deploy.env'
+
 RUN chmod +x docker-entrypoint.sh
-
 RUN chmod +x scripts/check-no-clerk-middleware.sh && ./scripts/check-no-clerk-middleware.sh
-
 RUN node scripts/validate-coolify-deploy.cjs
 
 RUN set -a \
@@ -42,27 +45,19 @@ RUN cp genegen-boot.cjs .next/standalone/genegen-boot.cjs \
   && cp scripts/strip-edge-middleware.cjs .next/standalone/scripts/strip-edge-middleware.cjs \
   && node -e "const fs=require('fs');const p='.next/standalone/server.js';let s=fs.readFileSync(p,'utf8');const inj=\"require('./genegen-boot.cjs');\\n\";if(!s.includes('genegen-boot.cjs'))fs.writeFileSync(p,inj+s);"
 
-# Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Install wget for health checks (before switching to non-root user)
-RUN apk add --no-cache wget
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs \
+  && apk add --no-cache wget
 
 COPY --from=builder /app/public ./public
+RUN mkdir .next && chown nextjs:nodejs .next
 
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/docker-entrypoint.sh /app/docker-entrypoint.sh
@@ -70,15 +65,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/coolify-deploy.env /app/.env.runt
 RUN chmod +x /app/docker-entrypoint.sh
 
 USER nextjs
-
 EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:3000 || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "server.js"]

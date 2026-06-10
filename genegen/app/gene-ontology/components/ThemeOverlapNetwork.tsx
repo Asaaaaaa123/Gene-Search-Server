@@ -3,6 +3,20 @@
 import * as d3 from 'd3';
 import { useEffect, useRef, useCallback, useMemo, useState, useId } from 'react';
 import dynamic from 'next/dynamic';
+import {
+  DEFAULT_NETWORK_STYLE,
+  NETWORK_FONT_FAMILY_OPTIONS,
+  downloadSvgAsPng,
+  downloadSvgElement,
+  getActiveTextStyle,
+  NETWORK_TARGETS_BY_MODE,
+  NETWORK_TEXT_TARGET_LABELS,
+  updateActiveTextStyle,
+  type ChartExportFormat,
+  type NetworkStyleOptions,
+  type NetworkTextTarget,
+} from '@/lib/chart-style';
+import { VisualStyleControls } from './VisualStyleControls';
 
 export interface ThemeOverlapNode {
   id: string;
@@ -57,31 +71,33 @@ const Plot = dynamic(() => import('react-plotly.js'), {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Plotly wrapper props include callbacks not in minimal typing
 }) as unknown as React.ComponentType<any>;
 
-/** Interpolate weight to color: dark blue (low) -> yellow/orange -> dark red (high) */
-function weightToColor(weight: number, minW: number, maxW: number): string {
-  if (maxW <= minW) return '#2166ac';
+/** Interpolate weight to color between low (min overlap) and high (max overlap). */
+function weightToColor(
+  weight: number,
+  minW: number,
+  maxW: number,
+  lowColor = '#2166ac',
+  highColor = '#b2182b',
+): string {
+  if (maxW <= minW) return lowColor;
   const t = Math.max(0, Math.min(1, (weight - minW) / (maxW - minW)));
-  const hex = (r: number, g: number, b: number) =>
-    '#' + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
-  if (t <= 0.33) {
-    const u = t / 0.33;
-    const r = 33 + u * (78 - 33);
-    const g = 102 + u * (205 - 102);
-    const b = 172 + u * (230 - 172);
-    return hex(r, g, b);
-  }
-  if (t <= 0.66) {
-    const u = (t - 0.33) / 0.33;
-    const r = 78 + u * (252 - 78);
-    const g = 205 + u * (174 - 205);
-    const b = 230 + u * (96 - 230);
-    return hex(r, g, b);
-  }
-  const u = (t - 0.66) / 0.34;
-  const r = 252 + u * (178 - 252);
-  const g = 174 + u * (24 - 174);
-  const b = 96 + u * (43 - 96);
-  return hex(r, g, b);
+  const parse = (hex: string) => {
+    const h = hex.replace('#', '');
+    return [
+      parseInt(h.slice(0, 2), 16),
+      parseInt(h.slice(2, 4), 16),
+      parseInt(h.slice(4, 6), 16),
+    ] as const;
+  };
+  const [r1, g1, b1] = parse(lowColor);
+  const [r2, g2, b2] = parse(highColor);
+  const r = r1 + t * (r2 - r1);
+  const g = g1 + t * (g2 - g1);
+  const b = b1 + t * (b2 - b1);
+  return (
+    '#' +
+    [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')
+  );
 }
 
 /** Directed chord matrix: flow only from lower index → higher index (avoids duplicate ribbons for symmetric overlap). */
@@ -279,6 +295,15 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
   const [chordSelectedIndex, setChordSelectedIndex] = useState<number | null>(null);
   /** Chord ribbon selection for highlighting + pairing with overlapPair. */
   const [selectedRibbonKey, setSelectedRibbonKey] = useState<string | null>(null);
+  const [networkStyle, setNetworkStyle] = useState<NetworkStyleOptions>(DEFAULT_NETWORK_STYLE);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  useEffect(() => {
+    const valid = NETWORK_TARGETS_BY_MODE[vizMode];
+    if (!valid.includes(networkStyle.selectedTarget)) {
+      setNetworkStyle((prev) => ({ ...prev, selectedTarget: valid[0] }));
+    }
+  }, [vizMode, networkStyle.selectedTarget]);
 
   const filteredEdges = useMemo(() => {
     if (!data || !data.edges.length) return [];
@@ -425,7 +450,7 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
 
       const edgeElements = edges.map((e, i) => {
         const w = e.weight;
-        const lineColor = weightToColor(w, minS, maxS);
+        const lineColor = weightToColor(w, minS, maxS, networkStyle.edgeColorLow, networkStyle.edgeColorHigh);
         const t = maxS > minS ? (w - minS) / (maxS - minS) : 0.5;
         const lineWidth = 1.2 + t * 5;
         const genes = e.genes ?? [];
@@ -446,11 +471,13 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
         ...nodes.map((n, idx) => {
           const s = strength[n.id] ?? 0;
           const nodeSize = 22 + 38 * (s / maxStr);
+          const fillColor =
+            networkStyle.nodeColor || THEME_COLORS[idx % THEME_COLORS.length];
           return {
             data: {
               id: n.id,
               label: n.label || n.id,
-              fillColor: THEME_COLORS[idx % THEME_COLORS.length],
+              fillColor,
               nodeSize,
             },
           };
@@ -474,6 +501,8 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
         cyRef.current = null;
       }
 
+      const nodeLabelStyle = networkStyle.textStyles.nodeLabels;
+
       const instance = cy({
         container: containerRef.current,
         elements,
@@ -483,9 +512,9 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
             style: {
               label: 'data(label)',
               'background-color': 'data(fillColor)',
-              color: '#1a1a1a',
-              'font-size': '11px',
-              'font-family': 'Helvetica Neue, Arial, sans-serif',
+              color: nodeLabelStyle.fontColor,
+              'font-size': `${nodeLabelStyle.fontSize}px`,
+              'font-family': nodeLabelStyle.fontFamily,
               'text-valign': 'bottom',
               'text-halign': 'center',
               'text-margin-y': 6,
@@ -588,7 +617,7 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
       cyRef.current = instance;
       setDownloadReady(true);
     }).catch((e) => console.warn('Cytoscape init failed:', e));
-  }, [data, minS, maxS, filteredEdges, vizMode]);
+  }, [data, minS, maxS, filteredEdges, vizMode, networkStyle]);
 
   useEffect(() => {
     if (!data || data.nodes.length === 0) {
@@ -618,10 +647,12 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
     const stops: string[] = [];
     for (let i = 0; i <= steps; i++) {
       const w = minS + (i / steps) * (maxS - minS);
-      stops.push(`${weightToColor(w, minS, maxS)} ${(i / steps) * 100}%`);
+      stops.push(
+        `${weightToColor(w, minS, maxS, networkStyle.edgeColorLow, networkStyle.edgeColorHigh)} ${(i / steps) * 100}%`,
+      );
     }
     return stops.join(', ');
-  }, [minS, maxS]);
+  }, [minS, maxS, networkStyle.edgeColorLow, networkStyle.edgeColorHigh]);
 
   const heatmapPlotData = useMemo(() => {
     if (!data || data.nodes.length === 0) return null;
@@ -669,34 +700,50 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
     ];
   }, [data, heatmapMatrix]);
 
-  const heatmapLayout = useMemo(
-    () =>
-      ({
-        title: {
-          text: 'Theme–theme overlap (shared genes, log-scaled intensity)',
-          font: { family: 'Arial, Helvetica, sans-serif', size: 15, color: '#222' },
-          x: 0.5,
-          xanchor: 'center',
+  const heatmapLayout = useMemo(() => {
+    const titleStyle = networkStyle.textStyles.heatmapTitle;
+    const axisStyle = networkStyle.textStyles.heatmapAxis;
+    return {
+      title: {
+        text: 'Theme–theme overlap (shared genes, log-scaled intensity)',
+        font: {
+          family: titleStyle.fontFamily,
+          size: titleStyle.fontSize,
+          color: titleStyle.fontColor,
         },
-        paper_bgcolor: '#ffffff',
-        plot_bgcolor: '#ffffff',
-        font: { family: 'Arial, Helvetica, sans-serif', size: 11, color: '#333' },
-        margin: { l: 140, r: 28, t: 56, b: 120 },
-        xaxis: {
-          tickangle: -45,
-          side: 'bottom',
-          showgrid: false,
-          tickfont: { size: 10 },
+        x: 0.5,
+        xanchor: 'center',
+      },
+      paper_bgcolor: '#ffffff',
+      plot_bgcolor: '#ffffff',
+      font: {
+        family: axisStyle.fontFamily,
+        size: axisStyle.fontSize,
+        color: axisStyle.fontColor,
+      },
+      margin: { l: 140, r: 28, t: 56, b: 120 },
+      xaxis: {
+        tickangle: -45,
+        side: 'bottom',
+        showgrid: false,
+        tickfont: {
+          size: axisStyle.fontSize,
+          family: axisStyle.fontFamily,
+          color: axisStyle.fontColor,
         },
-        yaxis: {
-          autorange: 'reversed',
-          showgrid: false,
-          tickfont: { size: 10 },
+      },
+      yaxis: {
+        autorange: 'reversed',
+        showgrid: false,
+        tickfont: {
+          size: axisStyle.fontSize,
+          family: axisStyle.fontFamily,
+          color: axisStyle.fontColor,
         },
-        height: Math.min(720, 420 + (data?.nodes.length ?? 0) * 12),
-      }) as Record<string, unknown>,
-    [data]
-  );
+      },
+      height: Math.min(720, 420 + (data?.nodes.length ?? 0) * 12),
+    } as Record<string, unknown>;
+  }, [data, networkStyle]);
 
   const heatmapConfig = useMemo(
     () => ({
@@ -717,91 +764,106 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
 
   const heatmapGdRef = useRef<HTMLElement | null>(null);
 
-  const handleDownload = useCallback(() => {
-    if (vizMode === 'heatmap') {
-      const gd = heatmapGdRef.current;
-      if (!gd) return;
-      import('plotly.js')
-        .then((Plotly) => {
-          return Plotly.downloadImage(gd, {
-            format: 'png',
-            filename: `theme-overlap-heatmap-${Date.now()}`,
-            width: null,
-            height: null,
-          });
-        })
-        .catch((e) => console.error('Heatmap export failed:', e));
-      return;
-    }
-
-    if (vizMode === 'chord') {
-      const svg = chordSvgRef.current;
-      if (!svg) return;
-      const serializer = new XMLSerializer();
-      const src = serializer.serializeToString(svg);
-      const blob = new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n`, src], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `theme-overlap-chord-${Date.now()}.svg`;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      return;
-    }
-
-    const cy = cyRef.current;
-    if (!cy || typeof cy.png !== 'function') return;
-    const opts = { scale: 2, full: true, bg: '#ffffff' };
-    const filename = `theme-overlap-network-${Date.now()}.png`;
-
-    const tryBlob = () => {
-      const blobPromise = cy.png({ ...opts, output: 'blob-promise' } as { scale?: number; full?: boolean }) as unknown as Promise<Blob>;
-      if (blobPromise && typeof blobPromise.then === 'function') {
-        setDownloading(true);
-        blobPromise
-          .then((blob: Blob) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.rel = 'noopener';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+  const handleDownload = useCallback(
+    (format: ChartExportFormat = 'png') => {
+      if (vizMode === 'heatmap') {
+        const gd = heatmapGdRef.current;
+        if (!gd) return;
+        setExportLoading(true);
+        import('plotly.js')
+          .then((Plotly) => {
+            const plotlyFormat =
+              format === 'pdf' ? 'pdf' : format === 'svg' ? 'svg' : 'png';
+            return (
+              Plotly.downloadImage as unknown as (
+                el: HTMLElement,
+                opts: { format: string; filename: string; width: null; height: null },
+              ) => Promise<void>
+            )(gd, {
+              format: plotlyFormat,
+              filename: `theme-overlap-heatmap-${Date.now()}`,
+              width: null,
+              height: null,
+            });
           })
-          .catch((e: unknown) => {
-            console.error('Download (blob) failed:', e);
-            tryDataUri();
-          })
-          .finally(() => setDownloading(false));
+          .catch((e) => console.error('Heatmap export failed:', e))
+          .finally(() => setExportLoading(false));
         return;
       }
-      tryDataUri();
-    };
 
-    const tryDataUri = () => {
-      try {
-        const dataUri = cy.png(opts);
-        if (!dataUri || typeof dataUri !== 'string') return;
-        const href = dataUri.startsWith('data:') ? dataUri : `data:image/png;base64,${dataUri}`;
-        const a = document.createElement('a');
-        a.href = href;
-        a.download = filename;
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch (e) {
-        console.error('Download failed:', e);
+      if (vizMode === 'chord') {
+        const svg = chordSvgRef.current;
+        if (!svg) return;
+        setExportLoading(true);
+        try {
+          if (format === 'svg') {
+            downloadSvgElement(svg, `theme-overlap-chord-${Date.now()}`);
+          } else if (format === 'png') {
+            downloadSvgAsPng(svg, `theme-overlap-chord-${Date.now()}`);
+          } else {
+            downloadSvgAsPng(svg, `theme-overlap-chord-${Date.now()}`);
+          }
+        } finally {
+          setTimeout(() => setExportLoading(false), 400);
+        }
+        return;
       }
-    };
 
-    tryBlob();
-  }, [vizMode]);
+      const cy = cyRef.current;
+      if (!cy || typeof cy.png !== 'function') return;
+      const opts = { scale: 2, full: true, bg: '#ffffff' };
+      const filename = `theme-overlap-network-${Date.now()}`;
+
+      const tryBlob = () => {
+        const blobPromise = cy.png({
+          ...opts,
+          output: 'blob-promise',
+        } as { scale?: number; full?: boolean }) as unknown as Promise<Blob>;
+        if (blobPromise && typeof blobPromise.then === 'function') {
+          setExportLoading(true);
+          blobPromise
+            .then((blob: Blob) => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${filename}.${format === 'svg' ? 'png' : format}`;
+              a.rel = 'noopener';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            })
+            .catch((e: unknown) => {
+              console.error('Download (blob) failed:', e);
+              tryDataUri(format);
+            })
+            .finally(() => setExportLoading(false));
+          return;
+        }
+        tryDataUri(format);
+      };
+
+      const tryDataUri = (fmt: ChartExportFormat) => {
+        try {
+          const dataUri = cy.png(opts);
+          if (!dataUri || typeof dataUri !== 'string') return;
+          const href = dataUri.startsWith('data:') ? dataUri : `data:image/png;base64,${dataUri}`;
+          const a = document.createElement('a');
+          a.href = href;
+          a.download = `${filename}.${fmt === 'svg' ? 'png' : fmt}`;
+          a.rel = 'noopener';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } catch (e) {
+          console.error('Download failed:', e);
+        }
+      };
+
+      tryBlob();
+    },
+    [vizMode],
+  );
 
   useEffect(() => {
     heatmapGdRef.current = null;
@@ -831,6 +893,104 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
 
   const dataMax = data ? Math.max(data.max_shared, data.min_shared + 1) : 100;
   const totalChordWeight = chordMatrix.flat().reduce((a, b) => a + b, 0);
+  const networkTargetOptions = NETWORK_TARGETS_BY_MODE[vizMode].map((value) => ({
+    value,
+    label: NETWORK_TEXT_TARGET_LABELS[value],
+  }));
+  const activeNetworkText = getActiveTextStyle(
+    networkStyle.selectedTarget,
+    networkStyle.textStyles,
+  );
+  const legendStyle = networkStyle.textStyles.legend;
+
+  const stylePanel = (
+    <aside className="w-full xl:w-72 shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-5">
+      <VisualStyleControls
+        idPrefix={`network-${vizMode}`}
+        targetLabel="network figure"
+        targetOptions={networkTargetOptions}
+        selectedTarget={networkStyle.selectedTarget}
+        onTargetChange={(target) =>
+          setNetworkStyle((prev) => ({
+            ...prev,
+            selectedTarget: target as NetworkTextTarget,
+          }))
+        }
+        activeStyle={activeNetworkText}
+        onStyleChange={(patch) =>
+          setNetworkStyle((prev) => updateActiveTextStyle(prev, patch))
+        }
+        fontFamilyOptions={NETWORK_FONT_FAMILY_OPTIONS}
+        graphColorLabel={vizMode === 'network' ? 'Node color' : undefined}
+        graphColor={vizMode === 'network' ? networkStyle.nodeColor : undefined}
+        onGraphColorChange={
+          vizMode === 'network'
+            ? (nodeColor) => setNetworkStyle((prev) => ({ ...prev, nodeColor }))
+            : undefined
+        }
+        secondaryGraphColorLabel="Low overlap color"
+        secondaryGraphColor={networkStyle.edgeColorLow}
+        onSecondaryGraphColorChange={(edgeColorLow) =>
+          setNetworkStyle((prev) => ({ ...prev, edgeColorLow }))
+        }
+        extraControls={
+          <div>
+            <label
+              htmlFor="network-edge-high"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              High overlap color
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                id="network-edge-high"
+                type="color"
+                value={networkStyle.edgeColorHigh}
+                onChange={(e) =>
+                  setNetworkStyle((prev) => ({ ...prev, edgeColorHigh: e.target.value }))
+                }
+                className="h-10 w-14 cursor-pointer rounded border border-gray-300 bg-white p-1"
+              />
+              <input
+                type="text"
+                value={networkStyle.edgeColorHigh}
+                onChange={(e) =>
+                  setNetworkStyle((prev) => ({ ...prev, edgeColorHigh: e.target.value }))
+                }
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono"
+                maxLength={7}
+              />
+            </div>
+          </div>
+        }
+      />
+      <div className="border-t border-gray-200 pt-4 space-y-3">
+        <p className="text-sm font-semibold text-gray-900">Save figure</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(['png', 'pdf', 'svg'] as ChartExportFormat[]).map((format) => (
+            <button
+              key={format}
+              type="button"
+              onClick={() => handleDownload(format)}
+              disabled={
+                exportLoading ||
+                downloading ||
+                (vizMode === 'network' && !downloadReady) ||
+                (vizMode === 'chord' && (!chordPaths || totalChordWeight <= 0)) ||
+                (vizMode === 'heatmap' && !heatmapPlotReady)
+              }
+              className="rounded-lg border border-gray-300 bg-white px-2 py-2 text-xs font-semibold text-gray-800 hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-50"
+            >
+              {exportLoading ? '…' : format.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        {vizMode === 'network' && (
+          <p className="text-xs text-gray-500">Network view exports as PNG (PDF/SVG use PNG).</p>
+        )}
+      </div>
+    </aside>
+  );
 
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
@@ -888,6 +1048,8 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
         )}
       </div>
 
+      <div className="flex flex-col xl:flex-row gap-6">
+        <div className="flex-1 min-w-0 space-y-4">
       {vizMode === 'network' && (
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-1 lg:min-w-0">
@@ -895,13 +1057,22 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
               <div ref={containerRef} className="absolute inset-0 h-full w-full min-h-[440px]" />
             </div>
             <div className="flex shrink-0 flex-col items-center lg:w-auto">
-              <span className="mb-2 text-xs font-semibold text-gray-700">Overlap scale</span>
+              <span
+                className="mb-2 text-xs font-semibold"
+                style={{
+                  color: legendStyle.fontColor,
+                  fontFamily: legendStyle.fontFamily,
+                  fontSize: legendStyle.fontSize,
+                }}
+              >
+                Overlap scale
+              </span>
               <div className="flex items-stretch gap-1">
                 <div
                   className="h-48 w-5 shrink-0 rounded border border-gray-300"
                   style={{ background: `linear-gradient(to top, ${gradientStops})` }}
                 />
-                <div className="flex h-48 flex-col justify-between py-0.5 text-xs text-gray-600">
+                <div className="flex h-48 flex-col justify-between py-0.5 text-xs" style={{ color: legendStyle.fontColor, fontFamily: legendStyle.fontFamily, fontSize: legendStyle.fontSize }}>
                   {legendTicks
                     .slice()
                     .reverse()
@@ -1051,9 +1222,9 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
                         <text
                           key={`rim-arctp-${g.index}`}
                           style={{
-                            fontSize: chordPaths.chordNodes.length > 12 ? 9 : 10,
-                            fill: '#0f172a',
-                            fontFamily: 'Helvetica Neue, Arial, sans-serif',
+                            fontSize: networkStyle.textStyles.chordLabels.fontSize,
+                            fill: networkStyle.textStyles.chordLabels.fontColor,
+                            fontFamily: networkStyle.textStyles.chordLabels.fontFamily,
                             fontWeight: 500,
                           }}
                         >
@@ -1104,24 +1275,8 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
           />
         </div>
       )}
-
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={
-            downloading ||
-            (vizMode === 'network' && !downloadReady) ||
-            (vizMode === 'chord' && (!chordPaths || totalChordWeight <= 0)) ||
-            (vizMode === 'heatmap' && !heatmapPlotReady)
-          }
-          className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {downloading ? 'Downloading...' : vizMode === 'chord' ? 'Download SVG' : 'Download PNG'}
-        </button>
-        {vizMode === 'heatmap' && (
-          <span className="self-center text-xs text-gray-500">High-res PNG (or use the Plotly toolbar).</span>
-        )}
+        </div>
+        {stylePanel}
       </div>
     </div>
   );

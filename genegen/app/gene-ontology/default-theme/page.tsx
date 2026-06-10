@@ -3,6 +3,16 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
+import {
+  appendChartStyleToFormData,
+  chartResponseToDataUrl,
+  DEFAULT_SUMMARY_CHART_STYLE,
+  DEFAULT_THEME_CHART_STYLE,
+  downloadChartFromBase64,
+  type ChartExportFormat,
+  type ChartStyleOptions,
+} from '@/lib/chart-style';
+import { ThematicGoChartPanel } from '../components/ThematicGoChartPanel';
 import ThemeOverlapNetwork, { type ThemeOverlapData } from '../components/ThemeOverlapNetworkLazy';
 import { GeneListSelector, type GeneListSource } from '../components/GeneListSelector';
 
@@ -25,6 +35,12 @@ export default function DefaultTheme() {
   const [selectedTheme, setSelectedTheme] = useState<string>('');
   const [overlapNetworkData, setOverlapNetworkData] = useState<ThemeOverlapData | null>(null);
   const [overlapNetworkLoading, setOverlapNetworkLoading] = useState(false);
+  const [summaryChartStyle, setSummaryChartStyle] = useState<ChartStyleOptions>(DEFAULT_SUMMARY_CHART_STYLE);
+  const [themeChartStyle, setThemeChartStyle] = useState<ChartStyleOptions>(DEFAULT_THEME_CHART_STYLE);
+  const [summaryChartLoading, setSummaryChartLoading] = useState(false);
+  const [themeChartLoading, setThemeChartLoading] = useState(false);
+  const [summaryExportLoading, setSummaryExportLoading] = useState(false);
+  const [themeExportLoading, setThemeExportLoading] = useState(false);
 
   // Safe number formatting functions for theme data
   const safeNumberFormat = (value: any, decimals: number = 3): string => {
@@ -104,7 +120,9 @@ export default function DefaultTheme() {
         
         // Generate summary chart
         console.log('Starting summary chart generation...');
-        await generateSummaryChart();
+        setSummaryChartLoading(true);
+        await generateSummaryChart(summaryChartStyle, 'png');
+        setSummaryChartLoading(false);
       } else {
         console.error('Invalid response format:', data);
         setError('Invalid response format from server');
@@ -118,66 +136,123 @@ export default function DefaultTheme() {
     }
   };
 
-  const generateSummaryChart = async () => {
-    if (!selectedFile) return;
+  const generateSummaryChart = async (
+    style: ChartStyleOptions = summaryChartStyle,
+    format: ChartExportFormat = 'png',
+  ) => {
+    if (!selectedFile) return null;
 
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
-      
+      appendChartStyleToFormData(formData, style, format, { isSummary: true });
+
       const response = await fetch(`${API_BASE_URL}/api/ontology/summary-chart`, {
         method: 'POST',
         body: formData,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Summary chart response:', data);
-        // Backend returns {"chart": chart_base64}
-        if (data.chart) {
-          setSummaryChart(`data:image/png;base64,${data.chart}`);
-        } else {
-          console.error('No chart data in response:', data);
-        }
-      } else {
+      if (!response.ok) {
         console.error('Failed to generate summary chart:', response.status, response.statusText);
+        return null;
       }
+
+      const data = await response.json();
+      if (data.chart) {
+        if (format === 'png') {
+          setSummaryChart(chartResponseToDataUrl(data.chart, 'png', data.media_type));
+        }
+        return data as { chart: string; format: ChartExportFormat; media_type?: string };
+      }
+      console.error('No chart data in response:', data);
+      return null;
     } catch (error) {
       console.error('Error generating summary chart:', error);
+      return null;
     }
   };
 
-  const generateThemeChart = async (theme: string) => {
-    if (!selectedFile) return;
+  const handleSummaryChartApply = async () => {
+    setSummaryChartLoading(true);
+    await generateSummaryChart(summaryChartStyle, 'png');
+    setSummaryChartLoading(false);
+  };
+
+  const handleSummaryChartExport = async (format: ChartExportFormat) => {
+    setSummaryExportLoading(true);
+    const data = await generateSummaryChart(summaryChartStyle, format);
+    if (data?.chart) {
+      downloadChartFromBase64(data.chart, format, 'thematic-go-summary', data.media_type);
+    }
+    setSummaryExportLoading(false);
+  };
+
+  const generateThemeChart = async (
+    theme: string,
+    style: ChartStyleOptions = themeChartStyle,
+    format: ChartExportFormat = 'png',
+  ) => {
+    if (!selectedFile) return null;
 
     try {
-      console.log('Generating theme chart for:', theme);
-      setSelectedTheme(theme); // Set the selected theme to filter results
-      
+      setSelectedTheme(theme);
+
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('theme', theme);
-      
+      appendChartStyleToFormData(formData, style, format);
+
       const response = await fetch(`${API_BASE_URL}/api/ontology/theme-chart`, {
         method: 'POST',
         body: formData,
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Theme chart response:', data);
-        // Backend returns {"chart_base64": chart_base64, "subterms": [...]}
-        if (data.chart_base64) {
-          setThemeChart(`data:image/png;base64,${data.chart_base64}`);
-        } else {
-          console.error('No chart data in response:', data);
-        }
-      } else {
+      if (!response.ok) {
         console.error('Failed to generate theme chart:', response.status, response.statusText);
+        return null;
       }
+
+      const data = await response.json();
+      if (data.chart_base64) {
+        if (format === 'png') {
+          setThemeChart(chartResponseToDataUrl(data.chart_base64, 'png', data.media_type));
+        }
+        return data as { chart_base64: string; format: ChartExportFormat; media_type?: string };
+      }
+      console.error('No chart data in response:', data);
+      return null;
     } catch (error) {
       console.error('Error generating theme chart:', error);
+      return null;
     }
+  };
+
+  const handleThemeChartApply = async () => {
+    if (!selectedTheme) return;
+    setThemeChartLoading(true);
+    await generateThemeChart(selectedTheme, themeChartStyle, 'png');
+    setThemeChartLoading(false);
+  };
+
+  const handleThemeChartExport = async (format: ChartExportFormat) => {
+    if (!selectedTheme) return;
+    setThemeExportLoading(true);
+    const data = await generateThemeChart(selectedTheme, themeChartStyle, format);
+    if (data?.chart_base64) {
+      downloadChartFromBase64(
+        data.chart_base64,
+        format,
+        `thematic-go-${selectedTheme}`,
+        data.media_type,
+      );
+    }
+    setThemeExportLoading(false);
+  };
+
+  const requestThemeChart = async (theme: string) => {
+    setThemeChartLoading(true);
+    await generateThemeChart(theme, themeChartStyle, 'png');
+    setThemeChartLoading(false);
   };
 
   const clearThemeSelection = () => {
@@ -389,7 +464,7 @@ export default function DefaultTheme() {
                 {Array.from(new Set(results.map(r => r.theme))).map((theme) => (
                   <button
                     key={theme}
-                    onClick={() => generateThemeChart(theme)}
+                    onClick={() => requestThemeChart(theme)}
                     className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 shadow-sm ${
                       selectedTheme === theme
                         ? 'bg-blue-100 border-2 border-blue-300 text-blue-800'
@@ -487,42 +562,42 @@ export default function DefaultTheme() {
         )}
 
         {/* Charts Section */}
-        {(summaryChart || themeChart) && (
+        {(summaryChart || themeChart || summaryChartLoading || themeChartLoading) && (
           <div className="space-y-8 mb-8">
-            {/* Summary Chart */}
-            {summaryChart && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-                <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Summary Chart</h3>
-                  <p className="text-gray-600">Overview of all identified themes and their significance</p>
-                </div>
-                <div className="flex justify-center">
-                  <img 
-                    src={summaryChart} 
-                    alt="Summary Chart" 
-                    className="max-w-full h-auto rounded-lg shadow-lg"
-                    style={{ minHeight: '400px', maxHeight: '600px' }}
-                  />
-                </div>
-              </div>
+            {(summaryChart || summaryChartLoading) && (
+              <ThematicGoChartPanel
+                title="Summary Chart"
+                subtitle="Overview of all identified themes and their significance"
+                defaultChartTitle="Gene Ontology Analysis Summary by Theme"
+                chartSrc={summaryChart || null}
+                loading={summaryChartLoading}
+                exportLoading={summaryExportLoading}
+                variant="summary"
+                style={summaryChartStyle}
+                onStyleChange={setSummaryChartStyle}
+                onApply={handleSummaryChartApply}
+                onExport={handleSummaryChartExport}
+              />
             )}
 
-            {/* Theme Chart */}
-            {themeChart && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-                <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Theme-Specific Analysis</h3>
-                  <p className="text-gray-600">Detailed breakdown of terms within the selected theme</p>
-                </div>
-                <div className="flex justify-center">
-                  <img 
-                    src={themeChart} 
-                    alt="Theme Chart" 
-                    className="max-w-full h-auto rounded-lg shadow-lg"
-                    style={{ minHeight: '400px', maxHeight: '600px' }}
-                  />
-                </div>
-              </div>
+            {(themeChart || themeChartLoading) && (
+              <ThematicGoChartPanel
+                title="Theme-Specific Analysis"
+                subtitle="Detailed breakdown of terms within the selected theme"
+                defaultChartTitle={
+                  selectedTheme
+                    ? `Top GO Terms in Theme: ${selectedTheme}`
+                    : 'Top GO Terms in Theme'
+                }
+                chartSrc={themeChart || null}
+                loading={themeChartLoading}
+                exportLoading={themeExportLoading}
+                variant="theme"
+                style={themeChartStyle}
+                onStyleChange={setThemeChartStyle}
+                onApply={handleThemeChartApply}
+                onExport={handleThemeChartExport}
+              />
             )}
           </div>
         )}
