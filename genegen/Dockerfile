@@ -20,20 +20,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=4096
 ENV GENERATE_SOURCEMAP=false
 
-# Prefer Coolify build arg, then generic ARG, then existing coolify-deploy.env in context
-RUN API_URL="${COOLIFY_NEXT_PUBLIC_API_URL:-${NEXT_PUBLIC_API_URL:-}}" \
-  && if [ -z "$API_URL" ] && [ -f coolify-deploy.env ]; then \
-       echo "Using coolify-deploy.env from build context"; \
-     elif [ -n "$API_URL" ]; then \
-       printf '%s\n' \
-         "NEXT_PUBLIC_API_URL=${API_URL}" \
-         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
-         "CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY:-${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}}" \
-         "CLERK_SECRET_KEY=${CLERK_SECRET_KEY}" \
-         > coolify-deploy.env; \
-     elif [ ! -f coolify-deploy.env ]; then \
-       echo "ERROR: Set NEXT_PUBLIC_API_URL build arg or provide coolify-deploy.env" >&2; exit 1; \
-     fi
+# Merge build args with coolify-deploy.env (Coolify often only passes API URL at build time)
+RUN chmod +x scripts/prepare-coolify-deploy-env.sh \
+  && ./scripts/prepare-coolify-deploy-env.sh
 
 RUN chmod +x docker-entrypoint.sh
 RUN chmod +x scripts/check-no-clerk-middleware.sh && ./scripts/check-no-clerk-middleware.sh

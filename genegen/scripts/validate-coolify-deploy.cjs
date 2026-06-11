@@ -67,7 +67,13 @@ if (!isInternalDockerApi && /CHANGE_ME|REPLACE-WITH|your-api\.example/i.test(api
 
 if (!/^pk_(test|live)_/.test(npk) || npk.includes("CHANGE_ME")) {
   console.error(
-    "[validate] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must start with pk_test_ or pk_live_ (from Clerk Dashboard → API Keys).",
+    "[validate] NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must start with pk_test_ or pk_live_.",
+  );
+  console.error(
+    "[validate] Coolify: add it under Environment Variables and enable 'Available at Buildtime'.",
+  );
+  console.error(
+    "[validate] Or commit coolify-deploy.env in genegen/ (private repo) with keys filled in.",
   );
   process.exit(1);
 }
