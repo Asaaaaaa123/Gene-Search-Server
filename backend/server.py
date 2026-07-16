@@ -1563,7 +1563,9 @@ def build_restricted_ontology_themes_by_id(
         for k in kws:
             if not isinstance(k, str):
                 continue
-            s = k.strip()
+            # GO term text is lowercased before matching, so keywords must be lowercase
+            # to match; users type them as "DNA Repair", "dna repair", "DNA REPAIR", etc.
+            s = k.strip().lower()
             if not s:
                 continue
             from_payload.setdefault(tid, []).append(s)
@@ -1833,8 +1835,13 @@ async def generate_theme_chart(
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         print(f"Enrichment analysis completed with {len(enr_df)} significant terms")
         
-        # Assign themes (publication-style multi-theme mapping)
-        enr_df = ontology_api.annotate_with_themes_publication(enr_df)
+        # `theme` is a checkbox id (custom flow) or a publication display name (default flow).
+        # The custom flow installs an id-keyed map above, so it must annotate from self.themes;
+        # publication annotation ignores that map and would only ever yield display names.
+        if custom_theme_data:
+            enr_df = ontology_api.annotate_with_themes(enr_df)
+        else:
+            enr_df = ontology_api.annotate_with_themes_publication(enr_df)
         themed_terms = enr_df[enr_df["Theme"].notna()]
         print(f"Assigned themes to {len(themed_terms)} terms")
         print(f"Available themes in data: {enr_df['Theme'].dropna().unique().tolist()}")

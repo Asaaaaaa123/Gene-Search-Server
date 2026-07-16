@@ -100,26 +100,7 @@ function weightToColor(
   );
 }
 
-/** Directed chord matrix: flow only from lower index → higher index (avoids duplicate ribbons for symmetric overlap). */
-function buildChordFlowMatrix(
-  nodes: ThemeOverlapNode[],
-  edges: ThemeOverlapEdge[]
-): number[][] {
-  const n = nodes.length;
-  const idToIdx = new Map(nodes.map((node, i) => [node.id, i] as const));
-  const M: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
-  for (const e of edges) {
-    const ia = idToIdx.get(e.source);
-    const ib = idToIdx.get(e.target);
-    if (ia === undefined || ib === undefined) continue;
-    const lo = Math.min(ia, ib);
-    const hi = Math.max(ia, ib);
-    M[lo][hi] = e.weight;
-  }
-  return M;
-}
-
-/** Symmetric matrix for heatmap (includes zeros on diagonal). */
+/** Symmetric matrix for chord + heatmap (includes zeros on diagonal). */
 function buildSymmetricMatrix(
   nodes: ThemeOverlapNode[],
   edges: ThemeOverlapEdge[]
@@ -328,9 +309,15 @@ export default function ThemeOverlapNetwork({ data, loading, className = '' }: T
     [data, filteredEdges]
   );
 
+  /**
+   * Symmetric: d3.chord() sizes each sector by its ROW sum, so a triangular matrix
+   * gives the highest-index theme a zero-width (invisible) sector — which hid any
+   * newly added theme, since it sorts last. Symmetric input yields one ribbon per
+   * pair (d3 dedupes them), so sectors stay proportional to total overlap.
+   */
   const chordMatrix = useMemo(() => {
     if (!data || chordParticipatingNodes.length < 2) return [];
-    return buildChordFlowMatrix(chordParticipatingNodes, filteredEdges);
+    return buildSymmetricMatrix(chordParticipatingNodes, filteredEdges);
   }, [data, chordParticipatingNodes, filteredEdges]);
 
   useEffect(() => {
