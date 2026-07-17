@@ -73,7 +73,10 @@ if (!/^pk_(test|live)_/.test(npk) || npk.includes("CHANGE_ME")) {
     "[validate] Coolify: add it under Environment Variables and enable 'Available at Buildtime'.",
   );
   console.error(
-    "[validate] Or commit coolify-deploy.env in genegen/ (private repo) with keys filled in.",
+    "[validate] Build args are the only way in: the committed genegen/coolify-deploy.env is",
+  );
+  console.error(
+    "[validate] excluded from the build context (.dockerignore) and regenerated from ARGs here.",
   );
   process.exit(1);
 }

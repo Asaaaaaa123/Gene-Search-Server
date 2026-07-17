@@ -4,9 +4,19 @@
 
 ### 1. 环境变量配置
 
-**若 Coolify 无法添加环境变量：** 编辑并提交 `genegen/coolify-deploy.env`（模板见 `genegen/coolify-deploy.env.example`）。Docker 构建时会 `source` 该文件，`docker-entrypoint.sh` 在容器启动时再次加载，无需在 Coolify UI 里配置。注意：真实密钥会进入 Git 与镜像层，**仅适用于私有仓库**。
+**前端密钥必须走 Build Arguments（唯一可用方式）：** `Dockerfile.frontend` 用构建参数 `NEXT_PUBLIC_API_URL`、`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`、`CLERK_SECRET_KEY`（可选 `CLERK_PUBLISHABLE_KEY`，缺省回退到公钥）在构建阶段**生成** `coolify-deploy.env`，再复制为镜像内 `/app/.env.runtime` 供运行时加载。在 Coolify 中请把这些变量设为 **Build Arguments**，或在 Environment Variables 里勾选 **Available at Buildtime**。
 
-**重要：** 若 Coolify 使用仓库根目录为 **Docker 构建上下文** 且 Dockerfile 为 `Dockerfile.frontend`，根目录 `.dockerignore` 里的 `*.env` 曾会排除 `genegen/coolify-deploy.env`，导致构建拿不到密钥或行为异常。已在 `.dockerignore` 中加入 `!genegen/coolify-deploy.env` 例外。部署后请在容器日志中确认出现 `[genegen] starting (...)`，以验证新镜像已生效；若仍出现 `middleware.js` + Clerk 报错，说明运行的是旧镜像或未推送最新提交，请 **Disable build cache** 后重新部署。
+**注意：提交到 Git 的 `genegen/coolify-deploy.env` 不会被构建使用。** 根目录 `.dockerignore` 已将其排除在 **Docker 构建上下文**之外（可用 `COPY genegen/ /probe/` 验证：该文件不存在），且构建阶段会用上述 ARG **重新生成**同名文件并覆盖。因此**编辑或提交该文件不会影响构建结果**——密钥只能通过 Build Arguments 传入。该文件仅作本地参考，请勿依赖它下发密钥。
+
+**构建会在密钥缺失时直接失败（非静默降级）：** `scripts/validate-coolify-deploy.cjs` 校验各字段格式，不符合即 `exit 1` 中断构建。常见报错与含义：
+
+| 构建日志 | 原因 |
+| --- | --- |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY must start with pk_test_ or pk_live_` | 未把公钥传为 Build Argument（最常见） |
+| `CLERK_SECRET_KEY must start with sk_test_ or sk_live_` | 未传 secret key |
+| `NEXT_PUBLIC_API_URL looks like a Clerk key` | 变量填错行（把 `pk_`/`sk_` 填进了 API URL） |
+
+**验证新镜像已生效：** 部署后在容器日志中确认出现 `[genegen] starting (...)` 与 `[GENEGEN-BOOT] ...`。若仍出现 `middleware.js` + Clerk 报错，说明运行的是旧镜像或未推送最新提交，请 **Disable build cache** 后重新部署。
 
 **Edge 中间件：** 构建完成后会运行 `scripts/strip-edge-middleware.cjs`，删除 `.next/**/server/middleware.js` 并清空 `middleware-manifest.json`，避免健康检查请求进入含 Clerk 的 Edge 包（即使缓存或旧代码曾生成过该文件）。
 
