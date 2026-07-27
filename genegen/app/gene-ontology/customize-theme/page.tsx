@@ -42,6 +42,58 @@ interface ThemeOption {
   backendThemeName?: string; // Backend display name for predefined themes
 }
 
+const CATEGORY_TO_GO_ASPECT: Record<string, string> = {
+  'Biological Process': 'BP',
+  'Molecular Function': 'MF',
+  'Cellular Component': 'CC',
+};
+
+/** Predefined themes (keywords must match backend server.py theme definitions). */
+const PREDEFINED_THEME_OPTIONS: ThemeOption[] = [
+  // Biological Processes
+  { id: 'metabolism', name: 'Metabolism', description: 'Metabolic processes and pathways', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+  { id: 'cell_cycle', name: 'Cell Cycle', description: 'Cell division and cycle regulation', category: 'Biological Process', backendThemeName: 'Cell-cycle & Apoptosis', keywords: ['cell cycle', 'mitotic', 'chromosome', 'checkpoint', 'dna replication', 'nuclear division', 'apoptosis', 'programmed cell death', 'caspase'] },
+  { id: 'apoptosis', name: 'Apoptosis', description: 'Programmed cell death', category: 'Biological Process', backendThemeName: 'Cell-cycle & Apoptosis', keywords: ['cell cycle', 'mitotic', 'chromosome', 'checkpoint', 'dna replication', 'nuclear division', 'apoptosis', 'programmed cell death', 'caspase'] },
+  { id: 'immune_response', name: 'Immune Response', description: 'Immune system and defense', category: 'Biological Process', backendThemeName: 'Inflammation & immune signaling', keywords: ['inflammation', 'inflammatory', 'tnf', 'il-1', 'il-6', 'nf-kb', 'toll-like', 'interleukin', 'chemokine', 'ccl', 'cxcl', 'immune response', 'inflammasome', 'pattern recognition', 'pathogen response', 'immune system', 'inflammatory response', 'immune signaling', 'toll-like receptor'] },
+  { id: 'development', name: 'Development', description: 'Organism development and differentiation', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
+  { id: 'signaling', name: 'Signaling', description: 'Cell signaling and communication', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
+  { id: 'transport', name: 'Transport', description: 'Molecular transport and trafficking', category: 'Biological Process', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
+  { id: 'transcription', name: 'Transcription', description: 'Gene transcription and regulation', category: 'Biological Process', backendThemeName: 'Nucleus & Nuclear Processes', keywords: ['nucleus', 'nuclear', 'chromatin', 'dna', 'rna', 'transcription', 'nucleolus', 'nuclear envelope', 'nuclear pore', 'chromosome'] },
+  { id: 'translation', name: 'Translation', description: 'Protein translation and synthesis', category: 'Biological Process', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['ribosome', 'translation', 'translational', 'protein synthesis', 'endoplasmic reticulum', 'er', 'secretory', 'protein folding', 'glycosylation'] },
+  { id: 'stress_response', name: 'Stress Response', description: 'Cellular stress and adaptation', category: 'Biological Process', backendThemeName: 'Stress & cytokine response', keywords: ['stress', 'interferon', 'cytokine', 'inflammatory', 'defense', 'response to stress', 'cellular response to stress', 'response to cytokine', 'cytokine production'] },
+  // Molecular Functions
+  { id: 'enzyme_activity', name: 'Enzyme Activity', description: 'Catalytic and enzymatic functions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+  { id: 'binding', name: 'Binding', description: 'Molecular binding and interactions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
+  { id: 'receptor_activity', name: 'Receptor Activity', description: 'Receptor and signal transduction', category: 'Molecular Function', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
+  { id: 'transporter_activity', name: 'Transporter Activity', description: 'Membrane transport functions', category: 'Molecular Function', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
+  { id: 'structural_molecule', name: 'Structural Molecule', description: 'Structural and architectural functions', category: 'Molecular Function', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
+  // Cellular Components
+  { id: 'membrane', name: 'Membrane', description: 'Membrane and membrane-bound organelles', category: 'Cellular Component', backendThemeName: 'Membrane & Cell Surface', keywords: ['membrane', 'plasma membrane', 'cell surface', 'membrane protein', 'transmembrane', 'integral membrane', 'membrane transport', 'ion channel'] },
+  { id: 'nucleus', name: 'Nucleus', description: 'Nuclear components and processes', category: 'Cellular Component', backendThemeName: 'Nucleus & Nuclear Processes', keywords: ['nucleus', 'nuclear', 'chromatin', 'dna', 'rna', 'transcription', 'nucleolus', 'nuclear envelope', 'nuclear pore', 'chromosome'] },
+  { id: 'cytoplasm', name: 'Cytoplasm', description: 'Cytoplasmic components and processes', category: 'Cellular Component', backendThemeName: 'Cytoplasm & Cytoskeleton', keywords: ['cytoplasm', 'cytoskeleton', 'microtubule', 'actin', 'intermediate filament', 'microfilament', 'centrosome', 'centriole', 'cilium', 'flagellum'] },
+  { id: 'mitochondria', name: 'Mitochondria', description: 'Mitochondrial functions and processes', category: 'Cellular Component', backendThemeName: 'Mitochondria & Energy', keywords: ['mitochondria', 'mitochondrial', 'atp', 'energy', 'respiration', 'electron transport', 'oxidative phosphorylation', 'krebs cycle'] },
+  { id: 'endoplasmic_reticulum', name: 'Endoplasmic Reticulum', description: 'ER and secretory pathway', category: 'Cellular Component', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['endoplasmic reticulum', 'er', 'golgi', 'golgi apparatus', 'vesicle', 'secretory', 'protein folding', 'glycosylation', 'trafficking'] },
+  { id: 'golgi', name: 'Golgi Apparatus', description: 'Golgi complex and vesicle trafficking', category: 'Cellular Component', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['endoplasmic reticulum', 'er', 'golgi', 'golgi apparatus', 'vesicle', 'secretory', 'protein folding', 'glycosylation', 'trafficking'] },
+  { id: 'cytoskeleton', name: 'Cytoskeleton', description: 'Cytoskeletal components and organization', category: 'Cellular Component', backendThemeName: 'Cytoplasm & Cytoskeleton', keywords: ['cytoplasm', 'cytoskeleton', 'microtubule', 'actin', 'intermediate filament', 'microfilament', 'centrosome', 'centriole', 'cilium', 'flagellum'] },
+];
+
+/** Keep only themes from the first selected theme's category. */
+function filterThemesToSingleCategory(
+  selectedIds: string[],
+  customThemes: ThemeOption[],
+): string[] {
+  if (selectedIds.length === 0) return selectedIds;
+  const themes = [...PREDEFINED_THEME_OPTIONS, ...customThemes];
+  const firstCategory = selectedIds
+    .map(id => themes.find(t => t.id === id)?.category)
+    .find((c): c is string => Boolean(c));
+  if (!firstCategory) return selectedIds;
+  const allowed = new Set(
+    themes.filter(t => t.category === firstCategory).map(t => t.id)
+  );
+  return selectedIds.filter(id => allowed.has(id));
+}
+
 export default function CustomizeTheme() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
@@ -98,7 +150,8 @@ export default function CustomizeTheme() {
       setThemeMetaOverrides(ct.themeMetaOverrides);
     }
     if (ct.selectedThemes && Array.isArray(ct.selectedThemes)) {
-      setSelectedThemes(ct.selectedThemes);
+      const customs = Array.isArray(ct.customThemes) ? (ct.customThemes as ThemeOption[]) : [];
+      setSelectedThemes(filterThemesToSingleCategory(ct.selectedThemes, customs));
     }
   }, []);
 
@@ -187,34 +240,8 @@ export default function CustomizeTheme() {
     return num.toFixed(decimals);
   };
 
-  // Predefined theme options with default keywords (must match backend server.py theme definitions)
-  const themeOptions: ThemeOption[] = [
-    // Biological Processes
-    { id: 'metabolism', name: 'Metabolism', description: 'Metabolic processes and pathways', category: 'Biological Process', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
-    { id: 'cell_cycle', name: 'Cell Cycle', description: 'Cell division and cycle regulation', category: 'Biological Process', backendThemeName: 'Cell-cycle & Apoptosis', keywords: ['cell cycle', 'mitotic', 'chromosome', 'checkpoint', 'dna replication', 'nuclear division', 'apoptosis', 'programmed cell death', 'caspase'] },
-    { id: 'apoptosis', name: 'Apoptosis', description: 'Programmed cell death', category: 'Biological Process', backendThemeName: 'Cell-cycle & Apoptosis', keywords: ['cell cycle', 'mitotic', 'chromosome', 'checkpoint', 'dna replication', 'nuclear division', 'apoptosis', 'programmed cell death', 'caspase'] },
-    { id: 'immune_response', name: 'Immune Response', description: 'Immune system and defense', category: 'Biological Process', backendThemeName: 'Inflammation & immune signaling', keywords: ['inflammation', 'inflammatory', 'tnf', 'il-1', 'il-6', 'nf-kb', 'toll-like', 'interleukin', 'chemokine', 'ccl', 'cxcl', 'immune response', 'inflammasome', 'pattern recognition', 'pathogen response', 'immune system', 'inflammatory response', 'immune signaling', 'toll-like receptor'] },
-    { id: 'development', name: 'Development', description: 'Organism development and differentiation', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
-    { id: 'signaling', name: 'Signaling', description: 'Cell signaling and communication', category: 'Biological Process', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
-    { id: 'transport', name: 'Transport', description: 'Molecular transport and trafficking', category: 'Biological Process', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
-    { id: 'transcription', name: 'Transcription', description: 'Gene transcription and regulation', category: 'Biological Process', backendThemeName: 'Nucleus & Nuclear Processes', keywords: ['nucleus', 'nuclear', 'chromatin', 'dna', 'rna', 'transcription', 'nucleolus', 'nuclear envelope', 'nuclear pore', 'chromosome'] },
-    { id: 'translation', name: 'Translation', description: 'Protein translation and synthesis', category: 'Biological Process', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['ribosome', 'translation', 'translational', 'protein synthesis', 'endoplasmic reticulum', 'er', 'secretory', 'protein folding', 'glycosylation'] },
-    { id: 'stress_response', name: 'Stress Response', description: 'Cellular stress and adaptation', category: 'Biological Process', backendThemeName: 'Stress & cytokine response', keywords: ['stress', 'interferon', 'cytokine', 'inflammatory', 'defense', 'response to stress', 'cellular response to stress', 'response to cytokine', 'cytokine production'] },
-    // Molecular Functions
-    { id: 'enzyme_activity', name: 'Enzyme Activity', description: 'Catalytic and enzymatic functions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
-    { id: 'binding', name: 'Binding', description: 'Molecular binding and interactions', category: 'Molecular Function', backendThemeName: 'Metabolic re-wiring', keywords: ['metabolic', 'oxidoreductase', 'catabolic', 'fatty', 'one-carbon', 'biosynthetic'] },
-    { id: 'receptor_activity', name: 'Receptor Activity', description: 'Receptor and signal transduction', category: 'Molecular Function', backendThemeName: 'Neurotrophic Signaling & Growth Factors', keywords: ['neurotrophin', 'ngf', 'bdnf', 'ntf', 'trk', 'trka', 'trkb', 'gdnf', 'growth factor', 'igf', 'egf', 'fgf', 'receptor tyrosine kinase'] },
-    { id: 'transporter_activity', name: 'Transporter Activity', description: 'Membrane transport functions', category: 'Molecular Function', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
-    { id: 'structural_molecule', name: 'Structural Molecule', description: 'Structural and architectural functions', category: 'Molecular Function', backendThemeName: 'Extracellular matrix & adhesion', keywords: ['extracellular', 'matrix', 'adhesion', 'integrin', 'collagen', 'remodeling', 'fibronectin', 'laminin', 'basement membrane', 'mmp', 'matrix metalloproteinase', 'tenascin', 'focal adhesion', 'ecm', 'tissue remodeling', 'stromal', 'scaffold', 'matrisome', 'cell junction', 'cell adhesion', 'cell-matrix', 'desmosome'] },
-    // Cellular Components
-    { id: 'membrane', name: 'Membrane', description: 'Membrane and membrane-bound organelles', category: 'Cellular Component', backendThemeName: 'Membrane & Cell Surface', keywords: ['membrane', 'plasma membrane', 'cell surface', 'membrane protein', 'transmembrane', 'integral membrane', 'membrane transport', 'ion channel'] },
-    { id: 'nucleus', name: 'Nucleus', description: 'Nuclear components and processes', category: 'Cellular Component', backendThemeName: 'Nucleus & Nuclear Processes', keywords: ['nucleus', 'nuclear', 'chromatin', 'dna', 'rna', 'transcription', 'nucleolus', 'nuclear envelope', 'nuclear pore', 'chromosome'] },
-    { id: 'cytoplasm', name: 'Cytoplasm', description: 'Cytoplasmic components and processes', category: 'Cellular Component', backendThemeName: 'Cytoplasm & Cytoskeleton', keywords: ['cytoplasm', 'cytoskeleton', 'microtubule', 'actin', 'intermediate filament', 'microfilament', 'centrosome', 'centriole', 'cilium', 'flagellum'] },
-    { id: 'mitochondria', name: 'Mitochondria', description: 'Mitochondrial functions and processes', category: 'Cellular Component', backendThemeName: 'Mitochondria & Energy', keywords: ['mitochondria', 'mitochondrial', 'atp', 'energy', 'respiration', 'electron transport', 'oxidative phosphorylation', 'krebs cycle'] },
-    { id: 'endoplasmic_reticulum', name: 'Endoplasmic Reticulum', description: 'ER and secretory pathway', category: 'Cellular Component', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['endoplasmic reticulum', 'er', 'golgi', 'golgi apparatus', 'vesicle', 'secretory', 'protein folding', 'glycosylation', 'trafficking'] },
-    { id: 'golgi', name: 'Golgi Apparatus', description: 'Golgi complex and vesicle trafficking', category: 'Cellular Component', backendThemeName: 'Endoplasmic Reticulum & Golgi', keywords: ['endoplasmic reticulum', 'er', 'golgi', 'golgi apparatus', 'vesicle', 'secretory', 'protein folding', 'glycosylation', 'trafficking'] },
-    { id: 'cytoskeleton', name: 'Cytoskeleton', description: 'Cytoskeletal components and organization', category: 'Cellular Component', backendThemeName: 'Cytoplasm & Cytoskeleton', keywords: ['cytoplasm', 'cytoskeleton', 'microtubule', 'actin', 'intermediate filament', 'microfilament', 'centrosome', 'centriole', 'cilium', 'flagellum'] },
-  ];
+  // Predefined theme options (module-level constant)
+  const themeOptions = PREDEFINED_THEME_OPTIONS;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -241,11 +268,20 @@ export default function CustomizeTheme() {
   };
 
   const handleThemeToggle = (themeId: string) => {
-    setSelectedThemes(prev => 
-      prev.includes(themeId) 
-        ? prev.filter(id => id !== themeId)
-        : [...prev, themeId]
-    );
+    const themes = [...themeOptions, ...customThemes];
+    const theme = themes.find(t => t.id === themeId);
+    if (!theme) return;
+
+    setSelectedThemes(prev => {
+      if (prev.includes(themeId)) {
+        return prev.filter(id => id !== themeId);
+      }
+      // Lock selection to one GO category (BP / MF / CC) at a time
+      const sameCategoryIds = new Set(
+        themes.filter(t => t.category === theme.category).map(t => t.id)
+      );
+      return [...prev.filter(id => sameCategoryIds.has(id)), themeId];
+    });
   };
 
   const handleAddThemeClick = (category: string) => {
@@ -371,6 +407,17 @@ export default function CustomizeTheme() {
   // Merge predefined and custom themes (used by buildCustomThemePayload)
   const allThemes = [...themeOptions, ...customThemes];
 
+  /** Active GO category from current selection — locks the other two sections. */
+  const activeCategory =
+    selectedThemes
+      .map(id => allThemes.find(t => t.id === id)?.category)
+      .find((c): c is string => Boolean(c)) ?? null;
+
+  const activeGoAspect = activeCategory ? CATEGORY_TO_GO_ASPECT[activeCategory] ?? null : null;
+
+  const isCategoryDisabled = (category: string) =>
+    activeCategory !== null && category !== activeCategory;
+
   /** Map API result key (checkbox id, or legacy backend display name) → theme row. */
   const resolveThemeOption = (themeKey: string): ThemeOption | undefined => {
     const byId = allThemes.find(x => x.id === themeKey);
@@ -437,6 +484,7 @@ export default function CustomizeTheme() {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
+      if (activeGoAspect) formData.append('go_aspect', activeGoAspect);
       const customPayload = buildCustomThemePayload();
       if (customPayload.length > 0) formData.append('custom_themes', JSON.stringify(customPayload));
       const response = await fetch(url, { method: 'POST', body: formData });
@@ -496,6 +544,7 @@ export default function CustomizeTheme() {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
+      if (activeGoAspect) formData.append('go_aspect', activeGoAspect);
       
       const customThemeData = buildCustomThemePayload();
       if (customThemeData.length > 0) {
@@ -571,6 +620,7 @@ export default function CustomizeTheme() {
       formData.append('theme', theme.id);
       formData.append('theme_display', getThemeName(theme));
       formData.append('custom_themes', JSON.stringify(buildSingleThemePayloadFromTheme(theme)));
+      if (activeGoAspect) formData.append('go_aspect', activeGoAspect);
       appendChartStyleToFormData(formData, style, format);
 
       const response = await fetch(`${API_BASE_URL}/api/ontology/theme-chart`, {
@@ -635,6 +685,7 @@ export default function CustomizeTheme() {
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('themes', JSON.stringify(selectedThemes));
+      if (activeGoAspect) formData.append('go_aspect', activeGoAspect);
 
       const customThemeData = buildCustomThemePayload();
       if (customThemeData.length > 0) {
@@ -797,53 +848,80 @@ export default function CustomizeTheme() {
         {/* Theme Selection Section */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4 text-gray-900">Theme Selection</h2>
-          <p className="text-gray-600 mb-6">Select the themes you want to analyze. You can choose multiple themes from different categories.</p>
+          <p className="text-gray-600 mb-6">
+            Select themes within one category (Biological Process, Molecular Function, or Cellular Component).
+            Choosing a theme locks the other two categories until you clear your selection.
+            {activeCategory && (
+              <span className="block mt-2 text-sm text-blue-700">
+                Analyzing within <strong>{activeCategory}</strong>
+                {activeGoAspect ? ` (GO:${activeGoAspect})` : ''}. Clear all selections to switch categories.
+              </span>
+            )}
+          </p>
           
           <div className="space-y-6">
-            {Object.entries(groupedThemes).map(([category, themes]) => (
-              <div key={category} className="border rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">{category}</h3>
+            {Object.entries(groupedThemes).map(([category, themes]) => {
+              const disabled = isCategoryDisabled(category);
+              return (
+              <div
+                key={category}
+                className={`border rounded-lg p-4 transition-opacity ${
+                  disabled ? 'opacity-45 bg-gray-100 pointer-events-none grayscale' : ''
+                }`}
+                aria-disabled={disabled}
+              >
+                <h3 className={`text-lg font-semibold mb-3 ${disabled ? 'text-gray-500' : 'text-gray-900'}`}>
+                  {category}
+                  {disabled && (
+                    <span className="ml-2 text-sm font-normal text-gray-400">(unavailable — clear other category first)</span>
+                  )}
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {themes.map((theme) => (
                     <div
                       key={theme.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors relative ${
-                        selectedThemes.includes(theme.id)
-                          ? 'bg-blue-50 border-blue-300'
-                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      className={`p-3 rounded-lg border transition-colors relative ${
+                        disabled
+                          ? 'bg-gray-100 border-gray-200 cursor-not-allowed'
+                          : selectedThemes.includes(theme.id)
+                          ? 'bg-blue-50 border-blue-300 cursor-pointer'
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100 cursor-pointer'
                       }`}
-                      onClick={() => handleThemeToggle(theme.id)}
+                      onClick={() => !disabled && handleThemeToggle(theme.id)}
                     >
                       <div className="flex items-start space-x-2">
                         <input
                           type="checkbox"
                           checked={selectedThemes.includes(theme.id)}
-                          onChange={() => handleThemeToggle(theme.id)}
+                          disabled={disabled}
+                          onChange={() => !disabled && handleThemeToggle(theme.id)}
                           onClick={(e) => e.stopPropagation()}
                           className="rounded mt-0.5"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900">{getThemeName(theme)}</div>
-                          <div className="text-sm text-gray-600">{getThemeDescription(theme)}</div>
+                          <div className={`font-medium ${disabled ? 'text-gray-500' : 'text-gray-900'}`}>{getThemeName(theme)}</div>
+                          <div className={`text-sm ${disabled ? 'text-gray-400' : 'text-gray-600'}`}>{getThemeDescription(theme)}</div>
                           <div className="mt-2 flex flex-wrap items-center gap-1">
                             {(getKeywordsForTheme(theme).slice(0, 4)).map((kw, i) => (
-                              <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-200 text-gray-700">
+                              <span key={i} className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs ${disabled ? 'bg-gray-200 text-gray-500' : 'bg-gray-200 text-gray-700'}`}>
                                 {kw}
                               </span>
                             ))}
                             {getKeywordsForTheme(theme).length > 4 && (
                               <span className="text-xs text-gray-500">+{getKeywordsForTheme(theme).length - 4} more</span>
                             )}
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); openEditKeywords(theme); }}
-                              className="text-xs text-blue-600 hover:text-blue-800 font-medium ml-0.5"
-                            >
-                              Edit theme
-                            </button>
+                            {!disabled && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); openEditKeywords(theme); }}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium ml-0.5"
+                              >
+                                Edit theme
+                              </button>
+                            )}
                           </div>
                         </div>
-                        {theme.id.startsWith('custom_') && (
+                        {theme.id.startsWith('custom_') && !disabled && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -863,19 +941,25 @@ export default function CustomizeTheme() {
                   
                   {/* Add Theme Button */}
                   <button
-                    onClick={() => handleAddThemeClick(category)}
-                    className="p-3 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center cursor-pointer group"
+                    onClick={() => !disabled && handleAddThemeClick(category)}
+                    disabled={disabled}
+                    className={`p-3 rounded-lg border-2 border-dashed transition-colors flex items-center justify-center ${
+                      disabled
+                        ? 'border-gray-200 cursor-not-allowed'
+                        : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer group'
+                    }`}
                   >
                     <div className="text-center">
-                      <svg className="w-8 h-8 mx-auto text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className={`w-8 h-8 mx-auto transition-colors ${disabled ? 'text-gray-300' : 'text-gray-400 group-hover:text-blue-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
-                      <div className="text-sm text-gray-500 group-hover:text-blue-600 mt-1">Add Custom Theme</div>
+                      <div className={`text-sm mt-1 ${disabled ? 'text-gray-400' : 'text-gray-500 group-hover:text-blue-600'}`}>Add Custom Theme</div>
                     </div>
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-6 space-x-4">

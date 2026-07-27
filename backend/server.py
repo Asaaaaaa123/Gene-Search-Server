@@ -1797,6 +1797,7 @@ async def generate_theme_chart(
     chart_format: str = Form(None),
     text_styles: str = Form(None),
     chart_title_override: str = Form(None),
+    go_aspect: str = Form(None),
 ):
     """Generate chart for a specific theme (`theme` = internal id; optional `theme_display` for title)."""
     if not file.filename.endswith('.txt'):
@@ -1828,9 +1829,10 @@ async def generate_theme_chart(
             raise HTTPException(status_code=400, detail="No valid genes found in file")
         print(f"Loaded {len(genes)} genes from file")
         
-        # Perform enrichment
+        # Perform enrichment, scoped to selected GO aspect when provided
         enr_df = ontology_api.enrich(genes)
-        enr_df = ontology_api.filter_go_aspect(enr_df, ontology_api.default_go_aspect)
+        aspect = (go_aspect or "").strip().upper() or ontology_api.default_go_aspect
+        enr_df = ontology_api.filter_go_aspect(enr_df, aspect)
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         print(f"Enrichment analysis completed with {len(enr_df)} significant terms")
@@ -1973,7 +1975,8 @@ async def generate_summary_chart(
 async def analyze_custom_ontology(
     file: UploadFile = File(...), 
     themes: str = Form(...),
-    custom_themes: str = Form(None)
+    custom_themes: str = Form(None),
+    go_aspect: str = Form(None),
 ):
     """Analyze gene ontology with custom theme selection"""
     if not file.filename.endswith('.txt'):
@@ -2006,8 +2009,12 @@ async def analyze_custom_ontology(
         if not genes:
             raise HTTPException(status_code=400, detail="No valid genes found in file")
         
-        # Perform enrichment
+        # Perform enrichment, scoped to selected GO aspect (BP / MF / CC) when provided
         enr_df = ontology_api.enrich(genes)
+        aspect = (go_aspect or "").strip().upper() or None
+        if aspect:
+            print(f"Filtering custom analyze to GO aspect: {aspect}")
+            enr_df = ontology_api.filter_go_aspect(enr_df, aspect)
         if enr_df.empty:
             return {"results": [], "message": "No significant enrichment results found"}
         
@@ -2066,6 +2073,7 @@ async def generate_custom_summary_chart(
     chart_format: str = Form(None),
     text_styles: str = Form(None),
     chart_title_override: str = Form(None),
+    go_aspect: str = Form(None),
 ):
     """Generate summary chart for custom theme selection"""
     if not file.filename.endswith('.txt'):
@@ -2099,8 +2107,12 @@ async def generate_custom_summary_chart(
         if not genes:
             raise HTTPException(status_code=400, detail="No valid genes found in file")
         
-        # Perform enrichment
+        # Perform enrichment, scoped to selected GO aspect when provided
         enr_df = ontology_api.enrich(genes)
+        aspect = (go_aspect or "").strip().upper() or None
+        if aspect:
+            print(f"Filtering custom summary chart to GO aspect: {aspect}")
+            enr_df = ontology_api.filter_go_aspect(enr_df, aspect)
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         
@@ -2161,7 +2173,8 @@ async def generate_custom_summary_chart(
 async def get_theme_overlap_network(
     file: UploadFile = File(...),
     themes: str = Form(None),
-    custom_themes: str = Form(None)
+    custom_themes: str = Form(None),
+    go_aspect: str = Form(None),
 ):
     """Return theme-theme gene overlap network (nodes, edges with shared gene count) for default or custom themes."""
     if not file.filename.endswith('.txt'):
@@ -2185,7 +2198,8 @@ async def get_theme_overlap_network(
             )
 
         enr_df = ontology_api.enrich_with_genes(genes)
-        enr_df = ontology_api.filter_go_aspect(enr_df, ontology_api.default_go_aspect)
+        aspect = (go_aspect or "").strip().upper() or ontology_api.default_go_aspect
+        enr_df = ontology_api.filter_go_aspect(enr_df, aspect)
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
 
