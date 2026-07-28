@@ -38,9 +38,11 @@ const nextConfig: NextConfig = {
 
   experimental: {
     optimizePackageImports: ["react-plotly.js", "lucide-react", "framer-motion"],
-    // Lowers peak RAM during `next build` in Docker/Coolify (requires simpler webpack above).
+    // Coolify VPS builds: keep peak RSS low. webpackBuildWorker + high parallelism
+    // often dies with silent exit 255 (OOM killer) during "Creating an optimized production build".
     webpackMemoryOptimizations: true,
-    webpackBuildWorker: true,
+    webpackBuildWorker: false,
+    cpus: 1,
   },
 
   compress: true,

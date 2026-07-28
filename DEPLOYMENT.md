@@ -18,6 +18,8 @@
 
 **验证新镜像已生效：** 部署后在容器日志中确认出现 `[genegen] starting (...)` 与 `[GENEGEN-BOOT] ...`。若仍出现 `middleware.js` + Clerk 报错，说明运行的是旧镜像或未推送最新提交，请 **Disable build cache** 后重新部署。
 
+**前端构建在 `Creating an optimized production build` 处无报错退出（exit 255 / 137）：** 几乎都是宿主机 **OOM**。Dockerfile 已限制 Node 堆为 3GB、关闭 webpack build worker。若仍失败：给 VPS 加 ≥2GB swap，或在 Coolify 用更大内存的 Build Server，并勾选 **Disable build cache** 再部署一次。
+
 **Edge 中间件：** 构建完成后会运行 `scripts/strip-edge-middleware.cjs`，删除 `.next/**/server/middleware.js` 并清空 `middleware-manifest.json`，避免健康检查请求进入含 Clerk 的 Edge 包（即使缓存或旧代码曾生成过该文件）。
 
 **Coolify 覆盖启动命令：** 若面板里把 Command 设为 `node server.js` 且未使用 `docker-entrypoint.sh`，原先 `.env.runtime` 不会加载。现已在构建阶段向 `standalone/server.js` **首行注入** `require('./genegen-boot.cjs')`，在 Next 启动前加载 `.env.runtime` 并再次执行 strip，因此与 Entrypoint 是否被覆盖无关。

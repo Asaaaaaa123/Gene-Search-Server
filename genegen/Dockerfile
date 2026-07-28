@@ -17,8 +17,10 @@ ARG CLERK_PUBLISHABLE_KEY=""
 ARG CLERK_SECRET_KEY=""
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# 3GB heap leaves headroom for Coolify/OS; 4GB often triggers host OOM (exit 255, no Next error).
+ENV NODE_OPTIONS=--max-old-space-size=3072
 ENV GENERATE_SOURCEMAP=false
+ENV NEXT_PRIVATE_WORKER=false
 
 # Merge build args with coolify-deploy.env (Coolify often only passes API URL at build time)
 RUN chmod +x scripts/prepare-coolify-deploy-env.sh \
