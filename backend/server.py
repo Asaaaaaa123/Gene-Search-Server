@@ -1180,12 +1180,13 @@ class GeneOntologyAPI:
         return out.sort_values("Score", ascending=False)
 
     def aggregate(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Aggregate GO terms by theme (custom UI flows; single-theme rows)."""
+        """Aggregate GO terms by theme (custom UI flows; supports multi-theme exploded rows)."""
         if df.empty:
             return pd.DataFrame()
         source_df = df.copy()
         if "Theme" not in source_df.columns:
-            source_df["Theme"] = source_df["name"].apply(self.assign_theme)
+            # Prefer multi-assign when Theme is missing so shared keywords are not exclusive.
+            source_df = self.annotate_with_themes(source_df)
         themed = (
             source_df.dropna(subset=["Theme"])
             .groupby("Theme", sort=False)
@@ -1542,10 +1543,11 @@ def build_restricted_ontology_themes_by_id(
     custom_theme_data: List[Dict[str, Any]],
 ) -> Dict[str, List[str]]:
     """
-    Build assign_theme keyword map keyed by UI checkbox id (e.g. transport, custom_123).
+    Build keyword map keyed by UI checkbox id (e.g. transport, custom_123).
 
     Each selected theme uses only its own keywords from custom_theme_data — no merging
     across themes that share the same backend GO bucket (fixes edited keywords leaking).
+    Custom analyze uses annotate_with_themes so overlapping keywords can match multiple ids.
 
     Payload entries: { "id": str, "keywords": list[str], "name": optional }.
     """
@@ -1596,9 +1598,9 @@ def mirror_aggregate_for_identical_keywords(
     restricted_themes: Dict[str, List[str]],
 ) -> pd.DataFrame:
     """
-    When multiple selected themes use the same keyword list, assign_theme only attributes
-    GO terms to the first bucket (dict iteration order). Duplicate aggregate rows so each
-    theme id still appears in results and summary charts (e.g. Transcription + Transcription2).
+    Legacy helper for exclusive assign_theme flows. Custom analyze/summary now use
+    multi-assign (annotate_with_themes), so identical keyword lists already score
+    independently; kept for overlap-network / any remaining exclusive callers.
     """
     if themed.empty:
         return themed
@@ -2018,14 +2020,15 @@ async def analyze_custom_ontology(
         if enr_df.empty:
             return {"results": [], "message": "No significant enrichment results found"}
         
-        # Assign themes and filter by selected themes
-        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        # Multi-assign so shared keywords count independently for every matching theme
+        # (same as default analyze / theme-chart; not first-match-wins assign_theme).
+        annotated = ontology_api.annotate_with_themes(enr_df)
         
         print(f"Selected theme IDs: {selected_themes}")
-        print(f"Available themes in data: {enr_df['Theme'].dropna().unique().tolist()}")
+        print(f"Available themes in data: {annotated['Theme'].dropna().unique().tolist()}")
         
         # Filter enrichment results to only include selected themes
-        filtered_df = enr_df[enr_df["Theme"].isin(unique_ids)].copy()
+        filtered_df = annotated[annotated["Theme"].isin(unique_ids)].copy()
         
         print(f"Filtered dataframe shape: {filtered_df.shape}")
         
@@ -2033,11 +2036,9 @@ async def analyze_custom_ontology(
             return {"results": [], "message": f"No enrichment results found for selected themes: {unique_ids}"}
         
         # Aggregate results for selected themes
-        restricted_snapshot = dict(ontology_api.themes)
         themed = ontology_api.aggregate(filtered_df)
-        themed = mirror_aggregate_for_identical_keywords(themed, unique_ids, restricted_snapshot)
         
-        # One row per selected theme id (stable order); duplicate keyword lists share the same stats
+        # One row per selected theme id (stable order); shared keywords score on every match
         results = []
         for tid in unique_ids:
             if tid not in themed.index:
@@ -2116,19 +2117,18 @@ async def generate_custom_summary_chart(
         if enr_df.empty:
             raise HTTPException(status_code=400, detail="No significant enrichment results found")
         
-        # Assign themes and filter by selected themes
-        enr_df["Theme"] = enr_df["name"].apply(ontology_api.assign_theme)
+        # Multi-assign so shared keywords count independently for every matching theme
+        # (same as default analyze / theme-chart; not first-match-wins assign_theme).
+        annotated = ontology_api.annotate_with_themes(enr_df)
         
         # Filter enrichment results to only include selected themes
-        filtered_df = enr_df[enr_df["Theme"].isin(unique_ids)].copy()
+        filtered_df = annotated[annotated["Theme"].isin(unique_ids)].copy()
         
         if filtered_df.empty:
             raise HTTPException(status_code=400, detail=f"No enrichment results found for selected themes: {unique_ids}")
         
         # Aggregate results for selected themes
-        restricted_snapshot = dict(ontology_api.themes)
         themed = ontology_api.aggregate(filtered_df)
-        themed = mirror_aggregate_for_identical_keywords(themed, unique_ids, restricted_snapshot)
         
         if themed.empty:
             raise HTTPException(status_code=400, detail="No themes could be aggregated")
