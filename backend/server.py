@@ -2447,6 +2447,53 @@ async def ivcca_heatmap(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating heatmap: {str(e)}")
 
+@app.post("/api/ivcca/matrix")
+async def ivcca_matrix(analyzer_id: str = Form(...)):
+    """Compact correlation matrix + sorted/clustered gene orders for client-side heatmaps"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+
+    result = ivcca_analyzers[analyzer_id].export_matrix_payload()
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+@app.post("/api/ivcca/subset")
+async def ivcca_subset(
+    analyzer_id: str = Form(...),
+    genes: str = Form(...)
+):
+    """
+    Extract a gene subset (e.g. a pathway) from an analyzer's correlation matrix into a
+    new analyzer, so every IVCCA endpoint can run on the smaller matrix.
+    `genes` is a newline-, comma- or whitespace-separated list of gene symbols.
+    """
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+
+    gene_list = [g for g in re.split(r"[\s,;]+", genes) if g.strip()]
+    subset, result = ivcca_analyzers[analyzer_id].create_subset(gene_list)
+    if subset is None:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+    subset_id = secrets.token_hex(8)
+    ivcca_analyzers[subset_id] = subset
+    return {"analyzer_id": subset_id, "parent_id": analyzer_id, **result}
+
+@app.post("/api/ivcca/linkage")
+async def ivcca_linkage(
+    analyzer_id: str = Form(...),
+    method: str = Form("ward")
+):
+    """Hierarchical clustering linkage matrix for client-side dendrograms"""
+    if analyzer_id not in ivcca_analyzers:
+        raise HTTPException(status_code=404, detail="Analyzer not found")
+
+    result = ivcca_analyzers[analyzer_id].compute_linkage(method=method)
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
 @app.post("/api/ivcca/histogram")
 async def ivcca_histogram(analyzer_id: str = Form(...)):
     """Generate correlation histogram"""

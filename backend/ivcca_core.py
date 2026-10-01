@@ -247,6 +247,128 @@ class IVCCAAnalyzer:
                 "message": f"Error sorting matrix: {str(e)}"
             }
     
+    def _row_linkage(self, method: str = 'ward') -> np.ndarray:
+        """Hierarchical linkage over rows of the 1 - |r| distance matrix (same basis as the dendrogram)."""
+        distance_matrix = 1 - np.abs(self.correlation_matrix)
+        return linkage(distance_matrix, method=method)
+
+    def export_matrix_payload(self, include_cluster_order: bool = True) -> Dict:
+        """
+        Compact correlation matrix for client-side rendering.
+
+        The matrix is quantised to int16 (r * 10000, little-endian) and base64-encoded,
+        which keeps an 885-gene matrix around 2 MB while preserving 4 decimal places.
+        Sorted order and scores match sort_correlation_matrix(); cluster order is the
+        leaf order of the ward linkage used by the dendrogram.
+        """
+        if not self.correlation_calculated:
+            return {"status": "error", "message": "Correlation matrix not calculated"}
+
+        try:
+            matrix = np.clip(np.nan_to_num(self.correlation_matrix, nan=0.0), -1.0, 1.0)
+            quantised = np.round(matrix * 10000).astype('<i2')
+            encoded = base64.b64encode(quantised.tobytes()).decode('ascii')
+
+            sort_result = self.sort_correlation_matrix()
+            if sort_result["status"] == "error":
+                return sort_result
+
+            n_genes = matrix.shape[0]
+            cluster_order = None
+            if include_cluster_order and 3 <= n_genes <= 4000:
+                from scipy.cluster.hierarchy import leaves_list
+                cluster_order = leaves_list(self._row_linkage('ward')).tolist()
+
+            return {
+                "status": "success",
+                "genes": [str(g) for g in self.gene_names],
+                "n": int(n_genes),
+                "encoding": "int16-le-scale-10000",
+                "matrix": encoded,
+                "sorted_order": [int(i) for i in sort_result["sorted_indices"]],
+                "sorted_scores": [float(s) for s in sort_result["sorted_scores"]],
+                "cluster_order": cluster_order,
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Error exporting matrix: {str(e)}"}
+
+    def create_subset(self, genes: List[str]) -> Tuple[Optional['IVCCAAnalyzer'], Dict]:
+        """
+        Build an analyzer for a gene subset (e.g. a pathway) by extracting its rows and
+        columns from this analyzer's correlation matrix. Genes keep the order of `genes`;
+        matching is case-insensitive and duplicates are dropped.
+        """
+        if not self.correlation_calculated:
+            return None, {"status": "error", "message": "Correlation matrix not calculated"}
+
+        index_of = {}
+        for i, name in enumerate(self.gene_names):
+            index_of.setdefault(str(name).lower(), i)
+
+        indices, missing, seen = [], [], set()
+        for gene in genes:
+            key = gene.strip().lower()
+            if not key:
+                continue
+            idx = index_of.get(key)
+            if idx is None:
+                missing.append(gene.strip())
+            elif idx not in seen:
+                seen.add(idx)
+                indices.append(idx)
+
+        if len(indices) < 2:
+            return None, {
+                "status": "error",
+                "message": f"Only {len(indices)} of {len(genes)} genes were found in the dataset; at least 2 are needed.",
+            }
+
+        subset = IVCCAAnalyzer()
+        subset.gene_names = [self.gene_names[i] for i in indices]
+        subset.sample_names = self.sample_names
+        subset.data = self.data[:, indices]
+        subset.correlation_matrix = self.correlation_matrix[np.ix_(indices, indices)].copy()
+        subset.data_loaded = True
+        subset.correlation_calculated = True
+
+        values = subset.correlation_matrix[np.triu_indices(len(indices), k=1)]
+        return subset, {
+            "status": "success",
+            "n_genes": len(indices),
+            "matched_genes": [str(g) for g in subset.gene_names],
+            "missing_genes": missing,
+            "matrix_size": list(subset.correlation_matrix.shape),
+            "statistics": {
+                "mean": float(np.mean(values)),
+                "std": float(np.std(values)),
+                "min": float(np.min(values)),
+                "max": float(np.max(values)),
+                "median": float(np.median(values)),
+            },
+        }
+
+    def compute_linkage(self, method: str = 'ward') -> Dict:
+        """Linkage matrix (scipy format) for client-side dendrogram rendering."""
+        if not self.correlation_calculated:
+            return {"status": "error", "message": "Correlation matrix not calculated"}
+        if method not in ('ward', 'complete', 'average', 'single'):
+            return {"status": "error", "message": f"Unsupported linkage method: {method}"}
+        if len(self.gene_names) < 2:
+            return {"status": "error", "message": "At least two genes are required for clustering"}
+
+        try:
+            from scipy.cluster.hierarchy import leaves_list
+            linkage_matrix = self._row_linkage(method)
+            return {
+                "status": "success",
+                "method": method,
+                "genes": [str(g) for g in self.gene_names],
+                "linkage": linkage_matrix.tolist(),
+                "leaves": leaves_list(linkage_matrix).tolist(),
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Error computing linkage: {str(e)}"}
+
     def create_correlation_heatmap(self, sorted: bool = False, figsize: Tuple[int, int] = (12, 10)) -> Dict:
         """
         Create correlation heatmap visualization
@@ -644,10 +766,12 @@ class IVCCAAnalyzer:
             # Create figure
             fig, ax = plt.subplots(figsize=(15, 8))
             
-            # Create dendrogram
+            # Create dendrogram (labels must cover every leaf; hide them when too dense to read)
+            show_labels = len(self.gene_names) <= 150
             dendrogram(
                 linkage_matrix,
-                labels=self.gene_names[:100] if len(self.gene_names) > 100 else self.gene_names,
+                labels=self.gene_names if show_labels else None,
+                no_labels=not show_labels,
                 leaf_rotation=90,
                 leaf_font_size=8,
                 ax=ax
@@ -1142,7 +1266,8 @@ class IVCCAAnalyzer:
             
             # Adjust perplexity based on number of genes (not samples)
             n_genes = data_filled.shape[0]
-            adjusted_perplexity = min(perplexity, max(5, (n_genes - 1) // 3))
+            # scikit-learn requires perplexity < n_samples, which matters for small pathway matrices
+            adjusted_perplexity = max(1, min(perplexity, max(5, (n_genes - 1) // 3), n_genes - 1))
             
             # Perform PCA first to get initialization (as in MATLAB tsne3.m)
             # Step 1: Perform PCA to get the first three principal components
@@ -1169,14 +1294,17 @@ class IVCCAAnalyzer:
                 init_data = 'random'
             
             # Perform t-SNE with PCA initialization (as in MATLAB)
+            # scikit-learn renamed n_iter -> max_iter in 1.5 and removed n_iter in 1.7
+            import inspect
+            iter_kwarg = 'max_iter' if 'max_iter' in inspect.signature(TSNE.__init__).parameters else 'n_iter'
             tsne = TSNE(
                 n_components=n_components,
                 perplexity=adjusted_perplexity,
                 random_state=random_state,
-                n_iter=1000,
                 init=init_data if isinstance(init_data, np.ndarray) else 'random',
                 n_iter_without_progress=300,
-                method='exact' if n_genes < 1000 else 'barnes_hut'
+                method='exact' if n_genes < 1000 else 'barnes_hut',
+                **{iter_kwarg: 1000}
             )
             tsne_scores = tsne.fit_transform(data_filled)  # Shape: (n_genes, n_components)
             
@@ -1196,7 +1324,16 @@ class IVCCAAnalyzer:
             
             if scatter_result:
                 result["scatter_plot"] = scatter_result
-            
+
+            # Same KMeans settings as the plot helpers, so memberships match the plotted colours
+            if n_clusters and n_clusters > 1:
+                labels = KMeans(n_clusters=n_clusters, random_state=42, n_init=10).fit_predict(tsne_scores)
+                result["cluster_assignments"] = {
+                    int(i + 1): [self.gene_names[j] for j in np.where(labels == i)[0]]
+                    for i in range(n_clusters)
+                    if np.any(labels == i)
+                }
+
             return result
             
         except Exception as e:
