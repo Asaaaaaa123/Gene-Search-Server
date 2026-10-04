@@ -6,6 +6,7 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  CircleQuestionMark,
   Download,
   Info,
   LoaderCircle,
@@ -15,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useHelp } from './helpContext';
 import { downloadText, toCsv } from './matrix';
 
 /* ------------------------------------------------------------------ */
@@ -66,12 +68,17 @@ export function ToolHeader({
   description,
   actions,
   eyebrow,
+  hideHelp,
 }: {
   title: string;
   description?: ReactNode;
   actions?: ReactNode;
   eyebrow?: string;
+  /** The guide page itself has no "How to use" button. */
+  hideHelp?: boolean;
 }) {
+  const help = useHelp();
+  const showHelp = Boolean(help) && !hideHelp;
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0 max-w-3xl">
@@ -81,7 +88,16 @@ export function ToolHeader({
         <h2 className="text-xl font-semibold tracking-tight text-slate-900">{title}</h2>
         {description && <p className="mt-1 text-sm leading-relaxed text-slate-600">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {(actions || showHelp) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {showHelp && (
+            <Btn size="sm" variant="ghost" icon={<CircleQuestionMark className="h-3.5 w-3.5" />} onClick={() => help?.openHelp()}>
+              How to use
+            </Btn>
+          )}
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

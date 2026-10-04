@@ -1,43 +1,36 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import {
-  ChartColumn,
-  ChartScatter,
   Check,
-  CircleDot,
+  CircleQuestionMark,
   Copy,
-  Database,
   FileSpreadsheet,
-  GitCompareArrows,
-  GitFork,
   Grid3x3,
   History,
   Layers,
-  Library,
-  ListOrdered,
   LoaderCircle,
   Lock,
-  Orbit,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   RotateCcw,
-  Share2,
-  Sigma,
-  Split,
-  Target,
   TriangleAlert,
-  Waypoints,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { HelpContext } from './helpContext';
+import { HelpDrawer } from './HelpDrawer';
 import { IvccaProvider, ROOT_SCOPE, useIvcca } from './store';
+import { GROUPS, TOOLS } from './tools';
+import type { ToolDef } from './tools';
 import type { ToolId } from './types';
 import { fmt } from './theme';
 import { Btn } from './ui';
+import { HelpPanel } from './panels/HelpPanel';
 import { DataPanel } from './panels/DataPanel';
 import { CorrelationPanel } from './panels/CorrelationPanel';
 import { HeatmapPanel } from './panels/HeatmapPanel';
@@ -55,37 +48,6 @@ import {
 } from './panels/PathwayPanels';
 import { NetworkPanel } from './panels/NetworkPanel';
 
-type Requirement = 'none' | 'dataset' | 'correlation';
-
-type ToolDef = {
-  id: ToolId;
-  label: string;
-  group: string;
-  icon: ComponentType<{ className?: string }>;
-  requires: Requirement;
-  /** tool-state key whose `result` marks the tool as done */
-  stateKey?: string;
-};
-
-export const TOOLS: ToolDef[] = [
-  { id: 'data', label: 'Dataset', group: 'Workflow', icon: Database, requires: 'none' },
-  { id: 'correlation', label: 'Correlation matrix', group: 'Workflow', icon: Sigma, requires: 'dataset' },
-  { id: 'heatmap', label: 'Heatmap', group: 'Explore', icon: Grid3x3, requires: 'correlation' },
-  { id: 'distribution', label: 'Distribution & pairs', group: 'Explore', icon: ChartColumn, requires: 'correlation' },
-  { id: 'dendrogram', label: 'Dendrogram', group: 'Explore', icon: GitFork, requires: 'correlation', stateKey: 'dendrogram' },
-  { id: 'optimal-k', label: 'Optimal clusters', group: 'Structure', icon: Target, requires: 'correlation', stateKey: 'optimal-k' },
-  { id: 'pca', label: 'PCA', group: 'Structure', icon: Orbit, requires: 'correlation', stateKey: 'pca' },
-  { id: 'tsne', label: 't-SNE', group: 'Structure', icon: ChartScatter, requires: 'correlation', stateKey: 'tsne' },
-  { id: 'gene-sets', label: 'Gene set library', group: 'Gene sets', icon: Library, requires: 'none' },
-  { id: 'pathway', label: 'Single pathway', group: 'Gene sets', icon: ListOrdered, requires: 'correlation', stateKey: 'pathway' },
-  { id: 'gene-genes', label: 'Gene → genes', group: 'Gene sets', icon: Waypoints, requires: 'correlation', stateKey: 'gene-genes' },
-  { id: 'gene-pathways', label: 'Gene → pathways', group: 'Gene sets', icon: Split, requires: 'correlation', stateKey: 'gene-pathways' },
-  { id: 'ceci', label: 'Multi-pathway CECI', group: 'Gene sets', icon: CircleDot, requires: 'correlation', stateKey: 'ceci' },
-  { id: 'compare', label: 'Pathway ↔ pathway', group: 'Gene sets', icon: GitCompareArrows, requires: 'correlation' },
-  { id: 'network', label: 'Correlation network', group: 'Network', icon: Share2, requires: 'correlation' },
-];
-
-const GROUPS = ['Workflow', 'Explore', 'Structure', 'Gene sets', 'Network'];
 
 function useToolStatus() {
   const { session, busy, toolState } = useIvcca();
@@ -305,9 +267,16 @@ function MobileToolBar() {
 
 function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { activity } = useIvcca();
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex justify-end" role="dialog" aria-label="Activity log">
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+  if (!open || typeof document === 'undefined') return null;
+  // Portalled to <body> so the drawer covers the site navbar (the workspace sits in a z-indexed <main>).
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex justify-end" role="dialog" aria-label="Activity log">
       <button type="button" aria-label="Close activity log" className="absolute inset-0 bg-black/40" onClick={onClose} />
       <aside className="relative flex h-full w-full max-w-sm flex-col bg-white shadow-2xl">
         <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
@@ -339,11 +308,12 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
           ))}
         </ol>
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-function SessionBar({ onOpenActivity }: { onOpenActivity: () => void }) {
+function SessionBar({ onOpenActivity, onOpenHelp }: { onOpenActivity: () => void; onOpenHelp: () => void }) {
   const { session, activity, resetSession } = useIvcca();
   const [copied, setCopied] = useState(false);
   const latest = activity[0];
@@ -422,6 +392,15 @@ function SessionBar({ onOpenActivity }: { onOpenActivity: () => void }) {
                   : 'Activity'}
             </span>
           </button>
+          <button
+            type="button"
+            onClick={onOpenHelp}
+            title="Help for this tool (?)"
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/15 px-2.5 py-1.5 text-xs font-medium text-zinc-200 hover:border-white/30 hover:bg-white/5"
+          >
+            <CircleQuestionMark className="h-3.5 w-3.5" />
+            Help
+          </button>
           {session && (
             <button
               type="button"
@@ -451,7 +430,7 @@ function ScopeBanner() {
   const { session, setActiveScope, activeTool } = useIvcca();
   const [showMissing, setShowMissing] = useState(false);
   const scope = session?.scope;
-  if (!session || !scope || scope.kind !== 'pathway') return null;
+  if (!session || !scope || scope.kind !== 'pathway' || activeTool === 'help') return null;
   // Gene-set tools always read the full dataset; say so instead of implying they use the pathway.
   const geneSetTool = ['pathway', 'gene-genes', 'gene-pathways', 'ceci', 'compare', 'gene-sets', 'data'].includes(activeTool);
   const missing = scope.missing ?? [];
@@ -523,12 +502,31 @@ const PANELS: Record<ToolId, () => ReactNode> = {
   ceci: () => <CeciPanel />,
   compare: () => <CompareSetsPanel />,
   network: () => <NetworkPanel />,
+  help: () => <HelpPanel />,
 };
 
 function WorkspaceBody() {
   const { activeTool, setActiveTool, hydrated } = useIvcca();
   const [collapsed, setCollapsed] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [helpTool, setHelpTool] = useState<ToolId | null>(null);
+
+  const openHelp = useCallback((tool?: ToolId) => setHelpTool(tool ?? activeTool), [activeTool]);
+  const closeHelp = useCallback(() => setHelpTool(null), []);
+  const helpValue = useMemo(() => ({ openHelp }), [openHelp]);
+
+  // "?" opens help for the current tool, unless the user is typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
+      e.preventDefault();
+      setHelpTool((open) => (open ? null : activeTool));
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [activeTool]);
 
   useEffect(() => {
     try {
@@ -545,8 +543,9 @@ function WorkspaceBody() {
   const render = PANELS[activeTool] ?? PANELS.data;
 
   return (
+    <HelpContext.Provider value={helpValue}>
     <div className="relative">
-      <SessionBar onOpenActivity={() => setActivityOpen(true)} />
+      <SessionBar onOpenActivity={() => setActivityOpen(true)} onOpenHelp={() => openHelp()} />
       <div className="flex">
         <Sidebar
           collapsed={collapsed}
@@ -577,7 +576,9 @@ function WorkspaceBody() {
         </div>
       </div>
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
+      <HelpDrawer tool={helpTool} onClose={closeHelp} />
     </div>
+    </HelpContext.Provider>
   );
 }
 

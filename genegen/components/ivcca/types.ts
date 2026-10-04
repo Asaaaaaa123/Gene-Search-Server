@@ -104,7 +104,8 @@ export type ToolId =
   | 'gene-pathways'
   | 'ceci'
   | 'compare'
-  | 'network';
+  | 'network'
+  | 'help';
 
 /** Gene → cluster id (1-based), derived from backend cluster assignments. */
 export type ClusterAssignments = Record<string, string[]>;
