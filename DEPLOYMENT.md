@@ -18,7 +18,13 @@
 
 **验证新镜像已生效：** 部署后在容器日志中确认出现 `[genegen] starting (...)` 与 `[GENEGEN-BOOT] ...`。若仍出现 `middleware.js` + Clerk 报错，说明运行的是旧镜像或未推送最新提交，请 **Disable build cache** 后重新部署。
 
-**前端构建在 `Creating an optimized production build` 处无报错退出（exit 255 / 137）：** 几乎都是宿主机 **OOM**。Dockerfile 已限制 Node 堆为 3GB、关闭 webpack build worker。若仍失败：给 VPS 加 ≥2GB swap，或在 Coolify 用更大内存的 Build Server，并勾选 **Disable build cache** 再部署一次。
+**前端构建在 `RUN npm ci` 或 `Creating an optimized production build` 处无报错退出（exit 255 / 137）：** 几乎都是宿主机 **OOM**。典型表现：服务器卡死约 20 分钟、后端容器被 OOM 杀掉后自动重启，`dmesg -T | grep -i oom` 可见记录。当前 VPS 为 4GB 且**默认没有 swap**，构建缓存被清理后的冷安装（`npm ci`）最容易触发。Dockerfile 已限制 npm 堆为 1GB 与并发下载、Next 构建堆为 3GB、关闭 webpack build worker。若仍失败：给 VPS 加 ≥2GB swap（在 Coolify → Terminal → localhost 以 root 执行一次即可，重启后保留）：
+
+```bash
+fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab && free -h
+```
+
+或在 Coolify 用更大内存的 Build Server，再部署一次。前端与后端请**依次**部署，不要同时构建。
 
 **Edge 中间件：** 构建完成后会运行 `scripts/strip-edge-middleware.cjs`，删除 `.next/**/server/middleware.js` 并清空 `middleware-manifest.json`，避免健康检查请求进入含 Clerk 的 Edge 包（即使缓存或旧代码曾生成过该文件）。
 

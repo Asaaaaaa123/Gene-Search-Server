@@ -3,7 +3,9 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Cold installs (build cache pruned) are the peak on the 4GB VPS: cap npm's heap and download
+# concurrency so it can't push the host into the OOM killer (seen as exit 255 during npm ci).
+RUN NODE_OPTIONS=--max-old-space-size=1024 npm ci --no-audit --no-fund --maxsockets=4
 
 FROM base AS builder
 WORKDIR /app
