@@ -99,3 +99,7 @@ A: 服务器仍会启动，但某些功能可能受限
 
 **Q: 前端显示 "Failed to fetch" 怎么办？**
 A: 检查后端服务器是否在运行，端口是否正确
+
+## License
+
+©2025 Washington University. This software (including ThematicGO) is provided under a non-commercial, non-clinical research license; see [LICENSE](LICENSE) for the full terms.
