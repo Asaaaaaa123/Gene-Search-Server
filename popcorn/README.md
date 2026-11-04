@@ -133,11 +133,16 @@ The Geno Intelligence site serves this application at `/popcorn` (button "Popcor
 (`backend/`) mounts it with `create_app(workspace, hosted=Hosted(...))` (`backend/popcorn_mount.py`, which lists the
 environment variables), and the Next.js site rewrites `/popcorn` to it. A hosted server is open to everyone, so:
 
-* data is read only from its data folders (default `<workspace>/data` on the server) and the synthetic demo; the folder
-  browser, the data checks, the explorer and the runs refuse every other path. There is no upload: online, use
-  **Try the demo**, or ask the server's administrator to put Space Ranger outputs in a data folder. Real Visium HD
-  sections need more memory than the site's server has (the small demo needs about 850 MB); analyse them here, on your
-  own computer;
+* the data is uploaded instead of chosen on disk: the **Data** tab of a project has an **Upload data** card in place
+  of the data root. Choose the Space Ranger output folder of a section (or a folder holding several); the browser
+  uploads only the files the analysis reads, `square_<size>/filtered_feature_bc_matrix.h5` and the positions, scale
+  factors and H&E images of `square_<size>/spatial/`, for the analysis and quality-control bin sizes, in chunks of
+  16 MB, to the project's upload folder `<workspace>/uploads/<project id>` (its data root), then offers the samples it
+  finds there. A project may upload 3 GB, and the server keeps 4 GB of disk free; **Remove uploaded data** and deleting
+  the project delete the files. Large sections may still need more memory than the site's server has (the small demo
+  needs about 850 MB): analyse those here, on your own computer;
+* data is read only from the uploads, the server's data folders (default `<workspace>/data`) and the synthetic demo;
+  the folder browser, the data checks, the explorer and the runs refuse every other path;
 * at most two analyses are queued or running at once (HTTP 429 beyond), each is stopped after 30 minutes and uses one
   thread per numerical library, and workers inherit none of the server's environment variables except the system
   ones (`webapp/jobs.py`, `CLEAN_ENV_VARS`);

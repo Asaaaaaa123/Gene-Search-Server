@@ -29,6 +29,7 @@ import os
 import platform
 import re
 import secrets
+import shutil
 import stat
 import string
 import tempfile
@@ -56,7 +57,7 @@ import pipeline_config as pc
 from webapp import __version__
 from webapp.jobs import JobManager
 from webapp.storage import (ACTIVE_STATUSES, FINAL_STATUSES, BadRequest, NotFound, Storage, StorageError,
-                            check_sample_id, json_safe)
+                            check_sample_id, json_safe, rmtree)
 
 log = logging.getLogger("bss.server")
 
@@ -128,6 +129,14 @@ BARCODE_SUFFIX_RE = re.compile(r"-\d+$")
 IMAGE_KEY_RE = re.compile(r"^[0-9a-f]{32}\Z")
 IMAGE_KEYS_MAX = 256
 
+# uploads of a hosted server (PUT /api/projects/<id>/upload/<path>): the files the analysis reads, below a
+# square_XXXum/ folder, sent in chunks of at most UPLOAD_CHUNK_MAX bytes (each request stays short behind a proxy)
+UPLOAD_MATRIX = "filtered_feature_bc_matrix.h5"
+UPLOAD_SPATIAL = (*POSITION_FILES, "scalefactors_json.json", "tissue_hires_image.png", "tissue_lowres_image.png")
+UPLOAD_CHUNK_MAX = 64 * 1024 * 1024
+UPLOAD_MAX_PARTS = 12
+UPLOAD_PART_SUFFIX = ".part"
+
 # The Windows registry can map .js to text/plain (browsers then refuse to load the ES modules of the front end) and
 # .csv to Excel; serve the standard types whatever the registry says.
 for _media_type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css"),
@@ -142,10 +151,14 @@ class Hosted(NamedTuple):
     """Settings of a server open to the public (create_app(hosted=...), docs/ARCHITECTURE.md section 5). Data is read
     only from `data_dirs` and the demo data, and the folder browser stays inside them; at most `max_active_runs` runs
     are queued or running at once, and a worker running longer than `max_run_minutes` is stopped; workers get a minimal
-    environment (none of the host's secrets) and one thread; `home_url` is the site the sidebar links back to."""
+    environment (none of the host's secrets) and one thread; `home_url` is the site the sidebar links back to.
+    Each project has an upload folder, <workspace>/uploads/<project id>, that is its data root: the browser uploads the
+    Space Ranger files there (at most `max_upload_mb` per project, never leaving less than `min_free_mb` of disk)."""
     data_dirs: tuple[Path, ...] = ()
     max_active_runs: int = 2
     max_run_minutes: float = 30.0
+    max_upload_mb: int = 3072
+    min_free_mb: int = 4096
     home_url: str | None = None
     home_label: str = "Back to the main site"
 
@@ -2242,10 +2255,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     storage = Storage(workspace)
     jobs = JobManager(storage.root, worker_module=worker_module, storage=storage, clean_env=hosted is not None,
                       max_seconds=None if hosted is None else hosted.max_run_minutes * 60)
+    # a hosted server's upload folders, one per project (Hosted)
+    uploads_dir = None if hosted is None else Path(os.path.realpath(storage.root / "uploads"))
     # folders a hosted server reads data from, real paths, the demo data first; None: anywhere (local application)
-    data_dirs = None if hosted is None else [Path(os.path.realpath(d)) for d in (storage.demo_dir, *hosted.data_dirs)]
-    # where a hosted server's folder browser and new projects start: its first own data folder, else the demo data
-    home_dir = None if data_dirs is None else data_dirs[1 if len(data_dirs) > 1 else 0]
+    data_dirs = None if hosted is None else [Path(os.path.realpath(d))
+                                             for d in (storage.demo_dir, uploads_dir, *hosted.data_dirs)]
+    # where a hosted server's folder browser starts: its first own data folder, else the uploads
+    home_dir = None if hosted is None else data_dirs[2 if len(data_dirs) > 2 else 1]
     tables = LRUCache(6)
     bins_cache = LRUCache(4)
     # RawSection by matrix + positions file (path, mtime, size), bounded by their estimated memory
@@ -2586,9 +2602,12 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             name = config["name"].strip()[:200]
         if not name:
             raise HTTPException(400, "a project name is required")
-        if home_dir is not None and not (config or {}).get("data_root"):
-            config = {**(config or {}), "data_root": str(home_dir)}
-        return JSONOut(project_view(storage.create_project(name, config)))
+        project = storage.create_project(name, config)
+        if hosted is not None and not (config or {}).get("data_root"):  # its data is uploaded to its upload folder
+            root = upload_root(project["id"])
+            root.mkdir(parents=True, exist_ok=True)
+            project = storage.update_project(project["id"], config={**project["config"], "data_root": str(root)})
+        return JSONOut(project_view(project))
 
     @app.get("/api/projects/{pid}")
     def get_project(pid: str):
@@ -2603,7 +2622,103 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     @app.delete("/api/projects/{pid}")
     def delete_project(pid: str):
         storage.delete_project(pid)
+        if hosted is not None:
+            rmtree(upload_root(pid))
         return JSONOut({"ok": True})
+
+    # ---- uploads (hosted server) -------------------------------------------------------------------------------
+    def upload_root(pid: str) -> Path:
+        """The upload folder of project `pid`."""
+        if hosted is None:
+            raise NotFound("uploads exist only on a hosted server; point the data root at your data instead")
+        return uploads_dir / storage.project_dir(pid).name
+
+    def upload_parts(rel: str) -> list[str]:
+        """The parts of an upload path: <folders>/square_XXXum/filtered_feature_bc_matrix.h5 or
+        <folders>/square_XXXum/spatial/<positions, scale factors or image>; anything else is refused."""
+        parts = rel.split("/")
+        if (not rel or len(rel) > 1024 or len(parts) > UPLOAD_MAX_PARTS or any(c in rel for c in "\\:\0")
+                or any(not p or p in (".", "..") or p.startswith(".") or len(p) > 255 for p in parts)):
+            raise HTTPException(400, f"invalid upload path {rel!r}")
+        square = next((i for i, p in enumerate(parts) if SQUARE_RE.match(p)), None)
+        tail = parts[square + 1:] if square is not None else []
+        if not (tail == [UPLOAD_MATRIX] or (len(tail) == 2 and tail[0] == "spatial" and tail[1] in UPLOAD_SPATIAL)):
+            raise HTTPException(400, f"{rel!r} is not a file the analysis reads: only square_<size>/{UPLOAD_MATRIX} "
+                                     f"and square_<size>/spatial/({', '.join(UPLOAD_SPATIAL)}) are uploaded")
+        return parts
+
+    def upload_files(root: Path) -> list[dict]:
+        out = []
+        if root.is_dir():
+            for path in sorted(root.rglob("*")):
+                if path.is_file() and not path.name.endswith(UPLOAD_PART_SUFFIX):
+                    out.append({"path": path.relative_to(root).as_posix(), "size": path.stat().st_size})
+        return out
+
+    def upload_state(pid: str) -> dict:
+        root = upload_root(pid)
+        files = upload_files(root)
+        return {"root": str(root), "files": files, "bytes": sum(f["size"] for f in files),
+                "max_bytes": hosted.max_upload_mb << 20, "chunk_bytes": UPLOAD_CHUNK_MAX}
+
+    @app.get("/api/projects/{pid}/upload")
+    def get_upload(pid: str):
+        storage.get_project(pid)
+        return JSONOut(upload_state(pid))
+
+    @app.delete("/api/projects/{pid}/upload")
+    def delete_upload(pid: str):
+        storage.get_project(pid)
+        rmtree(upload_root(pid))
+        upload_root(pid).mkdir(parents=True, exist_ok=True)
+        return JSONOut(upload_state(pid))
+
+    @app.put("/api/projects/{pid}/upload/{rel:path}")
+    async def put_upload(pid: str, rel: str, request: Request, offset: int = 0, size: int = 0):
+        """One chunk of an uploaded file: the bytes from `offset` of a file of `size` bytes. The chunks arrive in
+        order into <file>.part, which becomes the file with the last one."""
+        storage.get_project(pid)
+        root = upload_root(pid)
+        dest = root.joinpath(*upload_parts(rel))
+        part = dest.with_name(dest.name + UPLOAD_PART_SUFFIX)
+        limit = hosted.max_upload_mb << 20
+        if size <= 0 or offset < 0 or offset >= size:
+            raise HTTPException(400, "size must be positive and offset inside the file")
+        if size > limit:
+            raise HTTPException(413, f"{dest.name} is larger than the {hosted.max_upload_mb} MB a project may upload "
+                                     f"on this server")
+        declared = request.headers.get("content-length", "")
+        if not declared.isdigit() or int(declared) > UPLOAD_CHUNK_MAX or offset + int(declared) > size:
+            raise HTTPException(400, f"send the file in chunks of at most {UPLOAD_CHUNK_MAX >> 20} MB with a "
+                                     f"Content-Length, inside its size")
+        if offset == 0:
+            used = sum(f["size"] for f in upload_files(root) if root.joinpath(*f["path"].split("/")) != dest)
+            if used + size > limit:
+                raise HTTPException(413, f"this project already holds {used / 2**20:.0f} MB of uploads; with "
+                                         f"{dest.name} it would exceed the {hosted.max_upload_mb} MB limit")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            if shutil.disk_usage(uploads_dir).free - size < hosted.min_free_mb << 20:
+                raise HTTPException(507, "the server does not have enough free disk space for this upload")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            mode = "wb"
+        else:
+            have = part.stat().st_size if part.is_file() else 0
+            if have != offset:
+                raise HTTPException(409, f"{rel}: the server has {have} bytes of this file, not {offset}; send it "
+                                         f"again from the start")
+            mode = "ab"
+        received = 0
+        with open(part, mode) as fh:
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > int(declared):
+                    raise HTTPException(400, "the request body is longer than its Content-Length")
+                fh.write(chunk)
+        have = offset + received
+        complete = have == size
+        if complete:
+            os.replace(part, dest)
+        return JSONOut({"path": rel, "received": have, "size": size, "complete": complete, "root": str(root)})
 
     @app.post("/api/projects/{pid}/duplicate")
     def duplicate_project(pid: str):

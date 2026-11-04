@@ -13,6 +13,8 @@ Environment:
   POPCORN_DATA_DIRS        folders with Space Ranger outputs, separated by os.pathsep (default: <workspace>/data)
   POPCORN_MAX_ACTIVE_RUNS  analyses queued or running at once (default 2)
   POPCORN_MAX_RUN_MINUTES  an analysis running longer is stopped (default 30)
+  POPCORN_MAX_UPLOAD_MB    data a project may upload (default 3072)
+  POPCORN_MIN_FREE_MB      disk space uploads always leave free (default 4096)
   POPCORN_HOME_URL         the site the Popcorn sidebar links back to (default /)
 
 Analyses are queued in this process, so the API must run as one process (WORKERS=1, the image's default): a second
@@ -132,6 +134,8 @@ def _create(default_workspace: str):
     hosted = Hosted(data_dirs=data_dirs,
                     max_active_runs=max(1, int(os.environ.get("POPCORN_MAX_ACTIVE_RUNS", "2"))),
                     max_run_minutes=max(1.0, float(os.environ.get("POPCORN_MAX_RUN_MINUTES", "30"))),
+                    max_upload_mb=max(1, int(os.environ.get("POPCORN_MAX_UPLOAD_MB", "3072"))),
+                    min_free_mb=max(0, int(os.environ.get("POPCORN_MIN_FREE_MB", "4096"))),
                     home_url=os.environ.get("POPCORN_HOME_URL", "/").strip() or None,
                     home_label="Back to Geno Intelligence")
     kill_workers_with_server()

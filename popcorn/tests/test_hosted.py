@@ -75,11 +75,88 @@ def test_health_and_defaults(hosted, data_dir):
     health = hosted.get("/api/health").json()
     assert health["ok"] and health["workspace"] is None and health["platform"] is None
     assert health["hosted"]["max_active_runs"] == 1 and health["hosted"]["home_url"] == "/"
-    assert [real(d) for d in health["hosted"]["data_dirs"]][1] == real(extra)
-    # new projects start in the server's first own data folder, not in the project root
+    dirs = [real(d) for d in health["hosted"]["data_dirs"]]
+    assert Path(dirs[1]).name == "uploads" and dirs[2] == real(extra)
+    # the defaults point at the server's first own data folder, not at the project root
     assert real(hosted.get("/api/defaults").json()["config"]["data_root"]) == real(extra)
-    r = hosted.post("/api/projects", json={"name": "fresh"})
-    assert real(r.json()["config"]["data_root"]) == real(extra)
+    # a new project's data root is its own upload folder; a given one is kept
+    fresh = hosted.post("/api/projects", json={"name": "fresh"}).json()
+    root = Path(fresh["config"]["data_root"])
+    assert root.is_dir() and root.name == fresh["id"] and real(root.parent) == dirs[1]
+    given = hosted.post("/api/projects", json={"name": "given", "config": {"data_root": str(extra)}}).json()
+    assert given["config"]["data_root"] == str(extra)
+
+
+UPLOADED = ("filtered_feature_bc_matrix.h5", "tissue_positions.parquet", "scalefactors_json.json",
+            "tissue_hires_image.png", "tissue_lowres_image.png")
+
+
+def upload(client, pid: str, rel: str, data: bytes, chunk: int = 100_000):
+    """PUT `data` as rel in chunks; the last response."""
+    r = None
+    for offset in range(0, len(data), chunk):
+        r = client.put(f"/api/projects/{pid}/upload/{rel}", params={"offset": offset, "size": len(data)},
+                       content=data[offset:offset + chunk])
+        assert r.status_code == 200, (rel, r.text)
+    return r
+
+
+def test_upload_then_detect_and_validate(hosted, tiny_demo):
+    p = new_project(hosted, "uploaded")
+    pid, root = p["id"], Path(p["config"]["data_root"])
+    assert hosted.get(f"/api/projects/{pid}/upload").json()["files"] == []
+    src = Path(tiny_demo["root"])
+    sent = {}
+    for f in sorted(src.rglob("*")):
+        if f.is_file() and f.name in UPLOADED and "square_016um" in f.parts:
+            rel = f.relative_to(src).as_posix()
+            last = upload(hosted, pid, rel, f.read_bytes()).json()
+            assert last["complete"] and last["received"] == f.stat().st_size
+            sent[rel] = f.stat().st_size
+    info = hosted.get(f"/api/projects/{pid}/upload").json()
+    assert {f["path"]: f["size"] for f in info["files"]} == sent and info["bytes"] == sum(sent.values())
+    assert not list(root.rglob("*.part"))
+    # the samples are found in the upload folder, and the data check passes on them
+    found = hosted.post(f"/api/projects/{pid}/detect-samples", json={"data_root": info["root"]}).json()
+    assert [c["bin_sizes"] for c in found["candidates"]] == [["016um"], ["016um"]]
+    samples = [{"id": c["suggested_id"], "label": c["folder"], "condition": s["condition"], "path": c["path"]}
+               for c, s in zip(found["candidates"], tiny_demo["samples"])]
+    cfg = {**p["config"], "samples": samples, "reference_sample": samples[0]["id"], "qc_bin_size": "016um"}
+    assert hosted.put(f"/api/projects/{pid}", json={"config": cfg}).status_code == 200
+    report = hosted.post(f"/api/projects/{pid}/validate").json()
+    assert report["ok"], report["errors"]
+    # removing the uploads, then the project, frees the folder
+    assert hosted.delete(f"/api/projects/{pid}/upload").json()["files"] == []
+    assert root.is_dir() and not any(root.iterdir())
+    assert hosted.delete(f"/api/projects/{pid}").json() == {"ok": True}
+    assert not root.exists()
+
+
+def test_upload_refusals(tmp_path):
+    app = create_app(tmp_path / "ws", worker_module=FAKE, hosted=Hosted(max_upload_mb=1))
+    with TestClient(app, base_url=PUBLIC) as c:
+        pid = new_project(c)["id"]
+        matrix = "S1/square_016um/filtered_feature_bc_matrix.h5"
+        for rel in ("S1/square_016um/notes.txt", "S1/outs/filtered_feature_bc_matrix.h5",
+                    ".hidden/square_016um/filtered_feature_bc_matrix.h5", "S1/square_016um/spatial/other.png",
+                    "C:/square_016um/filtered_feature_bc_matrix.h5",
+                    "S1/square_016um/spatial/x/tissue_hires_image.png"):
+            r = c.put(f"/api/projects/{pid}/upload/{rel}", params={"offset": 0, "size": 3}, content=b"abc")
+            assert r.status_code == 400, rel
+        put = lambda rel, offset, size, body: c.put(f"/api/projects/{pid}/upload/{rel}",  # noqa: E731
+                                                    params={"offset": offset, "size": size}, content=body)
+        assert put(matrix, 0, 2 << 20, b"x").status_code == 413          # larger than the project may upload
+        assert put(matrix, 0, 0, b"").status_code == 400                 # empty
+        assert put(matrix, 0, 2, b"abc").status_code == 400              # longer than the file
+        assert put(matrix, 5, 10, b"abc").status_code == 409             # a chunk without its predecessors
+        assert put(matrix, 0, 700_000, b"a" * 700_000).json()["complete"]
+        r = put("S2/square_016um/filtered_feature_bc_matrix.h5", 0, 700_000, b"b")
+        assert r.status_code == 413 and "limit" in r.json()["detail"]    # the project total
+        assert put(matrix, 0, 600_000, b"c" * 600_000).json()["complete"]  # replacing a file counts once
+        assert c.get("/api/projects/p-00000000/upload").status_code == 404
+    with TestClient(create_app(tmp_path / "local", worker_module=FAKE), base_url="http://127.0.0.1") as local:
+        pid = local.post("/api/projects", json={"name": "L"}).json()["id"]
+        assert local.get(f"/api/projects/{pid}/upload").status_code == 404  # uploads only on a hosted server
 
 
 def test_data_inside_the_data_folders(hosted, tiny_demo):

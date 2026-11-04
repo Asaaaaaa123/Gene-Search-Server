@@ -3,9 +3,10 @@
 // parameters | signatures | roi | run.
 import {
   h, api, mount, icon, button, card, field, tabs, switchToggle, loading, emptyState, errorPanel, banner, toast,
-  confirmDialog, fmt, clone, navigate, setPathSilently, resolveRoute, statusBadge, poll, state,
+  confirmDialog, fmt, clone, navigate, setPathSilently, resolveRoute, statusBadge, poll, state, refreshHealth,
 } from '../core.js';
 import { openFolderPicker } from '../components/folder-picker.js';
+import { uploadPanel } from '../components/upload-panel.js';
 import { sampleEditor, chooseDetectedSamples, applyDetectedSamples, reportPanel, binLabel } from '../components/sample-editor.js';
 import { paramForm } from '../components/param-form.js';
 import { signatureEditor, geneCoverage } from '../components/signature-editor.js';
@@ -135,6 +136,8 @@ export async function renderProject(container, { id, tab }) {
   let defaults;
   let project;
   try {
+    // the Data tab differs on a hosted server (uploads instead of a data root): know which one this is first
+    if (!state.health) await refreshHealth();
     [defaults, project] = await Promise.all([getDefaults(), api(`/api/projects/${enc(id)}`)]);
   } catch (e) {
     if (e.status === 404) {
@@ -662,8 +665,28 @@ function projectView(container, d, defaults, initialTab) {
       toast(`${plural(added.length, 'sample')} added. Check their labels and conditions.`, 'success');
     }
 
+    const binFields = h('div', { class: 'form-grid' },
+      field({ label: 'Analysis bin size', forId: binId, control: binSel, help: 'The square_<size> folder that is analysed.' }),
+      field({ label: 'Quality-control bin size', forId: qcId, control: qcSel, help: 'Per-bin QC of Supplementary Figure S1.' }));
+    // a hosted server: the data is uploaded to the project's upload folder, its data root, instead of chosen on disk
+    const upload = state.health && state.health.hosted ? uploadPanel({
+      projectId: d.id,
+      getBins: () => uniq([d.config.bin_size, d.config.qc_bin_size].filter(Boolean)),
+      onUploaded: async (root) => {
+        if (d.config.data_root !== root) {
+          d.config.data_root = root;
+          changed({ data: true });
+        }
+        const res = await api(`/api/projects/${enc(d.id)}/detect-samples`, { method: 'POST', body: { data_root: root } });
+        if (alive) chooseSamples(res);
+      },
+    }) : null;
+
     mount(host, h('div', { class: 'stack-lg' },
-      card({
+      upload ? card({
+        title: 'Upload data',
+        body: h('div', { class: 'stack' }, upload.el, binFields),
+      }) : card({
         title: 'Data location',
         body: h('div', { class: 'stack' },
           field({
@@ -671,9 +694,7 @@ function projectView(container, d, defaults, initialTab) {
             help: 'The folder that holds the sample folders; relative sample folders are resolved against it. A relative data root is resolved against the folder the server was started in.',
           }),
           h('div', { class: 'row' }, detect, h('span', { class: 'muted small' }, 'Finds the Space Ranger outputs under the data root (up to four levels deep) and adds them as samples.')),
-          h('div', { class: 'form-grid' },
-            field({ label: 'Analysis bin size', forId: binId, control: binSel, help: 'The square_<size> folder that is analysed.' }),
-            field({ label: 'Quality-control bin size', forId: qcId, control: qcSel, help: 'Per-bin QC of Supplementary Figure S1.' }))),
+          binFields),
       }),
       card({ title: 'Samples', subtitle: 'One row per Visium HD section, in figure order.', body: editor.el, flush: true }),
       card({ title: 'Data check', subtitle: 'Sample folders, bin sizes, images and gene coverage, checked with the settings above (saved or not).', actions: recheck, body: reportBox })));
