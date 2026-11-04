@@ -11,10 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && fc-cache -f
 
+# Resolved together, so the API and Popcorn (Visium HD analysis at /popcorn) share one consistent environment
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY popcorn/requirements.txt popcorn-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r popcorn-requirements.txt
 
 COPY backend/ .
+COPY popcorn/ ./popcorn/
 
 RUN mkdir -p /app/user_data /app/data \
     && useradd -m -u 1000 appuser \
@@ -29,5 +32,6 @@ USER appuser
 HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=5 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/api/health', timeout=8)" || exit 1
 
-# WORKERS=1 default: each worker loads heavy deps at import (~60s). Raise on 4GB+ hosts.
+# WORKERS=1 default: each worker loads heavy deps at import (~60s). Keep it at 1: Popcorn queues its
+# analyses in the API process, and a second worker answers 503 under /popcorn (backend/popcorn_mount.py).
 CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WORKERS:-1} --no-access-log"]

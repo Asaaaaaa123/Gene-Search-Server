@@ -34,7 +34,7 @@ export function Hero() {
           <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-zinc-400 sm:text-xl">
             {siteConfig.description}
           </p>
-          <div className="mx-auto mt-12 grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mx-auto mt-12 grid w-full max-w-4xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Button size="lg" asChild className="group h-12 w-full">
               <Link
                 href={siteConfig.links.geneSearch}
@@ -53,6 +53,11 @@ export function Hero() {
               <Link href={siteConfig.links.ivcca} className="flex w-full items-center justify-center">
                 IVCCA
               </Link>
+            </Button>
+            <Button variant="outline" size="lg" asChild className="h-12 w-full">
+              <a href={siteConfig.links.popcorn} className="flex w-full items-center justify-center">
+                Popcorn
+              </a>
             </Button>
           </div>
         </motion.div>

@@ -148,6 +148,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Popcorn (Bone Spatial Studio, ../popcorn) at /popcorn; see popcorn_mount.py
+from popcorn_mount import mount_popcorn  # noqa: E402
+
+mount_popcorn(app, default_workspace=os.path.join(USER_DATA_DIR, "popcorn"))
+
 # Security
 security = HTTPBasic()
 

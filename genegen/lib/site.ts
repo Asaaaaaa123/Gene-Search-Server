@@ -18,6 +18,8 @@ export const siteConfig = {
     thematicGo: '/gene-ontology',
     geneSearch: '/gene-search',
     ivcca: '/ivcca',
+    // Served by the backend (backend/popcorn_mount.py) through the /popcorn rewrite: link with <a>, not next/link.
+    popcorn: '/popcorn',
     upload: '/upload-csv',
     dashboard: '/dashboard',
   },

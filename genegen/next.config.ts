@@ -19,6 +19,16 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${BACKEND_API}/api/:path*`,
       },
+      // Popcorn (Bone Spatial Studio) is served by the backend at /popcorn (backend/popcorn_mount.py).
+      // Next redirects /popcorn/ to /popcorn, so the page itself is rewritten to the backend's /popcorn/.
+      {
+        source: "/popcorn",
+        destination: `${BACKEND_API}/popcorn/`,
+      },
+      {
+        source: "/popcorn/:path*",
+        destination: `${BACKEND_API}/popcorn/:path*`,
+      },
     ];
   },
 

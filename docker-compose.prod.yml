@@ -17,7 +17,7 @@ services:
         required: true
     environment:
       PORT: ${PORT:-8000}
-      WORKERS: ${WORKERS:-2}
+      WORKERS: ${WORKERS:-1}  # Popcorn (/popcorn) needs a single API process
       MONGODB_URI: ${MONGODB_URI:-}
       CLERK_ISSUER: ${CLERK_ISSUER:-}
       VALID_TOKENS: ${VALID_TOKENS:-}

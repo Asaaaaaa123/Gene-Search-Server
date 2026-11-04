@@ -10,10 +10,12 @@ import { siteConfig } from '@/lib/site';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-const navLinks = [
+// native: not a Next.js page (served by the backend through a rewrite), so a plain <a> with a full page load
+const navLinks: { href: string; label: string; native?: boolean }[] = [
   { href: '/gene-search', label: siteConfig.chemoTox },
   { href: '/gene-ontology', label: siteConfig.thematicGo },
   { href: '/ivcca', label: 'IVCCA' },
+  { href: siteConfig.links.popcorn, label: 'Popcorn', native: true },
   { href: '/upload-csv', label: 'Upload' },
   { href: '/dashboard', label: 'Dashboard' },
 ];
@@ -54,20 +56,23 @@ export function Navbar({ marketing = false }: { marketing?: boolean }) {
         </Link>
 
         <div className="hidden items-center gap-1 md:flex">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={cn(
-                'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                pathname === link.href || pathname?.startsWith(link.href + '/')
-                  ? 'text-[#00FFAA]'
-                  : 'text-zinc-400 hover:text-white'
-              )}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            const className = cn(
+              'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+              pathname === link.href || pathname?.startsWith(link.href + '/')
+                ? 'text-[#00FFAA]'
+                : 'text-zinc-400 hover:text-white'
+            );
+            return link.native ? (
+              <a key={link.href} href={link.href} className={className}>
+                {link.label}
+              </a>
+            ) : (
+              <Link key={link.href} href={link.href} className={className}>
+                {link.label}
+              </Link>
+            );
+          })}
         </div>
 
         <div className="hidden items-center gap-3 md:flex">
@@ -104,15 +109,25 @@ export function Navbar({ marketing = false }: { marketing?: boolean }) {
             className="border-t border-white/10 bg-[#0A0A0A]/95 backdrop-blur-xl md:hidden"
           >
             <div className="flex flex-col gap-1 px-4 py-4">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="rounded-lg px-3 py-3 text-base font-medium text-zinc-200 hover:bg-white/10"
-                >
-                  {link.label}
-                </Link>
-              ))}
+              {navLinks.map((link) =>
+                link.native ? (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    className="rounded-lg px-3 py-3 text-base font-medium text-zinc-200 hover:bg-white/10"
+                  >
+                    {link.label}
+                  </a>
+                ) : (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="rounded-lg px-3 py-3 text-base font-medium text-zinc-200 hover:bg-white/10"
+                  >
+                    {link.label}
+                  </Link>
+                )
+              )}
               <div className="mt-3 flex flex-col gap-2 border-t border-white/10 pt-4">
                 <Button variant="outline" asChild>
                   <Link href="/sign-in">Sign in</Link>

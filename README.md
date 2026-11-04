@@ -36,6 +36,18 @@ npm run dev
 ```
 然后在浏览器中打开 **http://localhost:3000**。终端显示 `Ready` 或 `Local: http://localhost:3000` 即表示前端已启动；仅运行 `npm install` 不会启动服务器，必须再运行 `npm run dev`。
 
+### 3. Popcorn（Bone Spatial Studio，Visium HD 骨病灶分析）
+
+`popcorn/` 是 Popcorn 项目本身；后端在 `/popcorn` 挂载它（`backend/popcorn_mount.py`，环境变量见文件开头），
+前端把 `/popcorn` 转发到后端，主页 IVCCA 旁的 **Popcorn** 按钮即打开它。本地运行时，后端的 Python 环境还需要安装
+Popcorn 的依赖：
+
+```bash
+pip install -r backend/requirements.txt -r popcorn/requirements.txt
+```
+
+后端必须以单进程运行（`WORKERS=1`）。在线版本只读取服务器数据目录和合成演示数据，详见 `popcorn/README.md` 的 “Online” 一节。
+
 ## 故障排除
 
 ### API 连接问题
