@@ -110,6 +110,8 @@ export function uploadPanel({ projectId, getBins, onUploaded }) {
       if (m) entry.bins.add(m.match(SQUARE)[1]);
       folders.set(key, entry);
     }
+    // the samples are offered after every upload; this offers them again (a dismissed choice, a later visit)
+    const samples = button({ label: 'Add samples…', icon: 'search', small: true, onClick: () => onUploaded(info.root) });
     const remove = button({
       label: 'Remove uploaded data', icon: 'trash', small: true, kind: 'ghost',
       onClick: async () => {
@@ -128,7 +130,7 @@ export function uploadPanel({ projectId, getBins, onUploaded }) {
         h('thead', null, h('tr', null, h('th', null, 'Uploaded folder'), h('th', null, 'Bin sizes'), h('th', null, 'Files'), h('th', null, 'Size'))),
         h('tbody', null, [...folders].map(([name, e]) => h('tr', null,
           h('td', { class: 'mono' }, name), h('td', null, [...e.bins].sort().join(', ')), h('td', null, String(e.files)), h('td', null, fmt.bytes(e.bytes))))))),
-      h('div', { class: 'row' }, h('span', { class: 'muted small' }, `${fmt.bytes(info.bytes)} of ${fmt.bytes(info.max_bytes)} used.`), remove)));
+      h('div', { class: 'row' }, h('span', { class: 'muted small' }, `${fmt.bytes(info.bytes)} of ${fmt.bytes(info.max_bytes)} used.`), samples, remove)));
   }
 
   async function start(files) {
