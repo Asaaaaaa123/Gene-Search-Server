@@ -658,7 +658,9 @@ function projectView(container, d, defaults, initialTab) {
     async function chooseSamples(res) {
       const choice = await chooseDetectedSamples({ result: res, cfg: d.config, suggestReplace: suggestReplace() });
       if (!choice) return;
-      const added = applyDetectedSamples(d.config, choice.candidates, { replace: choice.replace });
+      // the default samples describe the manuscript's sections (LL-2-1 control, RL-1-5 tumor-bearing): their folders
+      // keep those settings instead of guessed ones
+      const added = applyDetectedSamples(d.config, choice.candidates, { replace: choice.replace, templates: defCfg.samples });
       if (alive && tabApi === tabHandle) editor.render();
       else if (alive && current === 'data') renderBody();
       changed({ data: true });

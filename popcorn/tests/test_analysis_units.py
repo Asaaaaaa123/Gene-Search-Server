@@ -146,6 +146,18 @@ def test_config_validation_catches_crashing_settings():
     assert any("sample id" in e for e in pc.validate_config(ok)[0])
 
 
+def test_config_validation_refuses_one_section_as_two_samples():
+    cfg = pc.default_config()
+    assert not any("same folder" in e for e in pc.validate_config(cfg)[0])
+    twice = dict(cfg["samples"][1], id="RL-1-5-2", label="tumor-bearing 2", path="SR007144_RL-1-5")   # SR/ = SR/outs/binned_outputs/
+    cfg["samples"].append(twice)
+    errors = [e for e in pc.validate_config(cfg)[0] if "same folder" in e]
+    assert errors == ["samples 'RL-1-5', 'RL-1-5-2' read the same folder: one section would be analysed 2 times; "
+                      "each sample must be a different section"]
+    twice["path"] = "SR007144_RL-1-6/outs/binned_outputs"
+    assert not any("same folder" in e for e in pc.validate_config(cfg)[0])
+
+
 def test_signatures_without_optional_fields_run(tiny_config, tmp_path):
     tiny_config["signatures"]["bare"] = {"core": ["Acp5", "Ctsk"], "extended": ["Acp5", "Ctsk", "Calcr"]}
     tiny_config["steps"] = {k: False for k in tiny_config["steps"]}

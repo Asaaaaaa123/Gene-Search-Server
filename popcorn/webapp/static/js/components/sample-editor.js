@@ -78,33 +78,58 @@ export function relativePath(root, target) {
 
 const normPath = (p) => String(p ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 
+const candidatePath = (c) => c.path || c.folder || '';
+
 /**
- * Add detected candidates ({folder, path, suggested_id}) to cfg.samples (or replace them): unique ids, conditions
- * guessed from the folder names (the first sample without a hint is the control), distinct colors. Keeps
- * cfg.reference_sample valid. Returns the samples added.
+ * Add detected candidates ({folder, path, suggested_id}) to cfg.samples (or replace them). A folder that a sample
+ * reads already is not added again: it is one section, and a second sample of it would count it twice. A folder that
+ * a known sample describes (with `replace` the current samples, and `templates`, e.g. the default samples; matched by
+ * folder, then by id) keeps that sample's id, label, condition and color. The others get unique ids, conditions guessed
+ * from the folder names (without a hint: the control when there is none yet, else tumor) and distinct colors. Keeps
+ * cfg.reference_sample valid, and a control when one is added while the reference is none. Returns the samples added.
  */
-export function applyDetectedSamples(cfg, candidates, { replace = false } = {}) {
-  const base = replace ? [] : (Array.isArray(cfg.samples) ? cfg.samples.slice() : []);
+export function applyDetectedSamples(cfg, candidates, { replace = false, templates = [] } = {}) {
+  const current = (Array.isArray(cfg.samples) ? cfg.samples : []).filter((s) => s && typeof s === 'object');
+  const base = replace ? [] : current.slice();
+  const known = [...(replace ? current : []), ...(Array.isArray(templates) ? templates : [])]
+    .filter((s) => s && typeof s === 'object');
+  const seen = new Set(base.map((s) => normPath(s.path)));
+  const picked = [];
+  for (const c of candidates || []) {
+    const key = normPath(candidatePath(c));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const sid = sanitizeId(c.suggested_id || c.folder);
+    picked.push({ c, sid, tpl: known.find((s) => normPath(s.path) === key) || known.find((s) => s.id === sid) || null });
+  }
   const ids = new Set(base.map((s) => s.id));
   const labels = new Set(base.map((s) => s.label).filter(Boolean));
   const colors = base.map((s) => s.color);
-  let hasControl = base.some((s) => s.condition === 'control');
+  let hasControl = [...base, ...picked.map((p) => p.tpl).filter(Boolean)].some((s) => s.condition === 'control');
   const added = [];
-  for (const c of candidates || []) {
-    const id = uniqueValue(sanitizeId(c.suggested_id || c.folder), ids);
+  for (const { c, sid, tpl } of picked) {
+    const id = uniqueValue(tpl && isValidSampleId(tpl.id) ? tpl.id : sid, ids);
     ids.add(id);
-    const condition = guessCondition(`${c.folder || ''} ${c.suggested_id || ''}`) || (hasControl ? 'tumor' : 'control');
-    if (condition === 'control') hasControl = true;
-    const label = uniqueValue(condition === 'control' ? 'control' : 'tumor-bearing', labels, ' ');
+    let condition = tpl && CONDITIONS.includes(tpl.condition) ? tpl.condition : null;
+    if (!condition) {
+      condition = guessCondition(`${c.folder || ''} ${c.suggested_id || ''}`) || (hasControl ? 'tumor' : 'control');
+      if (condition === 'control') hasControl = true;
+    }
+    const fallback = condition === 'control' ? 'control' : 'tumor-bearing';
+    const label = uniqueValue((tpl && String(tpl.label || '').trim()) || fallback, labels, ' ');
     labels.add(label);
-    const color = nextColor(colors);
+    const taken = new Set(colors.filter(Boolean).map((x) => String(x).toLowerCase()));
+    const color = tpl && HEX_RE.test(String(tpl.color)) && !taken.has(String(tpl.color).toLowerCase()) ? tpl.color : nextColor(colors);
     colors.push(color);
-    added.push({ id, label, condition, color, path: c.path || c.folder || '', microns_per_pixel: null });
+    added.push({ ...(tpl || {}), id, label, condition, color, path: candidatePath(c),
+      microns_per_pixel: tpl && tpl.microns_per_pixel != null ? tpl.microns_per_pixel : null });
   }
   cfg.samples = [...base, ...added];
-  if (!cfg.samples.some((s) => s.id === cfg.reference_sample)) {
-    const ref = cfg.samples.find((s) => s.condition === 'control') || cfg.samples[0];
-    cfg.reference_sample = ref ? ref.id : '';
+  const ref = cfg.samples.find((s) => s.id === cfg.reference_sample);
+  const control = cfg.samples.find((s) => s.condition === 'control');
+  if (!ref || (ref.condition !== 'control' && control && added.includes(control))) {
+    const next = control || cfg.samples[0];
+    cfg.reference_sample = next ? next.id : '';
   }
   return added;
 }
@@ -355,32 +380,44 @@ export function chooseDetectedSamples({ result, cfg, suggestReplace = false }) {
       });
       return;
     }
-    const current = Array.isArray(cfg.samples) ? cfg.samples : [];
-    const paths = new Set(current.map((s) => normPath(s.path)));
-    const ids = new Set(current.map((s) => s.id));
+    const current = (Array.isArray(cfg.samples) ? cfg.samples : []).filter((s) => s && typeof s === 'object');
+    const replaceBox = h('input', { type: 'checkbox', checked: suggestReplace && current.length > 0 });
+    // A folder that a sample reads already is one section: adding it again would count it twice, so its row cannot be
+    // ticked unless the current samples are replaced (then it is ticked, and keeps that sample's settings).
     const rows = candidates.map((c, i) => {
-      const known = paths.has(normPath(c.path)) || ids.has(sanitizeId(c.suggested_id || c.folder));
+      const owner = current.find((s) => normPath(s.path) === normPath(candidatePath(c)));
       const id = `detect-${editorSeq}-${i}`;
-      const box = h('input', { type: 'checkbox', id, checked: !known });
-      const tr = h('tr', { class: known ? 'known' : '' },
+      const box = h('input', { type: 'checkbox', id, checked: !owner });
+      const badge = owner ? h('span', { class: 'badge', title: `Sample ${owner.id} (${owner.label || owner.id}, ${owner.condition}) reads this folder` }) : null;
+      const tr = h('tr', null,
         h('td', { class: 'center' }, box),
-        h('td', null, h('label', { for: id, class: 'detect-folder' }, c.folder || c.path),
-          known ? h('span', { class: 'badge', title: 'A sample with this folder or id is configured already' }, 'already added') : null),
+        h('td', null, h('label', { for: id, class: 'detect-folder' }, c.folder || c.path), badge),
         h('td', { class: 'mono small' }, c.path),
-        h('td', { class: 'mono' }, sanitizeId(c.suggested_id || c.folder)),
+        h('td', { class: 'mono' }, owner ? owner.id : sanitizeId(c.suggested_id || c.folder)),
         h('td', null, h('div', { class: 'pill-list' }, (c.bin_sizes || []).map((b) => h('span', { class: 'chip no-x' }, b)))));
-      return { c, box, tr };
+      return { c, box, tr, owner, badge };
     });
     const all = h('input', { type: 'checkbox', 'aria-label': 'Select every folder' });
+    const open = () => rows.filter((r) => !r.box.disabled);
     const syncAll = () => {
-      const n = rows.filter((r) => r.box.checked).length;
-      all.checked = n === rows.length;
-      all.indeterminate = n > 0 && n < rows.length;
+      const n = open().filter((r) => r.box.checked).length;
+      all.disabled = !open().length;
+      all.checked = n > 0 && n === open().length;
+      all.indeterminate = n > 0 && n < open().length;
     };
-    all.addEventListener('change', () => { rows.forEach((r) => { r.box.checked = all.checked; }); });
+    const syncOwned = () => {
+      for (const r of rows.filter((x) => x.owner)) {
+        r.box.disabled = !replaceBox.checked;
+        r.box.checked = replaceBox.checked;
+        r.tr.classList.toggle('known', !replaceBox.checked);
+        r.badge.textContent = replaceBox.checked ? `kept as ${r.owner.id}` : 'already added';
+      }
+      syncAll();
+    };
+    all.addEventListener('change', () => { open().forEach((r) => { r.box.checked = all.checked; }); });
     rows.forEach((r) => r.box.addEventListener('change', syncAll));
-    syncAll();
-    const replaceBox = h('input', { type: 'checkbox', checked: suggestReplace && current.length > 0 });
+    replaceBox.addEventListener('change', syncOwned);
+    syncOwned();
     const err = h('div', { class: 'error-text', role: 'alert' });
     modal({
       title: 'Detected samples', size: 'wide',
@@ -393,7 +430,9 @@ export function chooseDetectedSamples({ result, cfg, suggestReplace = false }) {
           h('tbody', null, rows.map((r) => r.tr)))),
         current.length ? h('label', { class: 'check' }, replaceBox,
           `Replace the current sample${current.length === 1 ? '' : 's'} (${current.map((s) => s.id).join(', ')})`) : null,
-        h('p', { class: 'muted small' }, 'Labels, conditions and colors are guessed from the folder names; check them in the sample table afterwards.'),
+        h('p', { class: 'muted small' }, 'A folder of a current or default sample keeps that sample\'s label and condition. '
+          + 'For the others they are guessed from the folder name: without a hint such as "ctrl" or "tumor", the first '
+          + 'becomes the control when there is none yet, and the rest tumor-bearing. Check them in the sample table afterwards.'),
         err),
       actions: [
         { label: 'Cancel', onClick: () => finish(null) },
@@ -401,7 +440,10 @@ export function chooseDetectedSamples({ result, cfg, suggestReplace = false }) {
           label: 'Add selected', kind: 'primary', icon: 'plus',
           onClick: () => {
             const chosen = rows.filter((r) => r.box.checked).map((r) => r.c);
-            if (!chosen.length) { err.textContent = 'Select at least one folder.'; return false; }
+            if (!chosen.length) {
+              err.textContent = open().length ? 'Select at least one folder.' : 'Every folder found is a sample already.';
+              return false;
+            }
             finish({ candidates: chosen, replace: replaceBox.checked });
             return true;
           },

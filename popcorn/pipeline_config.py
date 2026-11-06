@@ -692,6 +692,19 @@ def _sample_base(cfg: dict, sample: dict) -> Path:
     return p
 
 
+def _section_key(cfg: dict, sample: dict) -> str | None:
+    """[APP] The folder of a sample's section, for comparing samples: SR/, SR/outs/, SR/outs/binned_outputs/ and a
+    square_<size>/ folder in it are one section (see _bin_candidates); None without a path or id."""
+    if not isinstance(sample, dict) or not (sample.get("path") or sample.get("id")):
+        return None
+    parts = [p for p in re.split(r"[\\/]+", str(_sample_base(cfg, sample))) if p not in ("", ".")]
+    if parts and parts[-1].startswith("square_"):
+        parts.pop()
+    while len(parts) > 1 and parts[-1].casefold() in ("binned_outputs", "outs"):
+        parts.pop()
+    return "/".join(parts).casefold() if sys.platform in ("win32", "darwin") else "/".join(parts)
+
+
 def _bin_candidates(base: Path, bin_size: str) -> list[Path]:
     name = f"square_{bin_size}"
     c = [base / name, base / "binned_outputs" / name, base / "outs" / "binned_outputs" / name]
@@ -888,6 +901,15 @@ def validate_config(cfg: dict) -> tuple[list[str], list[str]]:
         mpp = s.get("microns_per_pixel")
         if mpp is not None and (isinstance(mpp, bool) or not isinstance(mpp, (int, float)) or mpp <= 0):
             err.append(f"sample {sid!r}: microns_per_pixel must be a positive number or null")
+    sections: dict[str, list[str]] = {}
+    for s in samples:
+        key = _section_key(cfg, s)
+        if key is not None:
+            sections.setdefault(key, []).append(str(s.get("id")))
+    for same in sections.values():
+        if len(same) > 1:
+            err.append(f"samples {', '.join(repr(i) for i in same)} read the same folder: one section would be "
+                       f"analysed {len(same)} times; each sample must be a different section")
     if len(set(ids)) != len(ids):
         err.append("sample ids must be unique")
     elif len({i.casefold() for i in ids if isinstance(i, str)}) != len(ids):
