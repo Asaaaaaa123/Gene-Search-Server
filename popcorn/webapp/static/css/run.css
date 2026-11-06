@@ -374,6 +374,19 @@
 .sv-tip-grid dd.mono { font-size: 11px; }
 .sv-tip-grid .on { color: var(--text); font-weight: 700; }
 .sv-tip-grid dd.sv-tip-calls { text-align: left; }
+/* the genes of the bin under the pointer: a wider tooltip, the genes in columns by UMIs */
+.sv-tip.sv-tip-wide { width: min(620px, calc(100vw - 16px)); max-width: none; }
+.sv-tip-genes { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.sv-tip-genes-head { font-weight: 650; margin-bottom: 2px; }
+.sv-tip-genes-head .muted, .sv-tip-genes > .muted { font-weight: 400; color: var(--text-muted); }
+.sv-tip-gene-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0 12px;
+  margin: 2px 0 4px; padding: 0; list-style: none; font-size: 11px; line-height: 1.4;
+}
+.sv-tip-gene-list li { display: flex; justify-content: space-between; gap: 6px; min-width: 0; }
+.sv-tip-gene-list .sv-g { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-tip-gene-list .sv-n { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.sv-bin-genes { max-height: min(60vh, 520px); overflow: auto; }
 .sv-msg {
   position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; overflow: auto;
   background: color-mix(in srgb, var(--surface) 85%, transparent);

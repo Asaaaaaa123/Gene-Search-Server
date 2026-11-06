@@ -1173,6 +1173,15 @@ class RawSection:
             return np.zeros(self.n_bins, np.int64)
         return np.asarray(self.X[:, cols].sum(axis=1, dtype=np.int64)).ravel()
 
+    def bin_genes(self, row: int) -> list[list]:
+        """[[gene, UMIs], ...] of every gene detected in one bin (row), by UMIs (descending), then panel order. The
+        counts are held by gene: the bin's entries are found by its row number among all of them."""
+        hits = np.flatnonzero(self.X.indices == row)
+        cols = np.searchsorted(self.X.indptr, hits, side="right") - 1
+        counts = self.X.data[hits].astype(np.int64)
+        order = np.lexsort((cols, -counts))
+        return [[self.genes[c], int(n)] for c, n in zip(cols[order].tolist(), counts[order].tolist()) if n > 0]
+
     def gene_stats(self, rows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """(total UMI, number of bins detecting it) of every gene over the given rows (a row listed twice counts
         twice)."""
@@ -1378,6 +1387,22 @@ def sparse_vector(values: np.ndarray, used: list[str], missing: list[str]) -> di
     return {"genes_used": used, "genes_missing": missing, "n": int(len(values)), "indices": idx.tolist(),
             "values": values[idx].tolist(), "total": int(values.sum()), "n_detected": int(len(idx)),
             "max": int(values.max()) if len(values) else 0}
+
+
+def bin_index(value, n: int) -> int:
+    """The position of a bin in a bin payload (0 to n - 1); 400 otherwise."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < n:
+        raise HTTPException(400, f"index must be the position of a bin, from 0 to {n - 1}")
+    return value
+
+
+def bin_genes_answer(section: RawSection, index: int, row: int) -> dict:
+    """JSON of a bin's genes (POST /explore/{sid}/bin, GET /runs/{rid}/bin); row -1: the bin is not in the raw data."""
+    genes = section.bin_genes(row) if row >= 0 else []
+    return {"index": index, "matched": row >= 0, "n_genes": len(genes), "total": sum(n for _, n in genes),
+            "genes": genes}
 
 
 def requested_genes(value) -> list[str]:
@@ -2888,6 +2913,14 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         used, missing, cols = section.resolve(names)
         return JSONOut(sparse_vector(section.counts(cols), used, missing))
 
+    @app.post("/api/projects/{pid}/explore/{sid}/bin")
+    def explore_bin(pid: str, sid: str, body: dict = Depends(json_body)):
+        """Every gene detected in one bin (index: its position in the bin payload, the section's order)."""
+        cfg, sample = explore_sample(pid, sid, body)
+        section = raw_section(*section_files(cfg, sample))
+        index = bin_index(body.get("index"), section.n_bins)
+        return JSONOut(bin_genes_answer(section, index, index))
+
     @app.get("/api/explore-images/{key}")
     def explore_image(key: str):
         path = image_keys.path(key) if IMAGE_KEY_RE.match(key) else None
@@ -3148,6 +3181,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         link, section = run_gene_link(rid, sid)
         used, missing, cols = section.resolve(names)
         return JSONOut({**sparse_vector(link.counts(section, cols), used, missing), "n_unmatched": link.n_unmatched})
+
+    @app.get("/api/runs/{rid}/bin")
+    def run_bin(rid: str, sample: str, index: str):
+        """Every gene detected in one bin of a sample of a run (index: its position in GET /bins), from the raw data."""
+        link, section = run_gene_link(rid, sample)
+        i = bin_index(index, link.n)
+        return JSONOut(bin_genes_answer(section, i, int(link.rows[i])))
 
     @app.get("/api/runs/{rid}/export/loupe")
     def export_loupe(rid: str):

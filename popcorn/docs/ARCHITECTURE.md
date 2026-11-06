@@ -604,16 +604,19 @@ fieldLabel(key) -> display name of a per-bin field
   to load)}. Every method gets an AbortSignal; a 404 from samples() shows the empty state. The run viewer uses
   runSource; the data explorer a source over the /explore endpoints.
 * 1, 2 or 4 panels (2 x 2; one column below 760 px), each with its own section (a new panel shows the first section
-  no panel before it shows) and two parts: "Color by", the base map, and layers on top.
-  "Color by": "None (gray)" (every bin in the neutral color, under layers; its one legend entry "Every bin (gray)"
-  hides them like any legend entry, which leaves the layers alone, e.g. only the bins passing QC over the H&E image;
-  the legend's "x of y bins shown" counts the bins of the coloring and of the layers), the labels (category fields), the
-  numbers (number fields), or "Gene…": the summed counts of one or more genes, 0 in the neutral color, detected bins
-  on viridis with a log(1 + x) scale clamped at the 99th percentile of the nonzero counts; numbers likewise from their
-  smallest value to their 99th percentile, log(1 + x) for UMIs and genes per bin; the color scale starts at viridis'
-  quarter point, so the lowest step is brighter than the neutral color on the dark background. The yes/no fields are
-  not in it: they are layers. A panel colored by one (a view kept from before, or viewer.show({field})) shows that
-  field as a layer over no coloring, the same picture (its negatives hidden: the gray bins hidden).
+  no panel before it shows) and two parts: the base map and layers on top. There is no "Color by": the base map is
+  gray (every bin in the neutral color, under layers; its one legend entry "Every bin (gray)" hides them like any
+  legend entry, which leaves the layers alone, e.g. only the bins passing QC over the H&E image; the legend's "x of y
+  bins shown" counts the bins of the coloring and of the layers), or colored by the genes typed in "Color by genes":
+  the summed counts of one or more genes, 0 in the neutral color, detected bins on viridis with a log(1 + x) scale
+  clamped at the 99th percentile of the nonzero counts; the color scale starts at viridis' quarter point, so the lowest
+  step is brighter than the neutral color on the dark background (an empty box: gray again). The labels and numbers
+  (tissue class, assigned signature, Leiden domain, UMIs per bin, ...) are not colorings: the tooltip of a bin shows
+  them, with every gene detected in the bin and its UMIs, most first (the first 150; source.genes.bin, POST
+  /explore/{sid}/bin or GET /runs/{rid}/bin, asked for 90 ms after the pointer stops, the last 300 bins kept per
+  section), and a click on the bin opens all its genes in a dialog (filter, Copy list as gene<TAB>umi). A panel asked
+  for a yes/no field (a view kept from before, or viewer.show({field})) shows that field as a layer over the gray bins,
+  the same picture (its negatives hidden: the gray bins hidden); a label or number asked for gives the gray bins.
   Layers (the panel's "overlays" in the store and the code): genes, each marking the bins detecting it, so that
   several genes show on one map, and boolean fields: calls, region of interest, quality control; each in the
   signature's configured color when free, else a palette color apart from the other layers and, while one is left,

@@ -67,6 +67,17 @@ def dense(vector: dict) -> np.ndarray:
     return out
 
 
+def bin_genes_of(a, i: int) -> list[list]:
+    """[[gene, UMIs], ...] of the genes detected in bin i of an AnnData, by UMIs (descending), then gene order."""
+    x = a.X[i]
+    x = np.rint(np.asarray(x.toarray() if hasattr(x, "toarray") else x).ravel()).astype(np.int64)
+    return [[a.var_names[c], int(x[c])] for c in sorted(np.flatnonzero(x > 0).tolist(), key=lambda c: (-x[c], c))]
+
+
+def bin_answer(i: int, genes: list[list], matched: bool = True) -> dict:
+    return {"index": i, "matched": matched, "n_genes": len(genes), "total": sum(n for _, n in genes), "genes": genes}
+
+
 def copy_sample(tiny_demo: dict, dest: Path, index: int = 0) -> Path:
     """A copy of a demo section (its binned_outputs folder) at dest; returns the copied binned_outputs folder."""
     target = dest / "outs" / "binned_outputs"
@@ -277,6 +288,22 @@ def test_explore_gene_map(client, tiny_demo, raw):
                 {"genes": [f"G{i}" for i in range(51)]}):
         assert client.post(url, json=bad).status_code == 400, bad
     assert explore(client, p["id"], "NOPE", "gene", genes=["Ctsk"]).status_code == 404
+
+
+def test_explore_bin_genes(client, tiny_demo, raw):
+    """Every gene detected in one bin (the spatial viewer's tooltip): the raw counts of that row, most first."""
+    p = new_project(client, **demo_config(tiny_demo))
+    a = raw["TUM-1"]
+    richest = int(np.argmax(np.asarray((a.X > 0).sum(axis=1)).ravel()))
+    for i in (0, richest, a.n_obs - 1):
+        r = explore(client, p["id"], "TUM-1", "bin", index=i)
+        assert r.status_code == 200, r.text
+        assert r.json() == bin_answer(i, bin_genes_of(a, i))
+    assert explore(client, p["id"], "TUM-1", "bin", index=richest).json()["n_genes"] > 5
+    url = f"/api/projects/{p['id']}/explore/TUM-1/bin"
+    for bad in ({}, {"index": -1}, {"index": a.n_obs}, {"index": "x"}, {"index": 1.5}, {"index": True}):
+        assert client.post(url, json=bad).status_code == 400, bad
+    assert explore(client, p["id"], "NOPE", "bin", index=0).status_code == 404
 
 
 def test_explore_uses_the_unsaved_settings(client, tiny_demo, raw):
@@ -543,6 +570,29 @@ def test_run_gene_map_holds_the_raw_counts_of_the_run_bins(gene_run):
         assert m["n_unmatched"] == int(unmatched.sum())
     assert sum(c.post(f"/api/runs/{rid}/gene", json={"sample": s, "genes": ["Ctsk"]}).json()["n_unmatched"]
                for s in ("CTRL-1", "TUM-1")) == 1
+
+
+def test_run_bin_genes(gene_run):
+    """GET /runs/{rid}/bin: the genes of a bin of the per-bin table (its position in GET /bins), from the raw counts;
+    a bin whose barcode the raw data lacks has none (matched: false)."""
+    c, rid, a, table = gene_run
+    seen_unmatched = 0
+    for sid in ("CTRL-1", "TUM-1"):
+        rows = table[table["sample_id"] == sid]["barcode"].tolist()
+        for i, bc in enumerate(rows[:40]):
+            r = c.get(f"/api/runs/{rid}/bin", params={"sample": sid, "index": i})
+            assert r.status_code == 200, r.text
+            if bc in a.obs_names:
+                assert r.json() == bin_answer(i, bin_genes_of(a, a.obs_names.get_loc(bc)))
+            else:
+                seen_unmatched += 1
+                assert r.json() == bin_answer(i, [], matched=False)
+        url = f"/api/runs/{rid}/bin"
+        for params in ({"sample": sid}, {"sample": sid, "index": -1}, {"sample": sid, "index": len(rows)},
+                       {"sample": sid, "index": "x"}, {"index": 0}):
+            assert c.get(url, params=params).status_code == 400, params
+    assert seen_unmatched == 1
+    assert c.get(f"/api/runs/{rid}/bin", params={"sample": "NOPE", "index": 0}).status_code == 404
 
 
 def test_run_gene_list(gene_run):

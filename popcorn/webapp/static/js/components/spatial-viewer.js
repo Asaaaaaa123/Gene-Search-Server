@@ -1,5 +1,6 @@
 // spatial-viewer.js — the spatial viewer: every bin of a section drawn at its position (x, y in µm, y down, equal
-// aspect), colored by a label, a number or the summed UMI counts of genes (or gray: no coloring), with layers drawn on
+// aspect), gray or colored by the summed UMI counts of the genes typed (there is no "Color by": the labels and numbers
+// of a bin and every gene detected in it show in the tooltip, and a click on a bin lists its genes), with layers drawn on
 // top (genes, each in its own color where it is detected, and yes/no fields: positivity calls, region of interest,
 // quality control; added with the "+ Add layer" button, stored as the panel's "overlays") and the H&E image
 // underneath. One, two or four panels side by side,
@@ -21,6 +22,8 @@
 //       search(sampleId, query, signal) -> [{gene, total_umi, n_bins_detected, pct_bins_detected}]
 //       values(sampleId, genes[], signal) -> {genes_used[], genes_missing[], n, indices[], values[], total,
 //                                     n_detected, max, n_unmatched?}: summed UMIs per bin in the bin payload's order
+//       bin?(sampleId, index, signal) -> {index, matched, n_genes, total, genes: [[gene, UMIs], ...] by UMIs}: every
+//                                     gene detected in one bin (index in the bin payload's order), for the tooltip
 //     }
 //     image?(sampleId, signal, {retry}) -> {url, px_per_um, width, height} | null: H&E under the bins, image pixel
 //                                     (u, v) at (u / px_per_um, v / px_per_um) µm; retry: asked again after the image
@@ -39,7 +42,7 @@
 //   prepared counts, the last 40 used), images (Map sample -> loaded H&E | {none: true}).
 // Bins are drawn into one offscreen layer per panel (one fillRect batch per color) only when the data, the zoom or the
 // style change; panning and hovering only copy the layers, so four panels of 100,000 bins or more stay smooth.
-import { h, api, apiUrl, mount, icon, emptyState, errorPanel, loading, fmt, toast, debounce, switchToggle, popover } from '../core.js';
+import { h, api, apiUrl, mount, icon, emptyState, errorPanel, loading, fmt, toast, debounce, switchToggle, popover, modal } from '../core.js';
 import { downloadBlob } from './log-view.js';
 import { formatNumber } from './table-viewer.js';
 import { parseTokens } from './chips.js';
@@ -57,7 +60,6 @@ const FIELD_LABELS = {
 };
 const CATEGORY_ORDER = ['tissue_class', 'assigned_signature', 'leiden_domain'];
 const NUMBER_ORDER = ['total_umi', 'n_genes', 'pct_mt'];
-const DEFAULT_FIELDS = ['tissue_class', 'assigned_signature', 'leiden_domain', 'total_umi'];
 const LOG_FIELDS = new Set(['total_umi', 'n_genes']);
 const BOOL_TEXT = { in_region_of_interest: ['Inside', 'Outside'], passes_qc: ['Passes', 'Fails'] };
 // suffix of pooled calls in the per-bin table: _pooled_depthmatched (uncoupling.calls "pooled_dm") or _pooled ("pooled")
@@ -86,6 +88,9 @@ const NONE_FIELD = '__none__'; // "Color by" value of no coloring: every bin in 
 const BASE = '__base__'; // legend key of the gray bins of no coloring (hidden: the layers alone)
 const GENE_OVERLAY = 'gene:'; // overlay key prefix: 'gene:Ctsk,Acp5' = bins where the summed count is above 0
 const MAX_GENES = 50;
+const BIN_GENES_TIP = 150; // genes of a bin listed in the tooltip (all of them in the dialog a click on the bin opens)
+const BIN_GENES_KEPT = 300; // bins whose genes a panel keeps per section
+const BIN_GENES_DELAY_MS = 90; // the pointer stops this long on a bin before its genes are asked for
 const MAX_OVERLAYS = OVERLAY_PALETTE.length; // per panel: one palette color each (11), still told apart
 const LOADING = 'loading…'; // status of a gene overlay whose counts are on their way
 const isGeneLayer = (l) => l.key.startsWith(GENE_OVERLAY);
@@ -985,6 +990,7 @@ export function runSource(runId) {
         return res && Array.isArray(res.genes) ? res.genes : [];
       },
       values: (sampleId, genes, signal) => api(`/api/runs/${enc}/gene`, { method: 'POST', body: { sample: sampleId, genes }, signal }),
+      bin: (sampleId, index, signal) => api(`/api/runs/${enc}/bin`, { query: { sample: sampleId, index }, signal }),
     },
     async image(sampleId, signal) {
       try {
@@ -1022,6 +1028,7 @@ function initStore(store) {
 export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) {
   initStore(store);
   const hasGenes = !!(source.genes && typeof source.genes.search === 'function' && typeof source.genes.values === 'function');
+  const hasBinGenes = hasGenes && typeof source.genes.bin === 'function';
   const hasImage = typeof source.image === 'function';
 
   let destroyed = false;
@@ -1521,6 +1528,9 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     let size = { w: 0, h: 0 };
     let dpr = window.devicePixelRatio || 1;
     let hover = -1;
+    let tipAt = null; // {px, py}: where the tooltip was placed (placed again when the genes of its bin arrive)
+    let binCtrl = null; // the request of the genes of a bin on its way
+    const binGeneCache = new WeakMap(); // prepared bins (data) -> Map bin index -> answer of source.genes.bin
     let dirty = true;
     let needPaint = true;
     let crispTimer = null;
@@ -1531,20 +1541,15 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     let pinch = null;
 
     // ---- DOM
-    const ids = { sample: uid('sv-sample'), field: uid('sv-field'), genes: uid('sv-genes') };
+    const ids = { sample: uid('sv-sample'), genes: uid('sv-genes') };
     const titleEl = h('h3', { class: 'sv-panel-title' });
     const sampleSel = h('select', { class: 'select', id: ids.sample, onChange: () => setSample(sampleSel.value) });
-    const fieldSel = h('select', {
-      class: 'select', id: ids.field,
-      onChange: () => {
-        setField(fieldSel.value);
-        if (st.field === GENE_FIELD && !st.genes.length && geneBox) geneBox.focus();
-      },
-    });
+    // no "Color by": the bins are gray, or colored by the genes typed here (summed); the labels and numbers of a bin
+    // and every gene detected in it show when the pointer is over it, and a click lists its genes
     const searchGenes = (q, signal) => source.genes.search(st.sample, q, signal);
     const geneBox = hasGenes ? geneInput({ id: ids.genes, label: 'Genes', submitLabel: 'Show', search: searchGenes, onSubmit: setGenes }) : null;
-    const geneCtl = geneBox ? h('div', { class: 'sv-control sv-control-wide', hidden: true },
-      h('label', { for: ids.genes }, 'Genes (several are summed)'), geneBox.el) : null;
+    const geneCtl = geneBox ? h('div', { class: 'sv-control sv-control-wide' },
+      h('label', { for: ids.genes }, 'Color by genes (several are summed; empty: gray bins)'), geneBox.el) : null;
     // layers (called overlays in the code and the store): "+ Add layer" opens a popover (a gene box, then the yes/no
     // fields not shown yet); every layer is a chip of the row under the controls, in its color, with its remove button
     const addBtn = h('button', {
@@ -1560,7 +1565,6 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       h('label', { class: 'check sv-dim' }, dimInput, 'Dim the coloring under the layers'));
     const controls = h('div', { class: 'sv-panel-controls' },
       h('div', { class: 'sv-control' }, h('label', { for: ids.sample }, 'Section'), sampleSel),
-      h('div', { class: 'sv-control' }, h('label', { for: ids.field }, 'Color by'), fieldSel),
       geneCtl,
       h('div', { class: 'sv-control sv-control-auto' }, h('span', { class: 'sv-control-label' }, 'Layers'), addBtn));
     const canvas = h('canvas', {
@@ -1889,8 +1893,10 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       if (moved) {
         viewSettled(self);
       } else if (e.type === 'pointerup') {
-        const p = local(e); // a click or tap shows the bin under it
+        const p = local(e); // a click or tap shows the bin under it; on the bin shown already, it lists its genes
+        const before = hover;
         hoverAt(p.x, p.y);
+        if (hasBinGenes && hover >= 0 && hover === before) openBinGenes(hover);
       }
     }
 
@@ -1971,10 +1977,129 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
         }
       }
       if (anyCall) row('Positive for', calls.length ? calls.join(', ') : 'none of the other calls', false, 'sv-tip-calls');
+      const genes = binGenesPart(i);
+      tip.classList.toggle('sv-tip-wide', !!genes && genes.wide);
       return [
         h('div', { class: 'sv-tip-head' }, `x ${fmt.int(data.x[i])} µm · y ${fmt.int(data.y[i])} µm`),
         rows.length ? h('dl', { class: 'sv-tip-grid' }, rows) : null,
+        genes ? genes.el : null,
       ];
+    }
+
+    // ---- the genes of a bin (source.genes.bin): asked for a moment after the pointer stops on it, kept per section
+    // payload (the last BIN_GENES_KEPT bins); the tooltip lists the first BIN_GENES_TIP, a click on the bin all of them
+    function binGeneStore() {
+      let m = binGeneCache.get(data);
+      if (!m) { m = new Map(); binGeneCache.set(data, m); }
+      return m;
+    }
+
+    function keepBinGenes(d, i, answer) {
+      let m = binGeneCache.get(d);
+      if (!m) { m = new Map(); binGeneCache.set(d, m); }
+      m.set(i, answer);
+      while (m.size > BIN_GENES_KEPT) m.delete(m.keys().next().value);
+    }
+
+    async function loadBinGenes(i) {
+      if (!hasBinGenes || !alive || !data || i < 0 || binGeneStore().has(i)) return null;
+      if (binCtrl) binCtrl.abort();
+      const ctrl = new AbortController();
+      binCtrl = ctrl;
+      const d = data;
+      const sample = st.sample;
+      let answer;
+      try {
+        const res = await source.genes.bin(sample, i, ctrl.signal);
+        answer = res && Array.isArray(res.genes) ? res : { genes: [], n_genes: 0, total: 0 };
+      } catch (err) {
+        if (err && err.name === 'AbortError') return null;
+        answer = { error: err && err.message ? err.message : String(err) };
+      } finally {
+        if (binCtrl === ctrl) binCtrl = null;
+      }
+      keepBinGenes(d, i, answer);
+      if (alive && data === d && hover === i) {
+        mount(tip, tipContent(i));
+        if (tipAt) placeTip(tipAt.px, tipAt.py);
+      }
+      return answer;
+    }
+
+    const fetchBinGenes = debounce(() => { loadBinGenes(hover); }, BIN_GENES_DELAY_MS);
+
+    /** {el, wide} of the tooltip's gene list of bin i, or null when the source has no genes. */
+    function binGenesPart(i) {
+      if (!hasBinGenes) return null;
+      const res = binGeneStore().get(i);
+      const note = (text) => ({ el: h('div', { class: 'sv-tip-genes muted' }, text), wide: false });
+      if (!res) return note('Genes in this bin: loading…');
+      if (res.error) return note(`Genes in this bin: ${res.error}`);
+      if (res.matched === false) return note('This bin is not in the raw data, so its genes are unknown.');
+      if (!res.genes.length) return note('No gene is detected in this bin.');
+      const shown = res.genes.slice(0, BIN_GENES_TIP);
+      const more = res.genes.length - shown.length;
+      return {
+        wide: shown.length > 8,
+        el: h('div', { class: 'sv-tip-genes' },
+          h('div', { class: 'sv-tip-genes-head' }, `${fmt.int(res.n_genes)} gene${res.n_genes === 1 ? '' : 's'} · ${fmt.int(res.total)} UMIs`,
+            h('span', { class: 'muted' }, ' — UMIs of each')),
+          h('ul', { class: 'sv-tip-gene-list' }, shown.map(([g, n]) => h('li', null, h('span', { class: 'sv-g' }, g), h('span', { class: 'sv-n' }, String(n))))),
+          h('div', { class: 'muted' }, more > 0 ? `+ ${fmt.int(more)} more. Click the bin to list them all.` : 'Click the bin to search or copy them.')),
+      };
+    }
+
+    /** Every gene of bin i in a dialog: a filter, the table (gene, UMIs, share of the bin's UMIs), Copy. */
+    async function openBinGenes(i) {
+      const d = data;
+      const where = `${sampleText(st.sample)} · x ${fmt.int(d.x[i])} µm, y ${fmt.int(d.y[i])} µm`
+        + (d.barcodes && d.barcodes[i] ? ` · ${d.barcodes[i]}` : '');
+      const filter = h('input', { class: 'input', type: 'search', placeholder: 'Filter the genes', 'aria-label': 'Filter the genes', spellcheck: false, autocomplete: 'off' });
+      const summary = h('p', { class: 'muted small' }, 'Loading the genes…');
+      const tbody = h('tbody');
+      const table = h('div', { class: 'table-wrap sv-bin-genes' }, h('table', { class: 'table compact' },
+        h('thead', null, h('tr', null, h('th', { class: 'num' }, '#'), h('th', null, 'Gene'), h('th', { class: 'num' }, 'UMIs'), h('th', { class: 'num' }, '% of the bin\'s UMIs'))),
+        tbody));
+      let res = binGeneStore().get(i) || null;
+      const paint = () => {
+        if (!res) return;
+        if (res.error) { summary.textContent = `The genes could not be loaded: ${res.error}`; return; }
+        if (res.matched === false) { summary.textContent = 'This bin is not in the raw data, so its genes are unknown.'; return; }
+        const q = filter.value.trim().toLowerCase();
+        const rows = res.genes.map(([g, n], k) => ({ g, n, k })).filter((r) => !q || r.g.toLowerCase().includes(q));
+        summary.textContent = `${fmt.int(res.n_genes)} gene${res.n_genes === 1 ? '' : 's'} detected, ${fmt.int(res.total)} UMIs, by UMIs`
+          + (q ? `; ${fmt.int(rows.length)} match “${filter.value.trim()}”` : '') + '.';
+        mount(tbody, rows.map((r) => h('tr', null, h('td', { class: 'num muted' }, String(r.k + 1)), h('td', { class: 'mono' }, r.g),
+          h('td', { class: 'num' }, fmt.int(r.n)), h('td', { class: 'num' }, res.total ? fmt.num((100 * r.n) / res.total, 1) : '—'))));
+      };
+      filter.addEventListener('input', paint);
+      modal({
+        title: 'Genes in this bin', size: 'wide',
+        body: h('div', { class: 'stack' }, h('p', null, where), summary, filter, table),
+        actions: [
+          {
+            label: 'Copy list', icon: 'copy',
+            onClick: async () => {
+              if (!res || !Array.isArray(res.genes) || !res.genes.length) return false;
+              const text = ['gene\tumi', ...res.genes.map(([g, n]) => `${g}\t${n}`)].join('\n');
+              try {
+                await navigator.clipboard.writeText(text);
+                toast(`${fmt.int(res.genes.length)} genes copied (gene and UMIs, tab-separated)`, 'success', { timeout: 2500 });
+              } catch {
+                toast('The browser did not allow copying', 'error');
+              }
+              return false;
+            },
+          },
+          { label: 'Close', kind: 'primary' },
+        ],
+      });
+      setTimeout(() => filter.focus(), 0);
+      if (!res) {
+        fetchBinGenes.cancel();
+        res = await loadBinGenes(i) || binGeneStore().get(i) || { error: 'no answer' };
+      }
+      paint();
     }
 
     function hideTip() {
@@ -2016,12 +2141,18 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
         queuePaint();
         if (i < 0) {
           tip.hidden = true;
+          tipAt = null;
+          fetchBinGenes.cancel();
           return;
         }
         mount(tip, tipContent(i));
         tip.hidden = false;
+        if (hasBinGenes && !binGeneStore().has(i)) fetchBinGenes();
       }
-      if (i >= 0 && px !== undefined) placeTip(px, py);
+      if (i >= 0 && px !== undefined) {
+        tipAt = { px, py };
+        placeTip(px, py);
+      }
     }
 
     // ---- title and legend
@@ -2365,34 +2496,20 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     }
 
     /**
-     * "Color by" checked against the section's fields: a yes/no field (calls, region, quality control) is a layer, so
-     * a panel colored by one (a view kept from before, a viewer.show()) shows the same picture as that layer over no
-     * coloring; a field the section lacks gives way to the first default it has (else no coloring).
+     * The coloring checked against the section's fields. There is no "Color by": the bins are gray (NONE_FIELD) or
+     * colored by the genes typed (GENE_FIELD). A yes/no field (calls, region, quality control) asked for (a view kept
+     * from before, a viewer.show()) becomes a layer over the gray bins, the same picture; a label or number gives way
+     * to the gray bins (its values show in the tooltip).
      */
     function normalizeField() {
-      if ((st.field === GENE_FIELD && hasGenes) || st.field === NONE_FIELD) return;
+      if (st.field === GENE_FIELD && hasGenes && st.genes.length) return;
       const f = data.fields.get(st.field);
       if (f && f.type === 'bool') {
         if (!st.overlays.includes(st.field) && st.overlays.length < MAX_OVERLAYS) st.overlays.push(st.field);
         // its negative bins hidden (only the positive or passing bins shown): the gray bins hidden, the same picture
         if (st.hidden && Array.isArray(st.hidden[st.field]) && st.hidden[st.field].includes('no')) st.hidden[NONE_FIELD] = [BASE];
-        st.field = NONE_FIELD;
-        return;
       }
-      if (!f) st.field = DEFAULT_FIELDS.find((k) => data.fields.has(k)) || data.order.find((k) => data.fields.get(k).type !== 'bool') || NONE_FIELD;
-    }
-
-    /** "Color by": no coloring, the labels, the numbers and the genes; the yes/no fields are layers (+ Add layer). */
-    function fillFieldSelect() {
-      const keysOf = (type) => data.order.filter((k) => data.fields.get(k).type === type);
-      const groups = [
-        { label: 'Labels', keys: keysOf('category') },
-        { label: 'Numbers', keys: keysOf('number') },
-      ].filter((g) => g.keys.length);
-      const opts = [h('option', { value: NONE_FIELD }, 'None (gray)')];
-      opts.push(...groups.map((g) => h('optgroup', { label: g.label }, g.keys.map((k) => h('option', { value: k }, fieldLabel(k))))));
-      if (hasGenes) opts.push(h('optgroup', { label: 'Expression' }, h('option', { value: GENE_FIELD }, 'Gene…')));
-      mount(fieldSel, opts);
+      st.field = NONE_FIELD;
     }
 
     /** Region, quality control and calls (yes/no fields) of the section that are not overlays yet, in field order. */
@@ -2406,27 +2523,12 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     }
 
     function syncControls() {
-      fillFieldSelect();
-      fieldSel.value = st.field;
-      if (geneCtl) geneCtl.hidden = st.field !== GENE_FIELD;
-      if (geneBox) geneBox.set(st.genes.join(', '));
+      if (geneBox) geneBox.set(st.field === GENE_FIELD ? st.genes.join(', ') : '');
       paintAddBtn();
       dimInput.checked = st.dim;
     }
 
-    function setField(key) {
-      st.field = key; // chosen while a section loads: kept, and checked against its fields once it is there
-      if (!data) {
-        if (geneCtl) geneCtl.hidden = st.field !== GENE_FIELD; // genes can be typed meanwhile
-        return;
-      }
-      normalizeField();
-      syncControls();
-      ensureGenes();
-      prune();
-      restyle();
-    }
-
+    /** Color the bins by the summed counts of `genes`; none: gray bins. */
     function setGenes(genes) {
       let list = genes;
       if (list.length > MAX_GENES) {
@@ -2434,7 +2536,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
         list = list.slice(0, MAX_GENES);
       }
       st.genes = list;
-      if (hasGenes) st.field = GENE_FIELD;
+      st.field = hasGenes && list.length ? GENE_FIELD : NONE_FIELD;
       geneErrors.delete(genesKey(list)); // a gene list that failed before is tried again
       if (!data) return;
       syncControls();
@@ -2903,6 +3005,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       resizeObserver.unobserve(stage);
       resizeObserver.unobserve(el);
       tip.hidden = true;
+      fetchBinGenes.cancel();
+      if (binCtrl) binCtrl.abort();
       if (geneBox) geneBox.destroy();
       closeAdd(false);
       layer.width = 0;

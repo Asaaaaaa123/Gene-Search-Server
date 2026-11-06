@@ -269,6 +269,7 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
         return res && Array.isArray(res.genes) ? res.genes : [];
       },
       values: (sid, genes, signal) => api(url(`/${enc(sid)}/gene`), { method: 'POST', body: body({ genes }), signal }),
+      bin: (sid, index, signal) => api(url(`/${enc(sid)}/bin`), { method: 'POST', body: body({ index }), signal }),
     },
     async image(sid, signal, { retry = false } = {}) {
       const sec = sectionState(sid);
