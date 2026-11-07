@@ -14,3 +14,6 @@ dist/
 build/
 .next/
 out/
+# local Python environments (backend/.venv) and local tool settings
+.venv/
+.claude/

@@ -329,13 +329,25 @@ POST /api/projects/{pid}/explore/{sid}/bins
      404 sample not in the config / no matrix / no positions; 422 unreadable files, microns_per_pixel unknown,
      fewer than half of the barcodes with a position (the analysis' own check), or a matrix of more than 1,000,000
      bins (refused from matrix/shape before its counts are read; also for /genes, /gene and the run gene maps)
-POST /api/projects/{pid}/explore/{sid}/genes  body {"config"?, "query"?: str, "limit"?: 1..500 (default 50)}
+POST /api/projects/{pid}/explore/{sid}/genes  body {"config"?, "query"?: str, "limit"?: 1..500 (default 50),
+                                                    "offset"?: int >= 0 (default 0)}
      -> {"n_bins", "n_features", "n_matches", "genes": [{"gene", "total_umi", "n_bins_detected",
-         "pct_bins_detected"}]}   by total_umi descending (ties: panel order); query = case-insensitive substring
+         "pct_bins_detected"}]}   by total_umi descending (ties: panel order); query = case-insensitive substring;
+         genes = the matches from the offset-th on, at most limit (the viewer's gene boxes ask page by page, 100 at a
+         time, as their list scrolls); n_matches counts every match
 POST /api/projects/{pid}/explore/{sid}/gene   body {"config"?, "genes": [1..50 names]}
      -> sparse gene vector {"genes_used", "genes_missing", "n", "indices", "values", "total", "n_detected", "max"}:
         per-bin sum of the raw counts of the genes, in the order of the bins payload; indices = bins with a count > 0.
         A name matches exactly, else the first gene of that name in any case; a gene named twice counts once.
+POST /api/projects/{pid}/explore/{sid}/top-genes   body {"config"?}
+     -> {"n", "genes": [names], "bins": [int], "codes": [int], "n_tied", "n_empty", "pooled": bool, "n_unmatched": 0}:
+        the top gene of every bin (the viewer's "Top gene" coloring), in the order of the bins payload: the gene with
+        the most UMIs in the bin and the 8 bins around it on the grid (row and column from the Visium HD barcode
+        s_016um_<row>_<column>; pooled false, the bin alone, when a barcode has none). A tie goes to the gene with the
+        most UMIs in the section, then panel order; n_tied counts those bins. genes = the genes that top a bin, by the
+        number of bins they top (bins, descending; ties: panel order); codes = every bin's position in genes, -1 when
+        neither the bin nor its neighbors has a UMI (n_empty). RawSection.top_genes computes it once per section, the
+        pooled counts in blocks of 16,384 bins (sparse neighbor matrix x counts), and keeps it with the section.
 GET  /api/explore-images/{key}  -> image/png   only keys the server issued while resolving an image (an HMAC of path,
                                    modification time and size; a client never sends a path); 404 otherwise
 Caches (LRUCache: each key is built once, requests that arrive meanwhile wait for that build and get its value or
@@ -391,12 +403,28 @@ GET  /api/runs/{rid}/bins?sample=<sid>
      0 to 1) is always a number, also with one draw (every share 0 or 1).
 GET  /api/runs/{rid}/bins/image?sample=<sid>  -> {"url", "px_per_um", "width", "height"} of the hires H&E image under
      the bins of /bins (as in the explorer, with the run's config.json); 404 when there is none
-GET  /api/runs/{rid}/genes?sample=<sid>&query=&limit=50  -> as POST /explore/{sid}/genes plus "n_unmatched", over the
+GET  /api/runs/{rid}/genes?sample=<sid>&query=&limit=50&offset=0  -> as POST /explore/{sid}/genes plus "n_unmatched", over the
      bins of the run's per-bin table (n_bins = its bins of that sample)
 POST /api/runs/{rid}/gene  body {"sample", "genes": [1..50]}  -> sparse gene vector + "n_unmatched", aligned to the
      /bins order. The raw section is read again from the run's data_root; each per-bin barcode
      (<normalised matrix barcode>-<sample id>, as anndata.concat(index_unique="-") wrote it) is matched to its raw bin
      (fallbacks: as is, then normalised); unmatched bins count 0. 422 when the raw data can no longer be found.
+GET  /api/runs/{rid}/top-genes?sample=<sid>  -> as POST /explore/{sid}/top-genes, aligned to the /bins order: the top
+     genes of the raw section (its neighbors are the raw section's bins, those that failed quality control included),
+     ranked over the run's bins; unmatched bins have none (code -1, counted in n_empty and n_unmatched).
+POST /api/runs/{rid}/overlap-genes  body {"sample", "indices": [bins of a region, /bins order], "min_r"?: -1..1
+     (0.1), "max_fdr"?: 0..1 (0.05), "min_bins"?: int (3), "limit"?: 1..500 (100)}
+     -> {"n_bins", "n_overlap", "n_unmatched", "n_tested", "n_pass", "thresholds", "expression", "genes": [{"gene",
+        "r", "p", "fdr", "bins_in", "pct_in", "pct_out", "mean_in", "mean_out"}]}: the genes whose expression follows
+        the region (the viewer's "Correlated genes" of an overlap of cell types; overlap_genes_answer). Over the run's
+        bins of the sample that are in the raw data, each gene's expression is log1p of its UMIs per 10,000 UMIs of the
+        bin; r = its Pearson correlation with in the region (1) or not (0), from sparse sums (sum, sum of squares, sum
+        over the region: one pass over the counts, every gene tested); p two-sided from t = r sqrt((n - 2) / (1 - r^2))
+        with n - 2 degrees of freedom; fdr Benjamini-Hochberg over the genes detected in those bins. Kept: r >= min_r,
+        fdr <= max_fdr, detected in >= min_bins bins of the region; by r (descending, then panel order). pct_in /
+        pct_out: shares of the region's and of the other bins detecting the gene; mean_in / mean_out: mean expression.
+        The thresholds are suggestions (OVERLAP_DEFAULTS) the request may change; 400 for indices outside 0..n - 1 or
+        thresholds outside their ranges.
 GET  /api/runs/{rid}/export/loupe  -> application/zip, attachment "<rid>_loupe.zip": the per-bin calls as category CSV
      files for 10x Genomics Loupe Browser and README.txt (see "Loupe Browser export" below). 404 unknown run or no
      per-bin table (detail says when the run stopped before writing one); 409 while the run is queued or running; 422
@@ -496,8 +524,7 @@ time; it follows its button while the page scrolls and closes on a choice, Escap
 navigation, giving the focus back to its button; ↑/↓ on the button open it, ↑/↓/Home/End move in it; modal() leaves
 the keys to a menu open in a dialog.
 `popover(trigger, content, {label, align, focus, onClose, cls}) -> {el, place(), close({focus}), isOpen()}`: a small
-panel that is not modal (role="dialog", .menu-pop.popover) under its button, for a short form (the spatial viewer's
-"+ Add layer"). It shares the menus' slot (one menu or popover open at a time) and their placing (kept inside the
+panel that is not modal (role="dialog", .menu-pop.popover) under its button, for a short form. It shares the menus' slot (one menu or popover open at a time) and their placing (kept inside the
 window when it fits on neither side of its button) and closing, closes on Escape (focus back on its button; a field
 that uses Escape first, closing its own list, keeps it open), on Tab past its last field (focus on the page's next
 stop after its button) or Shift+Tab before its first (focus on its button), and when the focus leaves it otherwise
@@ -603,15 +630,71 @@ fieldLabel(key) -> display name of a per-bin field
   signal, {retry}) -> {url, px_per_um, width, height} | null (retry: asked again by the Retry of an image that failed
   to load)}. Every method gets an AbortSignal; a 404 from samples() shows the empty state. The run viewer uses
   runSource; the data explorer a source over the /explore endpoints.
-* 1, 2 or 4 panels (2 x 2; one column below 760 px), each with its own section (a new panel shows the first section
+* 1 panel up to one per section, at most 6 (MAX_PANELS): the "Panels" buttons are made once the sections are known,
+  1 to min(sections, 6), so with two sections there is no 3 or 4, and with one section no choice at all (a layout
+  kept from before is cut to the sections there are); 2 and 3 panels side by side, 4 in 2 x 2, 5 and 6 in 3 x 2
+  (panelCols/panelRows; data-cols, data-rows and --sv-cols on the viewer; one column below 760 px), each with its own section (a new panel shows the first section
   no panel before it shows) and two parts: the base map and layers on top. There is no "Color by": the base map is
   gray (every bin in the neutral color, under layers; its one legend entry "Every bin (gray)" hides them like any
   legend entry, which leaves the layers alone, e.g. only the bins passing QC over the H&E image; the legend's "x of y
-  bins shown" counts the bins of the coloring and of the layers), or colored by the genes typed in "Color by genes":
-  the summed counts of one or more genes, 0 in the neutral color, detected bins on viridis with a log(1 + x) scale
-  clamped at the 99th percentile of the nonzero counts; the color scale starts at viridis' quarter point, so the lowest
-  step is brighter than the neutral color on the dark background (an empty box: gray again). The labels and numbers
-  (tissue class, assigned signature, Leiden domain, UMIs per bin, ...) are not colorings: the tooltip of a bin shows
+  bins shown" counts the bins of the coloring and of the layers), or colored by the genes of "Color by genes": a list
+  of lines, one gene each (geneInput per line; genes joined by + on a line are summed, 'Ctsk, Acp5' typed on a line
+  becomes two lines; "+ Add layer" adds an empty line under the last and focuses it, x removes one, an emptied line goes; at most 11
+  lines and calls together). One line: the summed counts of its genes, 0 in the neutral color, detected bins on
+  viridis with a log(1 + x) scale clamped at the 99th percentile of the nonzero counts; the color scale starts at
+  viridis' quarter point, so the lowest step is brighter than the neutral color on the dark background (no line: gray
+  again). Two or more lines: every gene in its own color over the gray bins (gene layers, below), the swatch before
+  each line in its color. The panel's state keeps the lines as before (geneLines/storeLines): one line is field
+  '__gene__' with st.genes, two or more are 'gene:' overlays and field '__none__', so saved views, viewer.show() and
+  the data explorer's gene table (its + adds a line or removes one) keep working; normalizeField() brings any state to
+  that form. Or, with the "Top gene"
+  toggle (field '__top__', source.genes.top), every bin in the color of its top gene (POST /explore/{sid}/top-genes,
+  GET /runs/{rid}/top-genes): the 18 genes topping the most bins in the category palette, the other top genes in one
+  gray ("Other genes (n)"), bins without UMIs in the neutral color; the legend says how the top gene is found and how
+  many bins had a tie, and the tooltip names the bin's top gene (the gene lines are kept as gene overlays and not
+  drawn meanwhile, drawnOverlays(); Show on a line, or a gene added from the data explorer, leaves it). Or by the
+  cell types of "Color by cells" (beside "Color by genes"; shown only when the section's bins have the category field
+  assigned_signature, i.e. a run's per-bin table, not the explorer's raw data): field assigned_signature
+  (CELL_FIELD), with the panel's st.cells, one cell type per line (geneInput over a local list, searchCells: "All
+  cell types" first, then the section's types by their bins, "n bins"; "+ Add cell type" adds a line; a name that is
+  not a type of the section is refused with a warning). buildCellStyle draws the picked types in their configured
+  signature colors (payload "colors"; categoryColors), else palette colors, and every other bin in the neutral color
+  ("Other cell types"); ALL_CELLS ('*', the line "All cell types", alone on its lines) draws every type as the
+  category field (buildStyle; ambiguous/unassigned in gray). With two or more types picked, their overlap (cellOverlap:
+  the bins called positive, positive_<type> at native depth, for two or more of the picked types) leaves the colors
+  of single types. overlapCombos (shared with the gene lines) groups the overlap bins by their exact combination
+  (a bitmask of the picked types: 1 + 2, 1 + 3, 2 + 3 and 1 + 2 + 3 apart), each with one color of its own (combo:
+  true, color = edge: its bins, its cluster outline and its legend swatch; never dimmed), its own shape (shapeOf: the
+  combinations of the n picked ordered pairs first, then by mask, take SHAPES in turn: circle, triangle, diamond,
+  star, cross, hexagon, triangle-down; with three picked 1 + 2 circle, 1 + 3 triangle, 2 + 3 diamond, 1 + 2 + 3 star;
+  once half a bin is SHAPE_MIN_PX = 4 css px or more, drawBins fills the bin in a dark shade of the color and
+  drawShapes draws the shape in the color with a thin dark edge; smaller, a square in the color; legend swatches are
+  the shape, shapeSwatch on a canvas, and the exported legend draws it too). The colors are calculated to contrast
+  (farColors): candidates of 30 hues at several saturations and lightnesses, kept when their CIELAB lightness is 55
+  to 92 (they show on the dark map, none looks white), picked one after the other by greedy farthest point: each is
+  the candidate whose smallest ΔE*ab (CIELAB distance, as the eye sees color) to the fixed colors and to the colors
+  picked before is the largest. For the gene lines, overlayLayers picks the genes' colors and their combinations'
+  (geneEdges) together, fixed: background, gray bins, text, the configured colors of the other layers and the
+  coloring under them; for the cell types, cellOverlap picks the combinations' colors with the picked types'
+  configured colors fixed (mapPalette: the theme, else DARK_MAP). With three genes the closest two colors are ΔE 65
+  apart (the earlier fixed palettes: 43). Each combination also has its own cluster count; buildCellStyle puts those
+  bins, whatever their assigned type, in one group per combination drawn last, each a legend entry "a + b (n
+  clusters)" (key 'combo:<mask>'; hidden, it takes its outline away too), so the counts of the types and "Other cell
+  types" leave them out. overlapOutline joins the squares of a combination (one bin pitch wide, neighbors found on the
+  bin grid: centre / pitch, rounded) and keeps the sides no other bin of it shares, so bins side by side make one
+  shape with one outline; drawOutline strokes it in the combination's color over a dark halo, on the map and in the
+  exported PNG; outlinesDrawn() lists the outlines of the cell and gene combinations shown. countClusters counts the
+  shapes (bins joined side by side). The legend's "Overlap" section says what the overlap is and names the picked
+  types without a positivity call (not counted; fewer than two with a call: no overlap), and lists the combinations
+  with a "Correlated genes…" button each (sources with genes.overlapGenes: runs): openOverlapGenes opens a dialog
+  with the thresholds in boxes (suggested r >= 0.1, FDR <= 0.05, 3 bins of the overlap; the panel keeps the last ones
+  used, corrThresholds), asks POST /runs/{rid}/overlap-genes with the combination's bins on open and on "Find genes",
+  and lists the genes passing by r (r, FDR, share of the overlap and of the other bins detecting it), with Show (the
+  map colored by that gene, showGeneLines), "Show top 3 as gene lines" and "Copy list" (tab-separated). Show on a cell line sets the field (the gene lines wait
+  as for Top gene); Show on a gene line, or Top gene, leaves it and the cell lines wait in turn, each waiting list
+  with a note. A kept view with field assigned_signature and no st.cells shows all types. Its legend entries hide and
+  show like any other, and the tooltip names the type "Cell type (assigned signature)". The other labels and numbers
+  (tissue class, Leiden domain, UMIs per bin, ...) are not colorings: the tooltip of a bin shows
   them, with every gene detected in the bin and its UMIs, most first (the first 150; source.genes.bin, POST
   /explore/{sid}/bin or GET /runs/{rid}/bin, asked for 90 ms after the pointer stops, the last 300 bins kept per
   section), and a click on the bin opens all its genes in a dialog (filter, Copy list as gene<TAB>umi). A panel asked
@@ -620,22 +703,27 @@ fieldLabel(key) -> display name of a per-bin field
   Layers (the panel's "overlays" in the store and the code): genes, each marking the bins detecting it, so that
   several genes show on one map, and boolean fields: calls, region of interest, quality control; each in the
   signature's configured color when free, else a palette color apart from the other layers and, while one is left,
-  from the colors of the categories the panel is colored by; bins in two or more layers in the theme's text color, in
-  the dark text color of the exported image over the H&E image and in that image; the coloring under them can be
+  from the colors of the categories the panel is colored by; a bin in two or more gene layers (and no yes/no layer)
+  takes the color of its exact combination of genes (buildOverlays with overlapCombos, as for the cell types: one
+  contrasting color, a shape, a legend entry with its bins and clusters, an outline around touching bins); a bin
+  in a yes/no layer and another layer is in the theme's text color, in the dark text color of the exported image over
+  the H&E image and in that image; the
+  legend counts the bins drawn in each color (the hover title also gives the bins in the layer); the coloring under them can be
   dimmed. A legend with counts and click-to-hide entries, and a title (section + what is shown: 'Tissue class + Ctsk,
-  Acp5', or the layers alone over no coloring). Layers are added with "+ Add layer" (the panel's last control, under
-  the label "Layers"), a popover() with a gene box (geneInput, suggestions only once typing; Enter or a suggestion
-  adds the genes typed, one layer each, 'Ctsk, Acp5', or one for genes joined by +, 'Ctsk + Acp5' = the bins
-  detecting any of them) and the boolean fields not shown yet (a click adds one). A layer asked for again (any case)
-  flashes its chip instead; at most 11 per panel (one palette color each; viewer.show() adds no more either, with the
-  same warning). Each layer is a chip under the controls (its color, its name, a remove button; marked when its genes
-  are not in the data or failed to load), with "Dim the coloring under the layers" beside them. A gene layer typed in
+  Acp5', or the layers alone over no coloring; 'n genes' for more than two gene lines). Gene layers are the lines of
+  "Color by genes", added with "+ Add layer" (the panel's last control, under the label "Layers"; it no longer opens
+  a popover, and the viewer offers no way to add a boolean layer: one only comes from a view kept from before or
+  from viewer.show()). At most 11 per panel (one palette color each; viewer.show() adds no more either, with the
+  same warning). Each boolean layer is a chip under the controls (its color, its name, a remove button), with "Dim the coloring under the layers" beside them (the row
+  shows while any layer is drawn, gene lines included); a gene line whose genes are not in the data or failed to
+  load has its swatch marked, with the reason as its title. A gene layer typed in
   another case takes the data's names once its counts are there ('ctsk' -> 'Ctsk'). Adding, removing or renaming
   layers dispatches a bubbling "sv-change"
   event from the panel (the popover lives outside the viewer's element). "Color scales: Shared" (default on): panels colored by
   the same genes or the same number use one range (the smallest low end, the largest 99th percentile), the legend
-  says whose range it shows. Pan and zoom are linked by default (one view in µm for all panels, with a crosshair at
-  the hovered position in the others); unlinked, each panel keeps its own view per section. The H&E image
+  says whose range it shows. Pan and zoom are not linked by default: each panel keeps its own view per section and
+  moves on its own; with "Linked" on (toolbar, two or more panels) one view in µm serves all panels, with a crosshair
+  at the hovered position in the others. The H&E image
   (source.image) can be drawn under the bins, the bins then see-through by the chosen amount; it is asked for again
   with {retry: true} only by the Retry of an image that failed to load. Save PNG (a ghost button at the end of the
   toolbar) writes one composite image of all panels (title, map, scale bar, legend, with the notes of a shared or
@@ -643,10 +731,10 @@ fieldLabel(key) -> display name of a per-bin field
   (role="group", "Zoom") in the top-right corner of each map.
 * Layout: the maps take the window's height less what must be seen with them (the viewer measures it: its place on
   the page when one row of panels starts in the top half of the first screen, else its toolbar and controls; measured
-  again when the window is resized or the page above the viewer grows or shrinks; with four panels the second row is
-  measured on its own, and a map is at least 200 px high); with
-  two or four panels the maps of a row line up (the panels share the rows of a CSS subgrid), the controls of a panel
-  sit on one line, and a wide panel (500 px with four panels, 700 px with two) has its legend in a 180 px column
+  again when the window is resized or the page above the viewer grows or shrinks; with two rows of panels the second
+  row is measured on its own, and a map is at least 200 px high); with
+  two or more panels the maps of a row line up (the panels share the rows of a CSS subgrid), the controls of a panel
+  sit on one line, and a wide panel (500 px with two rows of panels, 700 px with one; wideFrom) has its legend in a 180 px column
   beside the map (an entry's count under its label), else under it. The tooltip of a bin (barcode, genes shown, the field colored by and the layers in
   bold, the other fields, the remaining positivity calls on one line) is placed in the window beside the pointer, or
   above or below it, never cut by the panel.
@@ -683,7 +771,7 @@ dataExplorer({projectId, name, state, getConfig, focus, onOpenData}) -> {el, des
   outline, the section of the gene table, the active row of the sections table and the gene rows in step with it; it
   runs once the viewer is mounted (on every visit: with sections known from an earlier visit the viewer makes its
   panels at once), when panels are made or removed (a MutationObserver), after a press, key, focus or change in the
-  viewer, on its "sv-change" event (layers added from "+ Add layer" or renamed; the highlighted panel stays) and after each viewer.show() from the
+  viewer, on its "sv-change" event (gene lines or layers added, removed or renamed; the highlighted panel stays) and after each viewer.show() from the
   explorer (section rows, gene rows, a section opened from the Data tab). Gene table: the section's genes by UMIs
   (POST /genes, case-insensitive filter, 50 / 200 / 500 rows) with UMIs, bins detecting the gene and their share. A
   click in a gene row (rowAction(), as in the sections table; the gene name is the row's button) =

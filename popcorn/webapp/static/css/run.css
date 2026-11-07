@@ -275,8 +275,8 @@
   display: flex; flex-direction: column; gap: 12px;
   --sv-stage-h: clamp(420px, calc(100vh - var(--sv-lead, 380px) - 20px), 900px);
 }
-.sv[data-layout="2"] { --sv-stage-h: clamp(360px, calc(100vh - var(--sv-lead, 440px) - 20px), 760px); }
-.sv[data-layout="4"] { --sv-stage-h: clamp(200px, calc((100vh - var(--sv-lead, 340px) - var(--sv-row, 180px) - 20px) / 2), 560px); }
+.sv[data-rows="1"]:not([data-layout="1"]) { --sv-stage-h: clamp(360px, calc(100vh - var(--sv-lead, 440px) - 20px), 760px); }
+.sv[data-rows="2"] { --sv-stage-h: clamp(200px, calc((100vh - var(--sv-lead, 340px) - var(--sv-row, 180px) - 20px) / 2), 560px); }
 .sv-toolbar {
   display: flex; align-items: flex-end; gap: 12px 18px; flex-wrap: wrap; padding: 12px 14px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
@@ -294,13 +294,14 @@
 .sv-toolbar .sv-save { margin-bottom: 2px; }
 .sv-note { margin: 0; font-size: 11.5px; color: var(--text-faint); }
 
-/* panels: 1, 2 or 4 (2 x 2); one column in narrow windows */
+/* panels: 1 up to the number of sections; 2 and 3 side by side, 4 in 2 x 2, 5 and 6 in 3 x 2 (--sv-cols columns);
+   one column in narrow windows */
 .sv-panels { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-.sv[data-layout="2"] .sv-panels, .sv[data-layout="4"] .sv-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sv:not([data-layout="1"]) .sv-panels { grid-template-columns: repeat(var(--sv-cols, 2), minmax(0, 1fr)); }
 .sv-panel { display: flex; flex-direction: column; min-width: 0; }
 .sv-panel-head { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
 .sv-panel-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-panel-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.sv-panel-controls { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .sv-panel-controls .sv-control { flex: 1 1 150px; min-width: 0; max-width: 320px; }
 .sv-panel-controls .sv-control-wide { flex: 2 1 240px; max-width: none; }
 /* two or four panels: section, coloring and overlays on one line */
@@ -331,6 +332,29 @@
 .sv-panel-body { display: grid; grid-template-columns: minmax(0, 1fr); }
 .sv[data-layout="1"] .sv-panel-body { grid-template-columns: minmax(0, 1fr) 260px; }
 
+/* "Color by genes": one gene box per line, its color swatch before it and its remove button after it */
+.sv-lines { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sv-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sv-line > .sv-gene-box { flex: 1 1 auto; }
+.sv-line-swatch { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 3px; }
+.sv-line.warn .sv-line-swatch { outline: 2px solid var(--warning); outline-offset: 1px; }
+.sv-add-line { align-self: flex-start; }
+.sv-shape-swatch { flex: 0 0 auto; display: inline-block; vertical-align: middle; }
+/* "Correlated genes": a button per overlap combination (legend), and the dialog's thresholds and table */
+.sv-corr-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sv-corr-list li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sv-corr-list .sv-item-label { flex: 1 1 auto; min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.sv-corr-thresholds { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; }
+.sv-corr-field { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.sv-corr-field label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.sv-corr-field .input { width: 130px; }
+.sv-corr-table { max-height: 46vh; }
+.sv-outline-swatch {
+  flex: 0 0 auto; width: 13px; height: 13px; box-sizing: border-box;
+  border: 2px solid #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(0, 0, 0, 0.85);
+}
+.sv-lines-note { margin: 0; }
+
 /* gene box with suggestions */
 .sv-gene-box { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .sv-gene-field { position: relative; flex: 1 1 auto; min-width: 0; }
@@ -346,6 +370,8 @@
 .sv-suggest li:hover, .sv-suggest li.active { background: var(--accent-soft); }
 .sv-suggest-gene { font-family: var(--mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
 .sv-suggest-meta { color: var(--text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.sv-suggest li.sv-suggest-more { cursor: default; color: var(--text-muted); font-size: 11.5px; }
+.sv-suggest li.sv-suggest-more:hover { background: none; }
 
 /* map */
 .sv-stage { position: relative; height: var(--sv-stage-h); overflow: hidden; background: var(--plot-bg); }
@@ -438,8 +464,8 @@
   .sv[data-layout="1"] .sv-legend-body { max-height: none; border-left: 0; border-top: 1px solid var(--border); }
 }
 @media (max-width: 760px) {
-  .sv[data-layout="2"] .sv-panels, .sv[data-layout="4"] .sv-panels { grid-template-columns: minmax(0, 1fr); }
-  .sv[data-layout="2"], .sv[data-layout="4"] { --sv-stage-h: clamp(300px, 62vh, 560px); }
+  .sv:not([data-layout="1"]) .sv-panels { grid-template-columns: minmax(0, 1fr); }
+  .sv:not([data-layout="1"]) { --sv-stage-h: clamp(300px, 62vh, 560px); }
   .sv:not([data-layout="1"]) .sv-legend-body { max-height: none; }
   .sv-range { width: 100px; }
 }
@@ -448,9 +474,10 @@
 @media (min-width: 761px) {
   @supports (grid-template-rows: subgrid) {
     .sv:not([data-layout="1"]) .sv-panels { row-gap: 0; grid-template-rows: repeat(4, auto); align-items: stretch; }
-    .sv[data-layout="4"] .sv-panels { grid-template-rows: repeat(4, auto) 16px repeat(4, auto); }
+    .sv[data-rows="2"] .sv-panels { grid-template-rows: repeat(4, auto) 16px repeat(4, auto); }
     .sv:not([data-layout="1"]) .sv-panel { display: grid; grid-template-rows: subgrid; grid-row: 1 / span 4; }
-    .sv[data-layout="4"] .sv-panel:nth-child(n + 3) { grid-row: 6 / span 4; }
+    .sv[data-rows="2"][data-cols="2"] .sv-panel:nth-child(n + 3),
+    .sv[data-rows="2"][data-cols="3"] .sv-panel:nth-child(n + 4) { grid-row: 6 / span 4; }
     .sv:not([data-layout="1"]) .sv-panel-head { grid-row: 1; }
     .sv:not([data-layout="1"]) .sv-panel-controls { grid-row: 2; }
     .sv:not([data-layout="1"]) .sv-ovl-row { grid-row: 3; }

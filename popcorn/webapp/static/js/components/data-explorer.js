@@ -264,12 +264,13 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
       return payload;
     },
     genes: {
-      async search(sid, query, signal) {
-        const res = await api(url(`/${enc(sid)}/genes`), { method: 'POST', body: body({ query, limit: GENE_LIMITS[0] }), signal });
+      async search(sid, query, signal, { offset = 0, limit = GENE_LIMITS[0] } = {}) {
+        const res = await api(url(`/${enc(sid)}/genes`), { method: 'POST', body: body({ query, limit, offset }), signal });
         return res && Array.isArray(res.genes) ? res.genes : [];
       },
       values: (sid, genes, signal) => api(url(`/${enc(sid)}/gene`), { method: 'POST', body: body({ genes }), signal }),
       bin: (sid, index, signal) => api(url(`/${enc(sid)}/bin`), { method: 'POST', body: body({ index }), signal }),
+      top: (sid, signal) => api(url(`/${enc(sid)}/top-genes`), { method: 'POST', body: body({}), signal }),
     },
     async image(sid, signal, { retry = false } = {}) {
       const sec = sectionState(sid);
@@ -416,7 +417,7 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
   const panelEls = () => (viewer ? [...viewer.el.querySelectorAll('.sv-panels > .sv-panel')] : []);
   const panelCount = () => {
     const k = st.viewer && st.viewer.layout;
-    return k === 2 || k === 4 ? k : 1;
+    return Number.isInteger(k) && k > 1 ? k : 1;
   };
   const where = () => (panelCount() > 1 ? 'the highlighted panel' : 'the map'); // what the actions apply to
 
@@ -531,9 +532,18 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
     if (geneSid) showOnTarget({ sample: geneSid, genes: [gene] });
   }
 
-  /** Add the "detected" overlay of a gene to the highlighted panel, or remove it when it is there. */
+  /**
+   * Add a gene as one more line of the highlighted panel's "Color by genes" (stored as its "detected" overlay; with
+   * the panel's other gene lines, each gene in its own color), or remove it when it is there, also when it is the
+   * panel's only line (the gene coloring the bins by its UMIs).
+   */
   function toggleGeneOverlay(gene) {
     if (!geneSid) return;
+    const colored = targetGenes();
+    if (colored.length === 1 && colored[0] === gene) {
+      showOnTarget({ genes: [] }, false);
+      return;
+    }
     const key = GENE_OVERLAY + gene;
     const overlays = targetOverlays();
     if (overlays.includes(key)) showOnTarget({ overlays: overlays.filter((k) => k !== key) }, false);
@@ -652,7 +662,7 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
    */
   function paintGeneRow({ gene, tr, show, toggle, actions }, colored, overlays, at) {
     const shown = colored.length === 1 && colored[0] === gene;
-    const on = overlays.includes(GENE_OVERLAY + gene);
+    const on = overlays.includes(GENE_OVERLAY + gene) || shown; // a line of the panel's "Color by genes"
     tr.classList.toggle('dx-on-map', shown);
     show.setAttribute('aria-pressed', String(shown));
     show.title = `Color ${at} by the UMIs of ${gene}`;
@@ -660,7 +670,7 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
       toggle.setAttribute('aria-pressed', String(on));
       mount(toggle, icon(on ? 'check' : 'plus', { size: 14 }));
     }
-    toggle.title = on ? `Remove ${gene} from ${at}` : `Add ${gene} to ${at} in its own color`;
+    toggle.title = on ? `Remove ${gene} from ${at}` : `Add ${gene} to ${at} as one more gene line`;
     actions.classList.toggle('keep', on);
   }
 
