@@ -13,6 +13,7 @@ import copy
 import gzip
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,6 +77,39 @@ def bin_genes_of(a, i: int) -> list[list]:
 
 def bin_answer(i: int, genes: list[list], matched: bool = True) -> dict:
     return {"index": i, "matched": matched, "n_genes": len(genes), "total": sum(n for _, n in genes), "genes": genes}
+
+
+def top_genes_of(a) -> tuple[list, np.ndarray]:
+    """(top gene of every bin of one section, None without UMIs; tied) computed the slow way: the gene with the most
+    UMIs in the bin and the 8 bins around it on the grid (row and column from the barcode); a tie goes to the gene
+    with the most UMIs in the section, then to the first in gene order."""
+    X = np.rint(np.asarray(a.X.toarray() if hasattr(a.X, "toarray") else a.X)).astype(np.int64)
+    grid = [tuple(int(v) for v in re.match(r"^s_\d+um_(\d+)_(\d+)", b).groups()) for b in a.obs_names]
+    at = {rc: i for i, rc in enumerate(grid)}
+    pooled = np.zeros_like(X)
+    for i, (r, c) in enumerate(grid):
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                j = at.get((r + dr, c + dc))
+                if j is not None:
+                    pooled[i] += X[j]
+    total = X.sum(axis=0)
+    top, tied = [], []
+    for row in pooled:
+        most = row.max()
+        if most <= 0:
+            top.append(None)
+            tied.append(False)
+            continue
+        candidates = np.flatnonzero(row == most).tolist()
+        top.append(a.var_names[min(candidates, key=lambda g: (-total[g], g))])
+        tied.append(len(candidates) > 1)
+    return top, np.array(tied)
+
+
+def top_names(answer: dict) -> list:
+    """The top gene of every bin of a top-gene answer (None: no UMIs, or not in the raw data)."""
+    return [answer["genes"][k] if k >= 0 else None for k in answer["codes"]]
 
 
 def copy_sample(tiny_demo: dict, dest: Path, index: int = 0) -> Path:
@@ -260,8 +294,20 @@ def test_explore_gene_list(client, tiny_demo, raw):
     assert [g["gene"] for g in mt["genes"]] == expected and mt["n_matches"] == len(expected) == 13
     assert len(explore(client, p["id"], "CTRL-1", "genes", limit=500).json()["genes"]) == 500
     assert explore(client, p["id"], "CTRL-1", "genes", query="no such gene").json()["genes"] == []
+    # pages (the viewer's gene list as it scrolls): every gene once, in order, n_matches on each page
+    pages, offset = [], 0
+    while True:
+        page = explore(client, p["id"], "CTRL-1", "genes", limit=500, offset=offset).json()
+        assert page["n_matches"] == a.n_vars
+        if not page["genes"]:
+            break
+        pages += [g["gene"] for g in page["genes"]]
+        offset += len(page["genes"])
+    assert pages == [a.var_names[i] for i in order] and len(pages) > 500
+    tail = explore(client, p["id"], "CTRL-1", "genes", query="MT-", limit=5, offset=10).json()
+    assert [g["gene"] for g in tail["genes"]] == expected[10:] and tail["n_matches"] == 13
     for bad in ({"limit": 0}, {"limit": 501}, {"limit": "5"}, {"limit": True}, {"limit": 2.5}, {"query": 3},
-                {"query": "x" * 201}):
+                {"query": "x" * 201}, {"offset": -1}, {"offset": "5"}, {"offset": 1.5}, {"offset": True}):
         assert explore(client, p["id"], "CTRL-1", "genes", **bad).status_code == 400, bad
     assert explore(client, p["id"], "NOPE", "genes").status_code == 404
 
@@ -304,6 +350,37 @@ def test_explore_bin_genes(client, tiny_demo, raw):
     for bad in ({}, {"index": -1}, {"index": a.n_obs}, {"index": "x"}, {"index": 1.5}, {"index": True}):
         assert client.post(url, json=bad).status_code == 400, bad
     assert explore(client, p["id"], "NOPE", "bin", index=0).status_code == 404
+
+
+def test_barcode_grid_and_neighbor_matrix():
+    """The grid position of a Visium HD bin is in its barcode; neighbors are the 8 bins around it that exist (no
+    wrapping to the next row); barcodes without a grid position give None (the top gene of a bin alone)."""
+    barcodes = ["s_016um_00000_00000", "s_016um_00000_00001", "s_016um_00001_00000", "s_016um_00001_00001-1",
+                "s_016um_00005_00005", "s_016um_00000_00003"]
+    rows, cols = server.barcode_grid(barcodes)
+    assert rows.tolist() == [0, 0, 1, 1, 5, 0] and cols.tolist() == [0, 1, 0, 1, 5, 3]
+    block = [1, 1, 1, 1, 0, 0]
+    assert server.neighbor_matrix(rows, cols).toarray().tolist() == [
+        block, block, block, block, [0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 1]]
+    assert server.barcode_grid(["s_016um_00000_00000", "AAACGTTT-1"]) is None
+
+
+def test_explore_top_genes(client, tiny_demo, raw):
+    """The top gene of every bin (the viewer's "Top gene" coloring): the gene with the most UMIs in the bin and the 8
+    around it; the genes by number of bins they top."""
+    p = new_project(client, **demo_config(tiny_demo))
+    for sid in ("CTRL-1", "TUM-1"):
+        a = raw[sid]
+        r = explore(client, p["id"], sid, "top-genes")
+        assert r.status_code == 200, r.text
+        m = r.json()
+        top, tied = top_genes_of(a)
+        assert m["n"] == a.n_obs and m["pooled"] is True and m["n_unmatched"] == 0
+        assert top_names(m) == top
+        assert m["n_tied"] == int(tied.sum()) and m["n_empty"] == top.count(None)
+        assert m["bins"] == sorted(m["bins"], reverse=True) and sum(m["bins"]) == a.n_obs - m["n_empty"]
+        assert m["bins"] == [top.count(g) for g in m["genes"]] and len(m["genes"]) > 1
+    assert explore(client, p["id"], "NOPE", "top-genes").status_code == 404
 
 
 def test_explore_uses_the_unsaved_settings(client, tiny_demo, raw):
@@ -595,6 +672,72 @@ def test_run_bin_genes(gene_run):
     assert c.get(f"/api/runs/{rid}/bin", params={"sample": "NOPE", "index": 0}).status_code == 404
 
 
+def test_run_top_genes(gene_run, raw):
+    """GET /runs/{rid}/top-genes: the top gene of every bin of the per-bin table (GET /bins order) as the raw section
+    has it (its neighbors: the bins of the raw section, those that failed quality control included); a bin whose
+    barcode the raw data lacks has none."""
+    c, rid, a, table = gene_run
+    unmatched = 0
+    for sid in ("CTRL-1", "TUM-1"):
+        top, _ = top_genes_of(raw[sid])
+        by_barcode = {f"{bc}-{sid}": t for bc, t in zip(raw[sid].obs_names, top)}
+        rows = table[table["sample_id"] == sid]["barcode"].tolist()
+        r = c.get(f"/api/runs/{rid}/top-genes", params={"sample": sid})
+        assert r.status_code == 200, r.text
+        m = r.json()
+        assert m["n"] == len(rows) and top_names(m) == [by_barcode.get(b) for b in rows]
+        assert m["n_unmatched"] == sum(b not in by_barcode for b in rows)
+        unmatched += m["n_unmatched"]
+    assert unmatched == 1
+    assert c.get(f"/api/runs/{rid}/top-genes", params={"sample": "NOPE"}).status_code == 404
+
+
+def test_run_overlap_genes(gene_run, raw):
+    """POST /runs/{rid}/overlap-genes: Pearson r between every gene's log1p(UMIs per 10,000) and a region of the run's
+    bins, as numpy computes it; the thresholds (r, FDR, bins in the region) filter the answer; bad requests are 400."""
+    c, rid, a, table = gene_run
+    sid = "TUM-1"
+    r0 = raw[sid]
+    X = np.rint(np.asarray(r0.X.toarray() if hasattr(r0.X, "toarray") else r0.X)).astype(np.float64)
+    pos = {f"{bc}-{sid}": i for i, bc in enumerate(r0.obs_names)}
+    barcodes = table[table["sample_id"] == sid]["barcode"].tolist()
+    matched = [pos.get(b, -1) for b in barcodes]
+    ctsk = list(r0.var_names).index("Ctsk")
+    region = [k for k, m in enumerate(matched) if m >= 0 and X[m, ctsk] > 0]  # the bins detecting Ctsk
+    url = f"/api/runs/{rid}/overlap-genes"
+    every = c.post(url, json={"sample": sid, "indices": region, "min_r": -1, "max_fdr": 1, "min_bins": 0,
+                              "limit": 500})
+    assert every.status_code == 200, every.text
+    res = every.json()
+    rows = [m for m in matched if m >= 0]
+    inside = np.array([1.0 if X[m, ctsk] > 0 else 0.0 for m in rows])
+    Xr = X[rows]
+    tot = Xr.sum(axis=1, keepdims=True)
+    Y = np.log1p(np.divide(Xr * 1e4, tot, out=np.zeros_like(Xr), where=tot > 0))
+    assert res["n_bins"] == len(rows) and res["n_overlap"] == len(region)
+    assert res["n_unmatched"] == sum(m < 0 for m in matched)  # the altered barcode of gene_run, left out
+    assert [g["r"] for g in res["genes"]] == sorted((g["r"] for g in res["genes"]), reverse=True)
+    names = list(r0.var_names)
+    for g in res["genes"][:25]:
+        ref = np.corrcoef(Y[:, names.index(g["gene"])], inside)[0, 1]
+        assert abs(g["r"] - ref) < 1e-3, (g["gene"], g["r"], ref)
+    assert "Ctsk" in [g["gene"] for g in res["genes"][:3]]  # a region of Ctsk-detecting bins: Ctsk on top
+    # the suggested thresholds (r >= 0.1, FDR <= 0.05, 3 bins of the region), and other ones
+    default = c.post(url, json={"sample": sid, "indices": region}).json()
+    assert default["thresholds"] == {"min_r": 0.1, "max_fdr": 0.05, "min_bins": 3}
+    assert all(g["r"] >= 0.1 and g["fdr"] <= 0.05 and g["bins_in"] >= 3 for g in default["genes"])
+    assert 0 < default["n_pass"] <= res["n_pass"]
+    strict = c.post(url, json={"sample": sid, "indices": region, "min_r": 0.3, "max_fdr": 0.001, "min_bins": 10}).json()
+    assert all(g["r"] >= 0.3 and g["fdr"] <= 0.001 and g["bins_in"] >= 10 for g in strict["genes"])
+    assert strict["n_pass"] <= default["n_pass"]
+    for bad in ({"sample": sid}, {"sample": sid, "indices": []}, {"sample": sid, "indices": [-1]},
+                {"sample": sid, "indices": [len(barcodes)]}, {"sample": sid, "indices": [0], "min_r": 2},
+                {"sample": sid, "indices": [0], "max_fdr": -0.1}, {"sample": sid, "indices": [0], "min_bins": 1.5},
+                {"sample": sid, "indices": [0], "limit": 0}, {"indices": [0]}):
+        assert c.post(url, json=bad).status_code == 400, bad
+    assert c.post(url, json={"sample": "NOPE", "indices": [0]}).status_code == 404
+
+
 def test_run_gene_list(gene_run):
     c, rid, a, table = gene_run
     rows = table[(table["sample_id"] == "TUM-1") & table["barcode"].isin(a.obs_names)]
@@ -609,6 +752,9 @@ def test_run_gene_list(gene_run):
     assert r["genes"] == [{"gene": a.var_names[i], "total_umi": int(totals[i]), "n_bins_detected": int(detected[i]),
                            "pct_bins_detected": round(100 * int(detected[i]) / n, 2)} for i in order[:5]]
     assert len(c.get(f"/api/runs/{rid}/genes", params={"sample": "TUM-1"}).json()["genes"]) == 50
+    page = c.get(f"/api/runs/{rid}/genes", params={"sample": "TUM-1", "query": "ct", "limit": 5, "offset": 5}).json()
+    assert [g["gene"] for g in page["genes"]] == [a.var_names[i] for i in order[5:10]]
+    assert c.get(f"/api/runs/{rid}/genes", params={"sample": "TUM-1", "offset": -1}).status_code == 400
 
 
 def test_run_bins_image(gene_run, tiny_demo):

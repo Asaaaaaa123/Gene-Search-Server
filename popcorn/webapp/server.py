@@ -122,9 +122,14 @@ EXPLORE_PAYLOADS_BUDGET = 128 << 20  # (about 5 MB at 16 um, 20 MB at 8 um)
 GENE_LIST_LIMIT = 50               # genes per gene list by default
 GENE_LIST_MAX = 500                # genes per gene list at most
 MAX_GENES_PER_MAP = 50             # genes summed into one gene map at most
+OVERLAP_GENES_LIMIT = 100          # genes per answer of /overlap-genes by default
+OVERLAP_GENES_MAX = 500            # and at most
+OVERLAP_DEFAULTS = {"min_r": 0.1, "max_fdr": 0.05, "min_bins": 3}  # the thresholds suggested (each can be changed)
 MAX_GENE_NAME = 200
 GENE_EXPRESSION = "Gene Expression"
 MT_PREFIX = "mt-"                  # mitochondrial genes, case-insensitive (bone_analysis.qc_metrics)
+TOP_GENE_BLOCK = 16_384            # bins per block of the pooled counts of the top-gene map (bounds their memory)
+GRID_BARCODE_RE = re.compile(r"^s_\d+um_(\d+)_(\d+)")  # Visium HD bin barcode: s_016um_<row>_<column>
 BARCODE_SUFFIX_RE = re.compile(r"-\d+$")
 IMAGE_KEY_RE = re.compile(r"^[0-9a-f]{32}\Z")
 IMAGE_KEYS_MAX = 256
@@ -1151,6 +1156,8 @@ class RawSection:
         arrays = (X.data, X.indices, X.indptr, self.x_px, self.y_px, self.total, self.n_genes, self.mt,
                   self.gene_total, self.gene_bins)
         self.nbytes = sum(a.nbytes for a in arrays) + 300 * (self.n_bins + len(self.genes))
+        self._top: tuple[np.ndarray, np.ndarray, bool] | None = None
+        self._top_lock = threading.Lock()
 
     def resolve(self, names: list[str]) -> tuple[list[str], list[str], list[int]]:
         """(genes used, names not found, their columns): an exact name, else the first gene of that name in any case;
@@ -1195,6 +1202,75 @@ class RawSection:
     def rows_of(self, barcodes: list[str], sid: str) -> np.ndarray:
         """Row of each barcode of a per-bin table (-1 when it has none); see run_barcode_rows."""
         return run_barcode_rows(self.index, barcodes, sid)
+
+    def top_genes(self) -> tuple[np.ndarray, np.ndarray, bool]:
+        """(top gene of every bin: its column, -1 without UMIs; tied: several genes shared the most UMIs, and the one
+        with the most UMIs in the section was taken; pooled). The top gene is the one with the most UMIs in the bin and
+        the 8 bins around it on the grid (pooled), or in the bin alone when the barcodes carry no grid position.
+        Computed once per section, in blocks of TOP_GENE_BLOCK bins."""
+        with self._top_lock:
+            if self._top is None:
+                self._top = self._compute_top_genes()
+            return self._top
+
+    def _compute_top_genes(self) -> tuple[np.ndarray, np.ndarray, bool]:
+        n = self.n_bins
+        top = np.full(n, -1, np.int64)
+        tied = np.zeros(n, bool)
+        grid = barcode_grid(self.barcodes)
+        if not n:
+            return top, tied, grid is not None
+        pool = neighbor_matrix(*grid) if grid is not None else sparse.identity(n, dtype=np.int32, format="csr")
+        X = self.X.tocsr().astype(np.int32)  # by bin; int32: the pooled sums of 9 bins do not wrap
+        for start in range(0, n, TOP_GENE_BLOCK):
+            P = (pool[start:start + TOP_GENE_BLOCK] @ X).tocsr()
+            if not P.nnz:
+                continue
+            per_row = np.diff(P.indptr)
+            rows = np.repeat(np.arange(P.shape[0]), per_row)
+            most = np.zeros(P.shape[0], P.data.dtype)
+            some = per_row > 0
+            most[some] = np.maximum.reduceat(P.data, P.indptr[:-1][some])
+            hit = np.flatnonzero((P.data == most[rows]) & (P.data > 0))
+            r, g = rows[hit], P.indices[hit].astype(np.int64)
+            order = np.lexsort((g, -self.gene_total[g], r))  # by bin; a tie: most UMIs in the section, then panel order
+            r, g = r[order], g[order]
+            first = np.r_[True, r[1:] != r[:-1]] if len(r) else np.zeros(0, bool)
+            top[start + r[first]] = g[first]
+            tied[start + np.unique(r[~first])] = True
+        return top, tied, grid is not None
+
+
+def barcode_grid(barcodes: list[str]) -> tuple[np.ndarray, np.ndarray] | None:
+    """(row, column) of every Visium HD bin from its barcode (s_016um_00067_00023: row 67, column 23); None unless
+    every barcode has them."""
+    rows = np.empty(len(barcodes), np.int64)
+    cols = np.empty(len(barcodes), np.int64)
+    for i, b in enumerate(barcodes):
+        m = GRID_BARCODE_RE.match(b)
+        if m is None:
+            return None
+        rows[i], cols[i] = int(m.group(1)), int(m.group(2))
+    return rows, cols
+
+
+def neighbor_matrix(rows: np.ndarray, cols: np.ndarray) -> sparse.csr_matrix:
+    """n x n matrix with a 1 where bin j is bin i or one of the 8 bins around it on the grid (that has a bin)."""
+    n = len(rows)
+    width = int(cols.max()) + 3  # a margin of one column on each side: no neighbor wraps to the next row
+    key = (rows + 1) * width + (cols + 1)
+    order = np.argsort(key, kind="stable")
+    keys = key[order]
+    src, dst = [], []
+    for dr in (-1, 0, 1):
+        for dc in (-1, 0, 1):
+            want = key + dr * width + dc
+            pos = np.minimum(np.searchsorted(keys, want), n - 1)
+            found = keys[pos] == want
+            src.append(np.flatnonzero(found))
+            dst.append(order[pos[found]])
+    i, j = np.concatenate(src), np.concatenate(dst)
+    return sparse.csr_matrix((np.ones(len(i), np.int32), (i, j)), shape=(n, n))
 
 
 def run_barcode_rows(index: pd.Index, barcodes: list[str], sid: str) -> np.ndarray:
@@ -1369,15 +1445,16 @@ def explore_payload(section: RawSection, sid: str, bin_size: str, mpp: float, qc
 
 
 def gene_table(section: RawSection, total: np.ndarray, detected: np.ndarray, n_bins: int, query: str,
-               limit: int) -> dict:
-    """Genes by total UMI (descending, then panel order) whose name contains `query` (any case), at most `limit`."""
+               limit: int, offset: int = 0) -> dict:
+    """Genes by total UMI (descending, then panel order) whose name contains `query` (any case): at most `limit`,
+    from the `offset`-th match on (the next page of the viewer's gene list as it scrolls); n_matches counts them all."""
     order = np.lexsort((np.arange(len(total)), -total)).tolist()
     if query:
         q = query.casefold()
         order = [i for i in order if q in section.folded[i]]
     genes = [{"gene": section.genes[i], "total_umi": int(total[i]), "n_bins_detected": int(detected[i]),
               "pct_bins_detected": round(100.0 * int(detected[i]) / n_bins, 2) if n_bins else None}
-             for i in order[:limit]]
+             for i in order[offset:offset + limit]]
     return {"n_bins": n_bins, "n_features": len(section.genes), "n_matches": len(order), "genes": genes}
 
 
@@ -1405,6 +1482,125 @@ def bin_genes_answer(section: RawSection, index: int, row: int) -> dict:
             "genes": genes}
 
 
+def top_genes_answer(section: RawSection, rows: np.ndarray | None = None, n_unmatched: int = 0) -> dict:
+    """JSON of the top-gene map (POST /explore/{sid}/top-genes, GET /runs/{rid}/top-genes) of the bins at `rows` of the
+    section (-1: not in the raw data; None: every bin, section order): the genes that are the top gene of a bin, by
+    number of those bins (descending, then panel order) with that number, and every bin's position among them in
+    `codes` (-1: no UMIs, or not in the raw data). n_tied: bins whose most UMIs several genes shared (see
+    RawSection.top_genes)."""
+    top, tied, pooled = section.top_genes()
+    if rows is not None:
+        ok = rows >= 0
+        top_at = np.full(len(rows), -1, np.int64)
+        top_at[ok] = top[rows[ok]]
+        tied_at = np.zeros(len(rows), bool)
+        tied_at[ok] = tied[rows[ok]]
+        top, tied = top_at, tied_at
+    some = top >= 0
+    winners, inverse, counts = np.unique(top[some], return_inverse=True, return_counts=True)
+    order = np.lexsort((winners, -counts))
+    rank = np.empty(len(order), np.int64)
+    rank[order] = np.arange(len(order))
+    codes = np.full(len(top), -1, np.int64)
+    codes[some] = rank[inverse.ravel()]
+    return {"n": int(len(top)), "genes": [section.genes[g] for g in winners[order].tolist()],
+            "bins": counts[order].tolist(), "codes": codes.tolist(), "n_tied": int(tied[some].sum()),
+            "n_empty": int((~some).sum()), "pooled": pooled, "n_unmatched": n_unmatched}
+
+
+def overlap_genes_answer(section: RawSection, rows: np.ndarray, inside: np.ndarray, min_r: float, max_fdr: float,
+                         min_bins: int, limit: int, n_unmatched: int = 0) -> dict:
+    """Genes whose expression follows an overlap region (the viewer's "Correlated genes" of an overlap of cell types):
+    over the bins at `rows` (raw rows of a run's bins; -1, not in the raw data, left out), the Pearson correlation r
+    between each gene's normalised expression (log1p of its UMIs per 10,000 UMIs of the bin) and in the region (1)
+    or not (0) (`inside`, aligned to rows), its two-sided p-value (t test, n - 2 degrees of freedom) and the
+    Benjamini-Hochberg FDR over the genes detected in those bins. Kept: r >= min_r, FDR <= max_fdr and detected in
+    at least min_bins bins of the region; by r (descending, then panel order), at most `limit`. Sparse sums only (one
+    pass over the counts), so every gene of the section is tested."""
+    from scipy import stats
+    ok = rows >= 0
+    raw = rows[ok]
+    m = inside[ok].astype(np.float64)
+    n = int(len(raw))
+    k = int(m.sum())
+    answer = {"n_bins": n, "n_overlap": k, "n_unmatched": n_unmatched, "n_tested": 0, "n_pass": 0, "genes": [],
+              "thresholds": {"min_r": min_r, "max_fdr": max_fdr, "min_bins": min_bins},
+              "expression": "log1p(UMIs per 10,000 UMIs of the bin)"}
+    if n < 3 or k == 0 or k == n:
+        answer["note"] = "the region needs at least one bin in it and one outside it (of three or more bins)"
+        return answer
+    X = section.X.tocsr()[raw].astype(np.float64)  # bins x genes, raw counts
+    total = section.total[raw].astype(np.float64)
+    scale = np.divide(1e4, total, out=np.zeros_like(total), where=total > 0)
+    X = (sparse.diags(scale) @ X).tocsr()
+    X.eliminate_zeros()
+    X.data = np.log1p(X.data)
+    s1 = np.asarray(X.sum(axis=0)).ravel()
+    s2 = np.asarray(X.multiply(X).sum(axis=0)).ravel()
+    s_in = np.asarray(X.T @ m).ravel()
+    detected = X.copy()
+    detected.data[:] = 1.0
+    det_all = np.asarray(detected.sum(axis=0)).ravel()
+    det_in = np.asarray(detected.T @ m).ravel()
+    p_in = k / n
+    mean = s1 / n
+    var_y = s2 / n - mean ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = (s_in / n - mean * p_in) / np.sqrt(var_y * p_in * (1 - p_in))
+    r = np.where(np.isfinite(r) & (var_y > 1e-12), np.clip(r, -1.0, 1.0), 0.0)
+    tested = det_all > 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = r * np.sqrt((n - 2) / np.maximum(1e-300, 1 - r ** 2))
+    p = np.ones_like(r)
+    p[tested] = 2 * stats.t.sf(np.abs(t[tested]), n - 2)
+    # Benjamini-Hochberg over the genes tested
+    fdr = np.ones_like(r)
+    tested_idx = np.flatnonzero(tested)
+    if len(tested_idx):
+        order = tested_idx[np.argsort(p[tested_idx], kind="stable")]
+        q = p[order] * len(order) / np.arange(1, len(order) + 1)
+        fdr[order] = np.minimum(1.0, np.minimum.accumulate(q[::-1])[::-1])
+    keep = np.flatnonzero(tested & (r >= min_r) & (fdr <= max_fdr) & (det_in >= min_bins))
+    keep = keep[np.lexsort((keep, -r[keep]))]
+    mean_in = s_in / k
+    mean_out = (s1 - s_in) / (n - k)
+    answer["n_tested"] = int(tested.sum())
+    answer["n_pass"] = int(len(keep))
+    answer["genes"] = [{
+        "gene": section.genes[j], "r": round(float(r[j]), 4), "p": float(p[j]), "fdr": float(fdr[j]),
+        "bins_in": int(det_in[j]), "pct_in": round(100.0 * det_in[j] / k, 1),
+        "pct_out": round(100.0 * (det_all[j] - det_in[j]) / (n - k), 1),
+        "mean_in": round(float(mean_in[j]), 4), "mean_out": round(float(mean_out[j]), 4),
+    } for j in keep[:limit].tolist()]
+    return answer
+
+
+def overlap_request(body: dict, n: int) -> tuple[np.ndarray, float, float, int, int]:
+    """(inside: bool per bin of the sample, min_r, max_fdr, min_bins, limit) of a POST /overlap-genes; 400 otherwise."""
+    idx = body.get("indices")
+    if not isinstance(idx, list) or not idx:
+        raise HTTPException(400, "indices must be a non-empty list of bin positions (GET /bins order)")
+    if any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < n for i in idx):
+        raise HTTPException(400, f"every index must be the position of a bin, from 0 to {n - 1}")
+    inside = np.zeros(n, bool)
+    inside[np.asarray(idx, dtype=np.int64)] = True
+
+    def number(name, lo, hi, kind=float):
+        v = body.get(name, OVERLAP_DEFAULTS.get(name))
+        ok = isinstance(v, (int, float)) and not isinstance(v, bool) and (kind is float or float(v).is_integer())
+        if not ok or not math.isfinite(float(v)) or not lo <= v <= hi:
+            raise HTTPException(400, f"{name} must be a number from {lo} to {hi}")
+        return kind(v)
+
+    min_r = number("min_r", -1, 1)
+    max_fdr = number("max_fdr", 0, 1)
+    min_bins = number("min_bins", 0, n, int)
+    limit = body.get("limit", OVERLAP_GENES_LIMIT)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= OVERLAP_GENES_MAX:
+        raise HTTPException(400, f"limit must be an integer from 1 to {OVERLAP_GENES_MAX}")
+    return inside, min_r, max_fdr, min_bins, limit
+
+
 def requested_genes(value) -> list[str]:
     if not isinstance(value, list) or not value:
         raise HTTPException(400, "genes must be a non-empty list of gene names")
@@ -1418,7 +1614,7 @@ def requested_genes(value) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def gene_query(query, limit) -> tuple[str, int]:
+def gene_query(query, limit, offset=None) -> tuple[str, int, int]:
     if query is None:
         query = ""
     if not isinstance(query, str) or len(query) > MAX_GENE_NAME:
@@ -1427,7 +1623,11 @@ def gene_query(query, limit) -> tuple[str, int]:
         limit = GENE_LIST_LIMIT
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= GENE_LIST_MAX:
         raise HTTPException(400, f"limit must be an integer from 1 to {GENE_LIST_MAX}")
-    return query.strip(), limit
+    if offset is None:
+        offset = 0
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        raise HTTPException(400, "offset must be an integer of 0 or more")
+    return query.strip(), limit, offset
 
 
 # ============================================================================
@@ -2900,10 +3100,10 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
     @app.post("/api/projects/{pid}/explore/{sid}/genes")
     def explore_genes(pid: str, sid: str, body: dict = Depends(optional_json_body)):
-        query, limit = gene_query(body.get("query"), body.get("limit"))
+        query, limit, offset = gene_query(body.get("query"), body.get("limit"), body.get("offset"))
         cfg, sample = explore_sample(pid, sid, body)
         section = raw_section(*section_files(cfg, sample))
-        return JSONOut(gene_table(section, section.gene_total, section.gene_bins, section.n_bins, query, limit))
+        return JSONOut(gene_table(section, section.gene_total, section.gene_bins, section.n_bins, query, limit, offset))
 
     @app.post("/api/projects/{pid}/explore/{sid}/gene")
     def explore_gene(pid: str, sid: str, body: dict = Depends(json_body)):
@@ -2920,6 +3120,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         section = raw_section(*section_files(cfg, sample))
         index = bin_index(body.get("index"), section.n_bins)
         return JSONOut(bin_genes_answer(section, index, index))
+
+    @app.post("/api/projects/{pid}/explore/{sid}/top-genes")
+    def explore_top_genes(pid: str, sid: str, body: dict = Depends(optional_json_body)):
+        """The top gene of every bin (pooled with the 8 around it; see RawSection.top_genes), section order."""
+        cfg, sample = explore_sample(pid, sid, body)
+        section = raw_section(*section_files(cfg, sample))
+        return JSONOut(top_genes_answer(section))
 
     @app.get("/api/explore-images/{key}")
     def explore_image(key: str):
@@ -3165,11 +3372,11 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         return JSONOut(info)
 
     @app.get("/api/runs/{rid}/genes")
-    def run_genes(rid: str, sample: str, query: str = "", limit: int = GENE_LIST_LIMIT):
-        query, limit = gene_query(query, limit)
+    def run_genes(rid: str, sample: str, query: str = "", limit: int = GENE_LIST_LIMIT, offset: int = 0):
+        query, limit, offset = gene_query(query, limit, offset)
         link, section = run_gene_link(rid, sample)
         total, detected = link.gene_stats(section)
-        return JSONOut({**gene_table(section, total, detected, link.n, query, limit),
+        return JSONOut({**gene_table(section, total, detected, link.n, query, limit, offset),
                         "n_unmatched": link.n_unmatched})
 
     @app.post("/api/runs/{rid}/gene")
@@ -3188,6 +3395,26 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         link, section = run_gene_link(rid, sample)
         i = bin_index(index, link.n)
         return JSONOut(bin_genes_answer(section, i, int(link.rows[i])))
+
+    @app.get("/api/runs/{rid}/top-genes")
+    def run_top_genes(rid: str, sample: str):
+        """The top gene of every bin of a sample of a run (GET /bins order), from the raw data (see
+        RawSection.top_genes; the neighbors are the bins of the raw section)."""
+        link, section = run_gene_link(rid, sample)
+        return JSONOut(top_genes_answer(section, link.rows, link.n_unmatched))
+
+    @app.post("/api/runs/{rid}/overlap-genes")
+    def run_overlap_genes(rid: str, body: dict = Depends(json_body)):
+        """Genes correlated with a region of a sample of a run (the viewer's "Correlated genes" of an overlap of cell
+        types): body {sample, indices (bins of the region, GET /bins order), min_r?, max_fdr?, min_bins?, limit?};
+        see overlap_genes_answer."""
+        sid = body.get("sample")
+        if not isinstance(sid, str) or not sid:
+            raise HTTPException(400, "sample must be the id of a sample of the run")
+        link, section = run_gene_link(rid, sid)
+        inside, min_r, max_fdr, min_bins, limit = overlap_request(body, link.n)
+        return JSONOut(overlap_genes_answer(section, link.rows, inside, min_r, max_fdr, min_bins, limit,
+                                            link.n_unmatched))
 
     @app.get("/api/runs/{rid}/export/loupe")
     def export_loupe(rid: str):

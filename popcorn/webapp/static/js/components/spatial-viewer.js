@@ -19,11 +19,19 @@
 //                                     values[]} | {type: 'bool', values[0|1|null]} | {type: 'category', categories[],
 //                                     codes[] (-1 = no value)}}, colors: {field: {category: '#hex'}}, barcodes?: []}
 //     genes?: {                    optional: coloring by genes and "detected" overlays
-//       search(sampleId, query, signal) -> [{gene, total_umi, n_bins_detected, pct_bins_detected}]
+//       search(sampleId, query, signal, {offset, limit}?) -> [{gene, total_umi, n_bins_detected, pct_bins_detected}]:
+//                                     `limit` matches from the offset-th on (the gene boxes' lists, page by page)
 //       values(sampleId, genes[], signal) -> {genes_used[], genes_missing[], n, indices[], values[], total,
 //                                     n_detected, max, n_unmatched?}: summed UMIs per bin in the bin payload's order
 //       bin?(sampleId, index, signal) -> {index, matched, n_genes, total, genes: [[gene, UMIs], ...] by UMIs}: every
 //                                     gene detected in one bin (index in the bin payload's order), for the tooltip
+//       top?(sampleId, signal) -> {n, genes[] (top genes, the most bins first), bins[], codes[] (-1 = none), n_tied,
+//                                     n_empty, pooled, n_unmatched}: the top gene of every bin (the most UMIs in it
+//                                     and the 8 bins around it), for the "Top gene" coloring
+//       overlapGenes?(sampleId, indices[], {min_r, max_fdr, min_bins, limit}, signal) -> {n_bins, n_overlap,
+//                                     n_tested, n_pass, thresholds, genes: [{gene, r, p, fdr, bins_in, pct_in,
+//                                     pct_out, mean_in, mean_out}]}: genes correlated with a region (an overlap of
+//                                     cell types), for "Correlated genes"
 //     }
 //     image?(sampleId, signal, {retry}) -> {url, px_per_um, width, height} | null: H&E under the bins, image pixel
 //                                     (u, v) at (u / px_per_um, v / px_per_um) µm; retry: asked again after the image
@@ -34,22 +42,23 @@
 //   µm, css px per µm; auto = a fit nobody has moved since, fitted again when the sections or the sizes change);
 //   sameScale (panels colored by the same genes or number share one color range: the smallest low end, the largest
 //   99th percentile); pointSize; image {on, opacity (how much of the image shows through the bins)};
-//   panels [{sample, field (field name of a label or number | '__gene__' | '__none__'; a yes/no field found here is
+//   panels [{sample, field (field name of a label or number | '__gene__' | '__top__' | '__none__'; a yes/no field found here is
 //            made a layer), genes [names, summed], overlays (the layers) [bool field | 'gene:a,b'],
 //            dim (dim the coloring under the layers), hidden {field: [legend keys]}, views {sample: {cx, cy, scale,
 //            auto?}} (views when not linked)}];
 //   caches shared by the panels: samples, data (Map sample -> prepared bins), geneData (Map 'sample\ngenes' ->
-//   prepared counts, the last 40 used), images (Map sample -> loaded H&E | {none: true}).
+//   prepared counts, the last 40 used), topData (Map sample -> prepared top genes), images (Map sample -> loaded H&E |
+//   {none: true}).
 // Bins are drawn into one offscreen layer per panel (one fillRect batch per color) only when the data, the zoom or the
 // style change; panning and hovering only copy the layers, so four panels of 100,000 bins or more stay smooth.
-import { h, api, apiUrl, mount, icon, emptyState, errorPanel, loading, fmt, toast, debounce, switchToggle, popover, modal } from '../core.js';
+import { h, api, apiUrl, mount, icon, emptyState, errorPanel, loading, fmt, toast, debounce, switchToggle, modal } from '../core.js';
 import { downloadBlob } from './log-view.js';
 import { formatNumber } from './table-viewer.js';
 import { parseTokens } from './chips.js';
 
 const FIELD_LABELS = {
   tissue_class: 'Tissue class',
-  assigned_signature: 'Assigned signature',
+  assigned_signature: 'Cell type (assigned signature)',
   leiden_domain: 'Leiden domain',
   in_region_of_interest: 'In region of interest',
   passes_qc: 'Passes quality control',
@@ -85,6 +94,97 @@ const MISSING = '__missing__'; // legend key of bins without a value
 const ZERO = '__zero__'; // legend key of bins where none of the genes is detected
 const GENE_FIELD = '__gene__'; // "Color by" value of the gene coloring
 const NONE_FIELD = '__none__'; // "Color by" value of no coloring: every bin in the neutral color, under the layers
+const TOP_FIELD = '__top__'; // "Color by" value of the top gene of every bin (most UMIs in it and the 8 bins around it)
+// "Color by" value of the cell types of "Color by cells": the per-bin table's assigned signature (a run's bins only)
+const CELL_FIELD = 'assigned_signature';
+const ALL_CELLS = '*'; // the line "All cell types" of Color by cells: every cell type in its color
+const ALL_CELLS_TEXT = 'All cell types';
+const OTHER_CELLS = '__othercells__'; // legend key of the bins of the cell types not picked (gray)
+// the outline of the overlap clusters of the picked cell types: a bright line over a dark halo (shows on any bin)
+const OUTLINE_COLOR = '#ffffff';
+const OUTLINE_HALO = 'rgba(0, 0, 0, 0.85)';
+// the shape of each overlap combination, in the order of the combinations (pairs first, then triples, ...; by the
+// picked types' order): with three picked, 1 + 2 a circle, 1 + 3 a triangle, 2 + 3 a diamond, 1 + 2 + 3 a star
+const SHAPES = ['circle', 'triangle', 'diamond', 'star', 'cross', 'hexagon', 'triangle-down'];
+const SHAPE_MIN_PX = 4; // half a bin (css px) from which an overlap bin shows its shape; smaller, a square
+const comboCount = (n) => Math.max(0, 2 ** Math.min(n, 12) - n - 1); // combinations of two or more of n sets
+
+// ---- colors that contrast: every overlap combination has one color (its bins, its shapes and its cluster outline),
+// and the colors of the gene lines and of the combinations are chosen together so that each differs as much as it
+// can from every other color on the map: the background, the gray bins, the picked cell types (configured colors,
+// fixed) and each other. "Differs" is measured as people see it: the distance in CIELAB (ΔE*ab), not in RGB.
+/** CIELAB (D65) of a CSS color (hex or rgb()); null when it cannot be read. */
+function toLab(c) {
+  const p = parseColor(c);
+  if (!p) return null;
+  const lin = (v) => { const x = v / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+  const [r, g, b] = p.map(lin);
+  const X = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+  const Y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+  const Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116);
+  const fx = f(X);
+  const fy = f(Y);
+  const fz = f(Z);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+const deltaE = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+/** #rrggbb of hue h (degrees), saturation s and lightness l (0..1). */
+function hslHex(h, s, l) {
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const ch = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+  return `#${[ch(0), ch(8), ch(4)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+// candidates: 30 hues at several saturation/lightness steps, kept when bright enough to stand out on the dark map and
+// not so pale that they look white (CIELAB lightness 55 to 92): a saturated dark blue differs from the background by
+// its hue alone, which ΔE counts but the eye hardly sees there
+const COLOR_CANDIDATES = (() => {
+  const out = [];
+  for (let h = 0; h < 360; h += 12) {
+    for (const [s, l] of [[1, 0.5], [1, 0.6], [1, 0.7], [0.9, 0.8], [0.8, 0.55]]) out.push(hslHex(h, s, l));
+  }
+  return [...new Set(out)].map((hex) => ({ hex, lab: toLab(hex) })).filter((c) => c.lab[0] >= 55 && c.lab[0] <= 92);
+})();
+
+/**
+ * `count` colors far apart (greedy farthest point): each is the candidate whose smallest ΔE to the fixed colors and
+ * to the colors picked before it is the largest, so every new color is as different as it can be from all the
+ * others. Deterministic: the same fixed colors give the same colors in the same order.
+ */
+function farColors(count, fixed = []) {
+  const fixedLab = fixed.map(toLab).filter(Boolean);
+  const nearest = COLOR_CANDIDATES.map((c) => (fixedLab.length ? Math.min(...fixedLab.map((f) => deltaE(c.lab, f))) : Infinity));
+  const taken = new Uint8Array(COLOR_CANDIDATES.length);
+  const out = [];
+  for (let k = 0; k < count; k += 1) {
+    let best = -1;
+    for (let j = 0; j < COLOR_CANDIDATES.length; j += 1) {
+      if (!taken[j] && (best < 0 || nearest[j] > nearest[best])) best = j;
+    }
+    if (best < 0) break;
+    taken[best] = 1;
+    out.push(COLOR_CANDIDATES[best].hex);
+    const lab = COLOR_CANDIDATES[best].lab;
+    for (let j = 0; j < COLOR_CANDIDATES.length; j += 1) nearest[j] = Math.min(nearest[j], deltaE(COLOR_CANDIDATES[j].lab, lab));
+  }
+  return out;
+}
+/** Rank of combination `mask` among all the combinations of n sets (two or more): pairs first, then by mask. */
+function comboRank(mask, n) {
+  const all = [];
+  for (let m = 1; m < 1 << n; m += 1) if (m & (m - 1)) all.push(m);
+  const bits = (m) => { let c = 0; for (let v = m; v; v &= v - 1) c += 1; return c; };
+  all.sort((a, b) => bits(a) - bits(b) || a - b);
+  return Math.max(0, all.indexOf(mask));
+}
+const shapeOf = (mask, n) => SHAPES[comboRank(mask, n) % SHAPES.length];
+const TOP_COLORS = PALETTE.length; // top genes in a color of their own (the ones topping the most bins); 18
+const OTHER = '__other__'; // legend key of the bins whose top gene has no color of its own
+const OTHER_COLOR = '#8f8f8f';
+const EMPTY = '__empty__'; // legend key of the bins without a top gene (no UMIs in them or around them)
 const BASE = '__base__'; // legend key of the gray bins of no coloring (hidden: the layers alone)
 const GENE_OVERLAY = 'gene:'; // overlay key prefix: 'gene:Ctsk,Acp5' = bins where the summed count is above 0
 const MAX_GENES = 50;
@@ -96,16 +196,26 @@ const LOADING = 'loading…'; // status of a gene overlay whose counts are on th
 const isGeneLayer = (l) => l.key.startsWith(GENE_OVERLAY);
 const GENE_CACHE = 40;
 const DIM = 0.72; // share of the background mixed into the coloring under overlays
-const LAYOUTS = [1, 2, 4];
-const LAYOUT_TITLES = { 1: 'One panel', 2: 'Two panels side by side', 4: 'Four panels (2 × 2)' };
+// panels: 1 up to the number of sections (at most MAX_PANELS); 2 and 3 side by side, 4 in 2 × 2, 5 and 6 in 3 × 2
+const MAX_PANELS = 6;
+const panelCols = (k) => (k <= 3 ? k : (k === 4 ? 2 : 3));
+const panelRows = (k) => Math.ceil(k / panelCols(k));
+const layoutTitle = (k) => {
+  if (k === 1) return 'One panel';
+  if (panelRows(k) === 1) return `${k} panels side by side`;
+  return `${k} panels (${panelCols(k)} × ${panelRows(k)})`;
+};
 // css px: a panel at least this wide has its legend beside the map; four panels need the height (two rows), two keep
 // the width of their maps unless there is plenty
-const WIDE_PANEL = { 2: 700, 4: 500 };
+// panel width (css px) from which the legend stands beside the map: panels in one row, panels in two rows
+const wideFrom = (k) => (k === 1 ? Infinity : (panelRows(k) === 1 ? 700 : 500));
 const MIN_SIDE = 1.5; // css px: bins never vanish when zoomed out
 const HOVER_PX = 6;
 const MARGIN = 160; // css px drawn around the viewport, so short pans need no redraw
 const MAX_LAYER_PX = 16e6;
 const EXPORT_PALETTE = { bg: '#ffffff', neutral: '#d0d5dc', text: '#18212c', muted: '#5b6675', several: '#18212c' };
+// the dark map's colors, for choosing contrasting colors before the theme has been read
+const DARK_MAP = { bg: '#0e1116', neutral: '#39414d', text: '#e6edf3' };
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
 
 let uidSeq = 0;
@@ -599,6 +709,103 @@ function buildStyle(d, f, hidden, range = null, base = false) {
 }
 
 /**
+ * The answer of source.genes.top checked: {genes (top genes, the most bins first), bins (bins each tops), codes
+ * (Int32Array: every bin's position in genes, -1 none), tied, empty, pooled, unmatched}.
+ */
+function prepareTop(raw, n) {
+  if (!raw || typeof raw !== 'object') throw new Error('The server returned no top genes.');
+  if (Number.isFinite(raw.n) && raw.n !== n) {
+    throw new Error(`The top genes cover ${fmt.int(raw.n)} bins but the map has ${fmt.int(n)}; reload the page.`);
+  }
+  const genes = Array.isArray(raw.genes) ? raw.genes.map(String) : [];
+  const src = Array.isArray(raw.codes) ? raw.codes : [];
+  const codes = new Int32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const c = src[i];
+    codes[i] = Number.isInteger(c) && c >= 0 && c < genes.length ? c : -1;
+  }
+  const num = (v) => (Number.isFinite(v) ? v : 0);
+  return {
+    genes, bins: Array.isArray(raw.bins) ? raw.bins.map(Number) : [], codes,
+    tied: num(raw.n_tied), empty: num(raw.n_empty), pooled: raw.pooled !== false, unmatched: num(raw.n_unmatched),
+  };
+}
+
+/**
+ * Coloring by the top gene of every bin: the TOP_COLORS genes topping the most bins in a color of their own (PALETTE),
+ * the other top genes in OTHER_COLOR, the bins without a top gene in the neutral color.
+ */
+function buildTopStyle(d, tv, hidden) {
+  const k = Math.min(TOP_COLORS, tv.genes.length);
+  const entries = tv.genes.slice(0, k).map((g, c) => ({ key: g, label: g, color: PALETTE[c] }));
+  const nOther = tv.genes.length - k;
+  const iOther = nOther > 0 ? entries.length : -1;
+  if (nOther > 0) entries.push({ key: OTHER, label: `Other genes (${fmt.int(nOther)})`, color: OTHER_COLOR });
+  const iEmpty = entries.length;
+  entries.push({ key: EMPTY, label: 'No UMIs', color: NEUTRAL });
+  const groupOf = (i) => {
+    const c = tv.codes[i];
+    if (c < 0) return iEmpty;
+    return c < k ? c : iOther;
+  };
+  const off = (g) => hidden.has(entries[g].key);
+  const s = sortIntoGroups(d, entries.length, groupOf, off);
+  // drawing order: no UMIs, other genes, then the genes from the one topping the most bins (the rarer ones on top)
+  const order = [iEmpty, ...(iOther >= 0 ? [iOther] : []), ...entries.slice(0, k).map((e, g) => g)];
+  const groups = order.filter((g) => s.idx[g] && s.idx[g].length).map((g) => ({ color: entries[g].color, idx: s.idx[g] }));
+  const legend = entries.map((e, g) => ({ key: e.key, label: e.label, color: e.color, count: s.counts[g], off: off(g) }))
+    .filter((e) => e.key !== EMPTY || e.count);
+  return { kind: 'top', top: tv, groups, legend, visible: s.visible, shown: s.shown, scale: null };
+}
+
+/**
+ * Coloring by the cell types picked in "Color by cells" (f: the cell type field, a category): each picked type in its
+ * color (configured signature color, else palette; categoryColors), the bins of every other type, and those without
+ * one, in the neutral color ("Other cell types"). picked = null: every type in its color (buildStyle of the field).
+ */
+function buildCellStyle(d, f, picked, hidden, combos = []) {
+  if (!picked) return buildStyle(d, f, hidden);
+  const colors = categoryColors(f, d.colors);
+  const codeOf = new Map(f.categories.map((name, c) => [name, c]));
+  const entries = [];
+  const slot = new Map(); // category code -> group
+  for (const name of picked) {
+    const c = codeOf.get(name);
+    if (c === undefined || slot.has(c)) continue;
+    slot.set(c, entries.length);
+    entries.push({ key: name, label: name, color: colors[c] });
+  }
+  const nTypes = entries.length;
+  // the overlap combinations of the picked types (cellOverlap): each in its own color, whatever type the bin has
+  let comboOf = null;
+  const firstCombo = entries.length;
+  if (combos.length) {
+    comboOf = new Int16Array(d.n).fill(-1);
+    combos.forEach((c, j) => {
+      for (const i of c.idx) comboOf[i] = firstCombo + j;
+      entries.push({ key: c.key, label: `${c.label} (${fmt.int(c.clusters)} ${c.clusters === 1 ? 'cluster' : 'clusters'})`, color: c.color, shape: c.shape, edge: c.edge, combo: true });
+    });
+  }
+  const iOther = entries.length;
+  entries.push({ key: OTHER_CELLS, label: 'Other cell types', color: NEUTRAL });
+  const groupOf = (i) => {
+    if (comboOf && comboOf[i] >= 0) return comboOf[i];
+    const g = slot.get(f.codes[i]);
+    return g === undefined ? iOther : g;
+  };
+  const off = (g) => hidden.has(entries[g].key);
+  const s = sortIntoGroups(d, entries.length, groupOf, off);
+  // drawing order: the gray bins, then the picked types from the largest (the rarer ones stay visible on top), then
+  // the combinations, the largest first
+  const order = [iOther, ...entries.slice(0, nTypes).map((e, g) => g).sort((a, b) => s.counts[b] - s.counts[a])];
+  for (let j = 0; j < combos.length; j += 1) order.push(firstCombo + j);
+  const groups = order.filter((g) => s.idx[g] && s.idx[g].length)
+    .map((g) => ({ color: entries[g].color, idx: s.idx[g], shape: entries[g].shape, edge: entries[g].edge, combo: !!entries[g].combo }));
+  const legend = entries.map((e, g) => ({ key: e.key, label: e.label, color: e.color, shape: e.shape, edge: e.edge, count: s.counts[g], off: off(g) }));
+  return { kind: 'category', groups, legend, visible: s.visible, shown: s.shown, scale: null };
+}
+
+/**
  * Coloring by the summed counts of genes: 0 in the neutral color, detected bins on viridis with a log(1 + x) scale
  * from the smallest nonzero count to the 99th percentile of the nonzero counts (higher counts take the top color), or
  * over `range` {lo, hi} shared with other panels.
@@ -629,52 +836,92 @@ function buildGeneStyle(d, gv, hidden, range = null) {
 }
 
 /**
- * Overlays drawn on top of the coloring. layers = [{key, label, color, mask: (i) => bool | null (not available),
- * status}]; a bin in exactly one layer takes that layer's color, a bin in two or more the SEVERAL color.
- * -> {layers (+ count: bins in the layer, overlap included), groups, several (bins in two or more), active,
- *     member (Int16Array: first layer of every bin, -1 = none)}
+ * Overlap combinations: the bins in two or more of `sets` ([{label, color}]; bitsOf(i) -> bitmask, bit k = set k),
+ * grouped by their exact combination (1 + 2, 1 + 3, 2 + 3, 1 + 2 + 3 apart). Each has one color (its bins, its shapes
+ * and its cluster outline): edges, the colors by combination order (farColors); nRank: the sets the combinations are
+ * counted over (shape and color: comboRank). -> [{mask, key ('combo:<mask>'), label ('a + b'), color (= edge),
+ * shape, edge, combo: true, idx, clusters, outline}], the most bins first.
  */
-function buildOverlays(d, layers) {
+function overlapCombos(d, sets, bitsOf, edges = [OUTLINE_COLOR], nRank = sets.length) {
+  const by = new Map();
+  for (let i = 0; i < d.n; i += 1) {
+    if (!d.ok[i]) continue;
+    const m = bitsOf(i);
+    if (!m || (m & (m - 1)) === 0) continue; // in no set or in one only
+    let list = by.get(m);
+    if (!list) { list = []; by.set(m, list); }
+    list.push(i);
+  }
+  const combos = [];
+  for (const [mask, list] of by) {
+    const members = sets.filter((s, k) => mask & (1 << k));
+    const idx = Int32Array.from(list);
+    const edge = edges[comboRank(mask, nRank) % edges.length];
+    combos.push({
+      mask, key: `combo:${mask}`, label: members.map((s) => s.label).join(' + '),
+      color: edge, shape: shapeOf(mask, nRank), edge, combo: true, idx, // one color: bins, shapes and outline
+      clusters: countClusters(d, idx), outline: overlapOutline(d, idx),
+    });
+  }
+  return combos.sort((a, b) => b.idx.length - a.idx.length || a.mask - b.mask);
+}
+
+/**
+ * Overlays drawn on top of the coloring. layers = [{key, label, color, mask: (i) => bool | null (not available),
+ * status}]. A bin in exactly one layer takes that layer's color; a bin in two or more gene layers (and no yes/no
+ * layer) takes the color of its exact combination of genes, one group per combination (overlapCombos, outlined as
+ * clusters); a bin in a yes/no layer and in another layer takes the SEVERAL color.
+ * -> {layers (+ count: bins drawn in the layer's color, total: bins in the layer, overlap included), groups, combos,
+ *     several (bins in the SEVERAL color), mixed (the same), active, member (Int16Array: first layer, -1 = none)}
+ */
+function buildOverlays(d, layers, edges = [OUTLINE_COLOR]) {
   const { n, ok } = d;
   const member = new Int16Array(n).fill(-1);
-  const many = new Uint8Array(n);
-  const counts = layers.map(() => 0);
+  const nIn = new Uint8Array(n); // layers the bin is in
+  const geneBits = new Uint32Array(n); // gene layers the bin is in (bit k = layer k)
+  const inBool = new Uint8Array(n); // in a yes/no layer
+  const totals = layers.map(() => 0);
   layers.forEach((l, k) => {
     if (!l.mask) return;
     const m = l.mask;
+    const gene = l.key.startsWith(GENE_OVERLAY);
     let c = 0;
     for (let i = 0; i < n; i += 1) {
       if (!ok[i] || !m(i)) continue;
       c += 1;
       if (member[i] < 0) member[i] = k;
-      else many[i] = 1;
+      nIn[i] += 1;
+      if (gene) geneBits[i] |= 1 << k; else inBool[i] = 1;
     }
-    counts[k] = c;
+    totals[k] = c;
   });
-  const only = new Int32Array(layers.length);
-  let several = 0;
+  // the gene layers come first (storeLines), so their combinations are ranked over them alone, as overlayLayers counts
+  const nGenes = layers.filter((l) => l.key.startsWith(GENE_OVERLAY)).length;
+  const combos = overlapCombos(d, layers.map((l) => ({ label: l.label, color: l.color })), (i) => (inBool[i] ? 0 : geneBits[i]),
+    edges, nGenes);
+  const inCombo = new Uint8Array(n);
+  for (const c of combos) for (const i of c.idx) inCombo[i] = 1;
+  const singles = layers.map(() => []);
+  const mixed = [];
   for (let i = 0; i < n; i += 1) {
-    if (member[i] < 0) continue;
-    if (many[i]) several += 1;
-    else only[member[i]] += 1;
+    if (member[i] < 0 || inCombo[i]) continue;
+    if (nIn[i] >= 2) mixed.push(i); // a yes/no layer and another layer
+    else singles[member[i]].push(i);
   }
-  const idx = layers.map((l, k) => new Int32Array(only[k]));
-  const both = new Int32Array(several);
-  const fill = new Int32Array(layers.length);
-  let fb = 0;
-  for (let i = 0; i < n; i += 1) {
-    const k = member[i];
-    if (k < 0) continue;
-    if (many[i]) { both[fb] = i; fb += 1; } else { idx[k][fill[k]] = i; fill[k] += 1; }
-  }
-  // larger layers first, so the rarer ones stay visible on top; bins in several layers last
-  const groups = layers.map((l, k) => k).filter((k) => only[k] > 0).sort((a, b) => only[b] - only[a])
-    .map((k) => ({ color: layers[k].color, idx: idx[k] }));
-  if (several) groups.push({ color: SEVERAL, idx: both });
+  // larger layers first, so the rarer ones stay visible on top; then the combinations; mixed bins last
+  const groups = layers.map((l, k) => k).filter((k) => singles[k].length).sort((a, b) => singles[b].length - singles[a].length)
+    .map((k) => ({ color: layers[k].color, idx: Int32Array.from(singles[k]) }));
+  for (const c of combos) groups.push({ color: c.color, idx: c.idx, shape: c.shape, edge: c.edge, combo: true });
+  if (mixed.length) groups.push({ color: SEVERAL, idx: Int32Array.from(mixed) });
   return {
-    layers: layers.map((l, k) => ({ ...l, count: l.mask ? counts[k] : null })),
-    groups, several, member, active: layers.some((l) => l.mask),
+    layers: layers.map((l, k) => ({ ...l, count: l.mask ? singles[k].length : null, total: l.mask ? totals[k] : null })),
+    groups, combos, several: mixed.length, mixed: mixed.length, member, active: layers.some((l) => l.mask),
   };
+}
+
+/** Legend label of the bins in the SEVERAL color (see buildOverlays). */
+function severalLabel() {
+  return 'Yes/no layer + another layer';
 }
 
 // ------------------------------------------------------------------------------------------------ drawing
@@ -682,6 +929,116 @@ function groupColor(c, palette) {
   if (c === NEUTRAL) return palette.neutral;
   if (c === SEVERAL) return palette.several || palette.text;
   return c;
+}
+
+/**
+ * The overlap of the cell types picked in "Color by cells": the bins called positive (positivity call positive_<type>,
+ * native depth) for two or more of them, one group per exact combination (overlapCombos), each in a color far from
+ * the picked types' colors, from `fixed` (background, gray bins) and from the other combinations (farColors).
+ * -> {combos, n (overlap bins), types (picked types with a call), without (picked types without one)}.
+ */
+function cellOverlap(d, picked, colorOf, fixed = []) {
+  const types = [];
+  const without = [];
+  const fields = [];
+  for (const t of picked) {
+    const f = d.fields.get(`positive_${t}`);
+    if (f && f.type === 'bool') { types.push(t); fields.push(f); } else without.push(t);
+  }
+  if (fields.length < 2) return { combos: [], n: 0, types, without };
+  const sets = types.map((t) => ({ label: t, color: colorOf(t) }));
+  // the cell types keep their own (configured) colors; the combinations take colors as far as can be from them, from
+  // the background and gray bins, and from each other
+  const edges = farColors(comboCount(types.length), [...picked.map(colorOf), ...fixed]);
+  const combos = overlapCombos(d, sets, (i) => {
+    let m = 0;
+    for (let k = 0; k < fields.length; k += 1) if (fields[k].values[i] === 1) m |= 1 << k;
+    return m;
+  }, edges);
+  return { combos, n: combos.reduce((s, c) => s + c.idx.length, 0), types, without };
+}
+
+/** Clusters of the overlap bins: groups of bins joined side by side on the bin grid (as their outline draws them). */
+function countClusters(d, idx) {
+  const p = d.pitch || 16;
+  const KEY = 1 << 20;
+  const at = new Map();
+  for (const i of idx) at.set((Math.round(d.x[i] / p) + 8) * KEY + (Math.round(d.y[i] / p) + 8), i);
+  const seen = new Set();
+  let n = 0;
+  for (const k0 of at.keys()) {
+    if (seen.has(k0)) continue;
+    n += 1;
+    const stack = [k0];
+    seen.add(k0);
+    while (stack.length) {
+      const k = stack.pop();
+      for (const nk of [k - KEY, k + KEY, k - 1, k + 1]) {
+        if (at.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+      }
+    }
+  }
+  return n;
+}
+
+/**
+ * The outline of the overlap clusters: the squares of the overlap bins (one bin pitch wide) joined into shapes, and
+ * the sides of a square that no other overlap bin shares, in µm: Float32Array [x1, y1, x2, y2, ...]. Neighbors are
+ * found on the bin grid (centre / pitch, rounded), so touching bins make one cluster with one outline.
+ */
+function overlapOutline(d, idx) {
+  const p = d.pitch || 16;
+  const h = p / 2;
+  const cell = (i) => [Math.round(d.x[i] / p), Math.round(d.y[i] / p)];
+  const KEY = 1 << 20;
+  const key = (gx, gy) => (gx + 8) * KEY + (gy + 8);
+  const inside = new Set();
+  for (const i of idx) { const [gx, gy] = cell(i); inside.add(key(gx, gy)); }
+  const out = [];
+  for (const i of idx) {
+    const [gx, gy] = cell(i);
+    const x = d.x[i];
+    const y = d.y[i];
+    if (!inside.has(key(gx - 1, gy))) out.push(x - h, y - h, x - h, y + h);
+    if (!inside.has(key(gx + 1, gy))) out.push(x + h, y - h, x + h, y + h);
+    if (!inside.has(key(gx, gy - 1))) out.push(x - h, y - h, x + h, y - h);
+    if (!inside.has(key(gx, gy + 1))) out.push(x - h, y + h, x + h, y + h);
+  }
+  return Float32Array.from(out);
+}
+
+/**
+ * The outline of the overlap clusters (overlapOutline) as a bright line: a dark halo under it, then the line in
+ * `color`, so that it shows over light and dark bins alike; one path, stroked twice.
+ */
+function drawOutline(g, segs, view, ratio, color, halo) {
+  if (!segs || !segs.length) return;
+  const s = view.scale * ratio;
+  const tx = view.tx * ratio;
+  const ty = view.ty * ratio;
+  const W = g.canvas.width;
+  const H = g.canvas.height;
+  g.save();
+  g.beginPath();
+  for (let k = 0; k < segs.length; k += 4) {
+    const x1 = segs[k] * s + tx;
+    const y1 = segs[k + 1] * s + ty;
+    const x2 = segs[k + 2] * s + tx;
+    const y2 = segs[k + 3] * s + ty;
+    if (Math.max(x1, x2) < -4 || Math.min(x1, x2) > W + 4 || Math.max(y1, y2) < -4 || Math.min(y1, y2) > H + 4) continue;
+    g.moveTo(x1, y1);
+    g.lineTo(x2, y2);
+  }
+  const w = Math.max(2.5 * ratio, Math.min(4 * ratio, 0.22 * (s * 16)));
+  g.lineCap = "square";
+  g.lineJoin = "miter";
+  g.strokeStyle = halo;
+  g.lineWidth = w + 2 * ratio;
+  g.stroke();
+  g.strokeStyle = color;
+  g.lineWidth = w;
+  g.stroke();
+  g.restore();
 }
 
 /**
@@ -698,8 +1055,26 @@ function drawBins(g, groups, d, view, ratio, side, palette, dim = 0) {
   const half = Math.max(0.5, (side * ratio) / 2);
   const { x, y } = d;
   for (const grp of groups) {
-    const c = groupColor(grp.color, palette);
-    g.fillStyle = dim ? mixColor(c, palette.bg, dim) : c;
+    if (grp.combo) {
+      // an overlap combination: its one color, never dimmed; once a bin is big enough, the bin in a dark shade of that
+      // color with the combination's shape (circle, triangle, ...) in the color itself; smaller, a square in the color
+      if (grp.shape && half >= SHAPE_MIN_PX * ratio) {
+        g.fillStyle = mixColor(grp.color, palette.bg, 0.62);
+        for (const i of grp.idx) {
+          const cx = x[i] * s + tx;
+          const cy = y[i] * s + ty;
+          if (cx + half < 0 || cx - half > W || cy + half < 0 || cy - half > H) continue;
+          g.fillRect(Math.floor(cx - half), Math.floor(cy - half), Math.ceil(cx + half) - Math.floor(cx - half), Math.ceil(cy + half) - Math.floor(cy - half));
+        }
+        g.fillStyle = grp.color;
+        drawShapes(g, grp, d, s, tx, ty, half, ratio);
+        continue;
+      }
+      g.fillStyle = grp.color;
+    } else {
+      const c = groupColor(grp.color, palette);
+      g.fillStyle = dim ? mixColor(c, palette.bg, dim) : c;
+    }
     const idx = grp.idx;
     for (let k = 0; k < idx.length; k += 1) {
       const i = idx[k];
@@ -714,6 +1089,88 @@ function drawBins(g, groups, d, view, ratio, side, palette, dim = 0) {
       g.fillRect(left, top, right - left, bottom - top);
     }
   }
+}
+
+/**
+ * The bins of an overlap combination as its shape (grp.shape, see SHAPES), centred on each bin and as wide as it,
+ * filled with the current fill style (its color) and edged in dark, so that 1 + 2, 1 + 3, 2 + 3 and 1 + 2 + 3
+ * differ by their shape as well as by their colors. One path, filled and stroked once.
+ */
+function drawShapes(g, grp, d, s, tx, ty, half, ratio) {
+  const W = g.canvas.width;
+  const H = g.canvas.height;
+  const r = half * 0.98;
+  g.beginPath();
+  for (const i of grp.idx) {
+    const cx = d.x[i] * s + tx;
+    const cy = d.y[i] * s + ty;
+    if (cx + r < 0 || cx - r > W || cy + r < 0 || cy - r > H) continue;
+    shapePath(g, grp.shape, cx, cy, r);
+  }
+  g.fill(); // in the combination's color (the fill style set by drawBins)
+  g.save();
+  g.lineJoin = 'round';
+  g.lineWidth = Math.max(ratio, Math.min(1.6 * ratio, 0.1 * r)); // a thin dark edge: the shape stands off its bin
+  g.strokeStyle = OUTLINE_HALO;
+  g.stroke();
+  g.restore();
+}
+
+/** Add one shape (SHAPES) of radius r centred on (cx, cy) to the current path. */
+function shapePath(g, shape, cx, cy, r) {
+  const poly = (pts) => {
+    g.moveTo(cx + pts[0][0] * r, cy + pts[0][1] * r);
+    for (let k = 1; k < pts.length; k += 1) g.lineTo(cx + pts[k][0] * r, cy + pts[k][1] * r);
+    g.closePath();
+  };
+  const ring = (n, rot, inner = null) => {
+    const pts = [];
+    const steps = inner ? 2 * n : n;
+    for (let k = 0; k < steps; k += 1) {
+      const a = rot + (k * 2 * Math.PI) / steps;
+      const rr = inner && k % 2 ? inner : 1;
+      pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+    }
+    poly(pts);
+  };
+  switch (shape) {
+    case 'circle':
+      g.moveTo(cx + r * 0.9, cy);
+      g.arc(cx, cy, r * 0.9, 0, 2 * Math.PI);
+      break;
+    case 'triangle': poly([[0, -1], [0.95, 0.75], [-0.95, 0.75]]); break;
+    case 'triangle-down': poly([[0, 1], [0.95, -0.75], [-0.95, -0.75]]); break;
+    case 'diamond': poly([[0, -1], [1, 0], [0, 1], [-1, 0]]); break;
+    case 'star': ring(5, -Math.PI / 2, 0.45); break;
+    case 'cross': {
+      const t = 0.34;
+      poly([[-t, -1], [t, -1], [t, -t], [1, -t], [1, t], [t, t], [t, 1], [-t, 1], [-t, t], [-1, t], [-1, -t], [-t, -t]]);
+      break;
+    }
+    case 'hexagon': ring(6, 0); break;
+    default: poly([[-0.8, -0.8], [0.8, -0.8], [0.8, 0.8], [-0.8, 0.8]]);
+  }
+}
+
+/** A legend swatch of an overlap combination: its shape in its color, with a dark edge, on a canvas of `px` css px. */
+function shapeSwatch(color, shape, px = 14) {
+  const k = 2; // drawn at twice the size, shown at px
+  const c = document.createElement('canvas');
+  c.width = px * k;
+  c.height = px * k;
+  c.className = 'sv-shape-swatch';
+  c.style.width = `${px}px`;
+  c.style.height = `${px}px`;
+  const g = c.getContext('2d');
+  g.beginPath();
+  shapePath(g, shape, (px * k) / 2, (px * k) / 2, (px * k) / 2 - 2);
+  g.fillStyle = color; // the combination's one color, as its bins and outline on the map
+  g.fill();
+  g.lineJoin = 'round';
+  g.lineWidth = 2;
+  g.strokeStyle = OUTLINE_HALO;
+  g.stroke();
+  return c;
 }
 
 /**
@@ -829,12 +1286,15 @@ function fetchImage(url, signal) {
 }
 
 // ------------------------------------------------------------------------------------------------ gene box
+const GENE_PAGE = 100; // genes per page of a gene box's list; the next page comes as the list scrolls to its end
+
 /**
  * Text box for gene names with suggestions: names separated by commas, spaces or +; the last one is completed from
- * search(query, signal) -> [{gene, total_umi, pct_bins_detected}] (debounced, stale requests aborted; an empty query
- * lists the most abundant genes, on focus unless suggestOnFocus is false). ↑ / ↓ pick a suggestion, Enter or a click
- * takes it and submits, Enter alone (or the button) submits onSubmit(names, text typed), Esc closes the list (then
- * calls onCancel when given).
+ * search(query, signal, offset) -> [{gene, total_umi, pct_bins_detected}], GENE_PAGE matches from the offset-th on
+ * (debounced, stale requests aborted; an empty query lists every gene, the most abundant first, on focus unless
+ * suggestOnFocus is false). The list holds every match: scrolled (or ↓) to its end it asks for the next page, until
+ * a page comes short. ↑ / ↓ pick a suggestion, Enter or a click takes it and submits, Enter alone (or the button)
+ * submits onSubmit(names, text typed), Esc closes the list (then calls onCancel when given).
  * Returns {el, input, set(text), focus(), destroy()}.
  */
 export function geneInput({
@@ -857,11 +1317,18 @@ export function geneInput({
   let active = -1;
   let ctrl = null;
   let seq = 0;
+  let asked = ''; // the name the list was asked for
+  let more = false; // the last page was full: more matches may follow
+  let loadingMore = false;
+  // the end of the list: "Loading more genes…" while a page is on its way (not an option)
+  const moreEl = h('li', { class: 'sv-suggest-more', role: 'presentation', hidden: true });
 
   const lastToken = () => {
     const m = /[^\s,;+]*$/.exec(input.value);
     return m ? m[0] : '';
   };
+
+  const genesOf = (res) => (Array.isArray(res) ? res : []).filter((r) => r && r.gene);
 
   const lookup = debounce(async () => {
     if (!search || document.activeElement !== input) return;
@@ -869,12 +1336,16 @@ export function geneInput({
     if (ctrl) ctrl.abort();
     const c = new AbortController();
     ctrl = c;
+    const q = lastToken();
     try {
-      const res = await search(lastToken(), c.signal);
+      const page = genesOf(await search(q, c.signal, 0));
       if (my !== seq || document.activeElement !== input) return;
-      items = (Array.isArray(res) ? res : []).filter((r) => r && r.gene).slice(0, 12);
+      items = page;
+      asked = q;
+      more = page.length >= GENE_PAGE;
       active = -1;
       paintList();
+      list.scrollTop = 0;
     } catch (err) {
       // suggestions are a help only: names can still be typed
       if (my === seq && !(err && err.name === 'AbortError')) close();
@@ -883,26 +1354,74 @@ export function geneInput({
     }
   }, 180);
 
+  /** The next page of the list (scrolled to its end, or ↓ near it). */
+  async function loadMore() {
+    if (!search || !more || loadingMore || list.hidden) return;
+    const my = seq;
+    loadingMore = true;
+    paintMore();
+    const c = new AbortController();
+    ctrl = c;
+    try {
+      const page = genesOf(await search(asked, c.signal, items.length));
+      if (my !== seq) return;
+      more = page.length >= GENE_PAGE;
+      const start = items.length;
+      items = items.concat(page);
+      for (let k = start; k < items.length; k += 1) list.insertBefore(itemEl(items[k], k), moreEl);
+    } catch (err) {
+      if (my === seq && !(err && err.name === 'AbortError')) more = false; // the list keeps what it has
+    } finally {
+      if (ctrl === c) ctrl = null;
+      if (my === seq) {
+        loadingMore = false;
+        paintMore();
+      }
+    }
+  }
+
   function meta(r) {
     const parts = [];
+    if (Number.isFinite(r.n_bins)) parts.push(`${fmt.int(r.n_bins)} bins`); // a cell type (Color by cells)
     if (Number.isFinite(r.total_umi)) parts.push(`${fmt.int(r.total_umi)} UMIs`);
     if (Number.isFinite(r.pct_bins_detected)) parts.push(`${fmt.num(r.pct_bins_detected, 1)}% of bins`);
     return parts.join(' · ');
   }
 
-  function paintList() {
-    if (!items.length) { close(); return; }
-    mount(list, items.map((r, k) => h('li', {
+  function itemEl(r, k) {
+    return h('li', {
       id: `${inputId}-opt-${k}`, role: 'option', class: k === active ? 'active' : null,
       'aria-selected': k === active ? 'true' : 'false',
       onMousedown: (e) => { e.preventDefault(); take(k); }, // before the input's blur
-    }, h('span', { class: 'sv-suggest-gene' }, String(r.gene)), h('span', { class: 'sv-suggest-meta' }, meta(r)))));
+    }, h('span', { class: 'sv-suggest-gene' }, String(r.gene)), h('span', { class: 'sv-suggest-meta' }, meta(r)));
+  }
+
+  function paintMore() {
+    moreEl.hidden = !loadingMore;
+    moreEl.textContent = loadingMore ? 'Loading more genes…' : '';
+  }
+
+  function paintList() {
+    if (!items.length) { close(); return; }
+    mount(list, items.map((r, k) => itemEl(r, k)), moreEl);
+    paintMore();
     list.hidden = false;
     input.setAttribute('aria-expanded', 'true');
-    if (active >= 0) {
+    markActive(-1);
+  }
+
+  /** Move the highlight from item `prev` to item `active` (no list made again: it may hold thousands of genes). */
+  function markActive(prev) {
+    const lis = list.children;
+    if (prev >= 0 && prev < items.length && lis[prev]) {
+      lis[prev].classList.remove('active');
+      lis[prev].setAttribute('aria-selected', 'false');
+    }
+    if (active >= 0 && lis[active]) {
+      lis[active].classList.add('active');
+      lis[active].setAttribute('aria-selected', 'true');
       input.setAttribute('aria-activedescendant', `${inputId}-opt-${active}`);
-      const li = list.children[active];
-      if (li) li.scrollIntoView({ block: 'nearest' });
+      lis[active].scrollIntoView({ block: 'nearest' });
     } else {
       input.removeAttribute('aria-activedescendant');
     }
@@ -911,6 +1430,8 @@ export function geneInput({
   function close() {
     items = [];
     active = -1;
+    more = false;
+    loadingMore = false;
     list.hidden = true;
     mount(list);
     input.setAttribute('aria-expanded', 'false');
@@ -938,6 +1459,12 @@ export function geneInput({
     if (onSubmit) onSubmit(parseGenes(input.value), input.value);
   }
 
+  // the list scrolled near its end: the next page
+  list.addEventListener('scroll', () => {
+    if (list.scrollTop + list.clientHeight >= list.scrollHeight - 48) loadMore();
+  });
+  // a press on the list (its scroll bar, a gap) keeps the focus in the box, so the list stays open
+  list.addEventListener('mousedown', (e) => e.preventDefault());
   input.addEventListener('input', () => lookup());
   input.addEventListener('focus', () => { if (suggestOnFocus) lookup(); });
   input.addEventListener('blur', () => { stop(); close(); });
@@ -946,9 +1473,11 @@ export function geneInput({
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (!open) { lookup(); return; }
+      const prev = active;
       const next = active + (e.key === 'ArrowDown' ? 1 : -1);
       active = next < -1 ? items.length - 1 : (next >= items.length ? -1 : next);
-      paintList();
+      markActive(prev);
+      if (active >= items.length - 5) loadMore();
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (open && active >= 0) take(active);
@@ -965,7 +1494,6 @@ export function geneInput({
       }
     }
   });
-
   return {
     el,
     input,
@@ -985,12 +1513,16 @@ export function runSource(runId) {
     samples: (signal) => api(`/api/runs/${enc}/bins/samples`, { signal }),
     bins: (sampleId, signal) => api(`/api/runs/${enc}/bins`, { query: { sample: sampleId }, signal }),
     genes: {
-      async search(sampleId, query, signal) {
-        const res = await api(`/api/runs/${enc}/genes`, { query: { sample: sampleId, query, limit: 50 }, signal });
+      async search(sampleId, query, signal, { offset = 0, limit = 50 } = {}) {
+        const res = await api(`/api/runs/${enc}/genes`, { query: { sample: sampleId, query, limit, offset }, signal });
         return res && Array.isArray(res.genes) ? res.genes : [];
       },
       values: (sampleId, genes, signal) => api(`/api/runs/${enc}/gene`, { method: 'POST', body: { sample: sampleId, genes }, signal }),
       bin: (sampleId, index, signal) => api(`/api/runs/${enc}/bin`, { query: { sample: sampleId, index }, signal }),
+      top: (sampleId, signal) => api(`/api/runs/${enc}/top-genes`, { query: { sample: sampleId }, signal }),
+      overlapGenes: (sampleId, indices, thresholds, signal) => api(`/api/runs/${enc}/overlap-genes`, {
+        method: 'POST', body: { sample: sampleId, indices, ...thresholds }, signal,
+      }),
     },
     async image(sampleId, signal) {
       try {
@@ -1005,14 +1537,16 @@ export function runSource(runId) {
 
 // ------------------------------------------------------------------------------------------------ component
 function initStore(store) {
-  if (!LAYOUTS.includes(store.layout)) store.layout = 1;
-  if (typeof store.link !== 'boolean') store.link = true;
+  if (!Number.isInteger(store.layout) || store.layout < 1 || store.layout > MAX_PANELS) store.layout = 1;
+  // each panel pans and zooms on its own unless "Linked" is turned on
+  if (typeof store.link !== 'boolean') store.link = false;
   if (typeof store.sameScale !== 'boolean') store.sameScale = true;
   if (!Number.isFinite(store.pointSize)) store.pointSize = 1;
   if (!store.image || typeof store.image !== 'object') store.image = { on: false, opacity: 0.5 };
   if (!Number.isFinite(store.image.opacity)) store.image.opacity = 0.5;
   if (!(store.data instanceof Map)) store.data = new Map();
   if (!(store.geneData instanceof Map)) store.geneData = new Map();
+  if (!(store.topData instanceof Map)) store.topData = new Map();
   if (!(store.images instanceof Map)) store.images = new Map();
   if (!Array.isArray(store.panels)) store.panels = [];
   if (!goodView(store.view)) store.view = null;
@@ -1029,6 +1563,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
   initStore(store);
   const hasGenes = !!(source.genes && typeof source.genes.search === 'function' && typeof source.genes.values === 'function');
   const hasBinGenes = hasGenes && typeof source.genes.bin === 'function';
+  const hasTop = hasGenes && typeof source.genes.top === 'function';
+  const hasOverlapGenes = hasGenes && typeof source.genes.overlapGenes === 'function';
   const hasImage = typeof source.image === 'function';
 
   let destroyed = false;
@@ -1042,10 +1578,22 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
   const inflight = new Map(); // request key -> {ctrl, promise}; one request per key, shared by the panels
 
   // ---- toolbar
-  const layoutBtns = LAYOUTS.map((k) => h('button', {
-    class: 'btn small', type: 'button', title: LAYOUT_TITLES[k], 'aria-label': LAYOUT_TITLES[k], 'aria-pressed': 'false',
-    onClick: () => setLayout(k),
-  }, String(k)));
+  // "Panels": one button per count from 1 to the number of sections (at most MAX_PANELS), made once they are known
+  let layoutBtns = [];
+  const layoutGroup = h('div', { class: 'btn-group sv-layout', role: 'group', 'aria-label': 'Number of panels' });
+  const layoutCtl = h('div', { class: 'sv-control sv-control-auto', hidden: true },
+    h('span', { class: 'sv-control-label' }, 'Panels'), layoutGroup);
+  /** The most panels this viewer offers: one per section, at most MAX_PANELS. */
+  const maxPanels = () => Math.max(1, Math.min(MAX_PANELS, samples ? samples.length : 1));
+  function paintLayoutBtns() {
+    const n = maxPanels();
+    layoutBtns = Array.from({ length: n }, (_, j) => j + 1).map((k) => h('button', {
+      class: 'btn small', type: 'button', title: layoutTitle(k), 'aria-label': layoutTitle(k), 'aria-pressed': 'false',
+      dataset: { k: String(k) }, onClick: () => setLayout(k),
+    }, String(k)));
+    mount(layoutGroup, layoutBtns);
+    layoutCtl.hidden = n < 2; // one section: one panel, nothing to choose
+  }
   const linkWrap = h('div', { class: 'sv-control sv-control-auto' },
     h('span', { class: 'sv-control-label' }, 'Pan and zoom'),
     h('div', { class: 'sv-switch-row' }, switchToggle({
@@ -1101,9 +1649,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     title: 'Save the panels, with their legends, as a PNG image',
   }, icon('download', { size: 14 }), 'Save PNG');
   const toolbar = h('div', { class: 'sv-toolbar' },
-    h('div', { class: 'sv-control sv-control-auto' },
-      h('span', { class: 'sv-control-label' }, 'Panels'),
-      h('div', { class: 'btn-group sv-layout', role: 'group', 'aria-label': 'Number of panels' }, layoutBtns)),
+    layoutCtl,
     linkWrap,
     scaleWrap,
     h('div', { class: 'sv-control' }, h('label', { for: sizeId }, 'Point size'), h('div', { class: 'sv-range-row' }, sizeInput, sizeOut)),
@@ -1205,6 +1751,17 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       store.geneData.set(ck, gv);
       while (store.geneData.size > GENE_CACHE) store.geneData.delete(store.geneData.keys().next().value);
       return gv;
+    });
+  }
+
+  /** The top gene of every bin of a section (kept like the bins: one answer per section). */
+  function loadTop(sid, d) {
+    const cached = store.topData.get(sid);
+    if (cached) return Promise.resolve(cached);
+    return request(`top\n${sid}`, async (signal) => {
+      const tv = prepareTop(await source.genes.top(sid, signal), d.n);
+      store.topData.set(sid, tv);
+      return tv;
     });
   }
 
@@ -1347,8 +1904,9 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     measuredTop = Math.round(top);
     const stageTop = first.stage.getBoundingClientRect().top + window.scrollY;
     if (!(stageTop > top)) return; // not laid out (hidden)
-    const lead = store.layout !== 4 && top < window.innerHeight / 2 ? stageTop : stageTop - top + 12;
-    const second = store.layout === 4 && panels[2] ? panels[2] : first;
+    const twoRows = panelRows(store.layout) > 1;
+    const lead = !twoRows && top < window.innerHeight / 2 ? stageTop : stageTop - top + 12;
+    const second = twoRows && panels[panelCols(store.layout)] ? panels[panelCols(store.layout)] : first;
     const row = second.stage.getBoundingClientRect().top - second.el.getBoundingClientRect().top + 16;
     el.style.setProperty('--sv-lead', `${Math.round(lead)}px`);
     el.style.setProperty('--sv-row', `${Math.round(row)}px`);
@@ -1390,6 +1948,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       const base = i > 0 && store.panels[0] && typeof store.panels[0] === 'object' ? store.panels[0] : null;
       st = {
         sample: freshSample(i), field: base ? base.field : '', genes: base && Array.isArray(base.genes) ? base.genes.slice() : [],
+        cells: base && Array.isArray(base.cells) ? base.cells.slice() : [],
         overlays: base && Array.isArray(base.overlays) ? base.overlays.slice() : [], dim: base ? base.dim !== false : true,
         hidden: {}, views: {},
       };
@@ -1398,6 +1957,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     if (!ids.includes(st.sample)) st.sample = freshSample(i);
     if (typeof st.field !== 'string') st.field = '';
     st.genes = Array.isArray(st.genes) ? st.genes.map(String).slice(0, MAX_GENES) : [];
+    st.cells = Array.isArray(st.cells) ? [...new Set(st.cells.map(String))] : [];
     st.overlays = Array.isArray(st.overlays) ? [...new Set(st.overlays.map(String))] : [];
     if (typeof st.dim !== 'boolean') st.dim = true;
     if (!st.hidden || typeof st.hidden !== 'object') st.hidden = {};
@@ -1407,17 +1967,21 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
 
   function markLayout(k) {
     el.dataset.layout = String(k);
-    layoutBtns.forEach((b, j) => {
-      const on = LAYOUTS[j] === k;
+    el.dataset.cols = String(panelCols(k));
+    el.dataset.rows = String(panelRows(k));
+    el.style.setProperty('--sv-cols', String(panelCols(k)));
+    for (const b of layoutBtns) {
+      const on = Number(b.dataset.k) === k;
       b.classList.toggle('active', on);
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
+    }
     linkWrap.hidden = k === 1;
     scaleWrap.hidden = k === 1;
   }
 
   function setLayout(k) {
-    if (!LAYOUTS.includes(k)) return;
+    if (!Number.isInteger(k) || k < 1) return;
+    k = Math.min(k, maxPanels()); // no more panels than sections
     store.layout = k;
     markLayout(k);
     if (!samples || !samples.length) return;
@@ -1472,6 +2036,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       }
     }
     if (!samples.length) { showEmpty(); return; }
+    paintLayoutBtns();
     setLayout(store.layout);
   }
 
@@ -1517,11 +2082,30 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     let style = null;
     let scaleUsed = ''; // rangeText of the shared color range the style was built with ('' = its own range)
     let ovl = null;
+    let rings = null; // the overlap combinations of the picked cell types (cellOverlap), or null
+    let geneEdges = []; // the colors of the gene lines' overlap combinations, by combination order (overlayLayers)
+    let corrThresholds = null; // the thresholds of "Correlated genes" last used in this panel
+    /** The colors the map is drawn on (background, gray bins, text), for choosing colors that contrast with them. */
+    const mapPalette = () => theme || (el.isConnected ? readTheme(el) : null) || DARK_MAP;
+
+    /** Outlines drawn: the overlap combinations of the cell types (those not hidden in the legend) and of the genes. */
+    function outlinesDrawn() {
+      const out = [];
+      if (rings) {
+        const hidden = new Set(st.hidden[CELL_FIELD] || []);
+        for (const c of rings.combos) if (!hidden.has(c.key)) out.push(c);
+      }
+      if (ovl && ovl.combos) for (const c of ovl.combos) out.push(c);
+      return out; // [{outline, edge}]: each combination in its own outline color
+    }
     let vis = null; // 1 per bin drawn by the coloring or by a layer (hover targets)
     let shownCount = 0; // bins drawn (by the coloring or a layer)
     let geneVecs = new Map(); // genes key -> prepared counts of the current section
     let geneErrors = new Map(); // genes key -> error message
     let genePending = new Set();
+    let topVec = null; // top genes of the current section (prepareTop), when colored by them
+    let topError = null;
+    let topPending = false;
     let imageEntry = null;
     let imageError = null;
     let imagePending = false;
@@ -1546,19 +2130,44 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     const sampleSel = h('select', { class: 'select', id: ids.sample, onChange: () => setSample(sampleSel.value) });
     // no "Color by": the bins are gray, or colored by the genes typed here (summed); the labels and numbers of a bin
     // and every gene detected in it show when the pointer is over it, and a click lists its genes
-    const searchGenes = (q, signal) => source.genes.search(st.sample, q, signal);
-    const geneBox = hasGenes ? geneInput({ id: ids.genes, label: 'Genes', submitLabel: 'Show', search: searchGenes, onSubmit: setGenes }) : null;
-    const geneCtl = geneBox ? h('div', { class: 'sv-control sv-control-wide' },
-      h('label', { for: ids.genes }, 'Color by genes (several are summed; empty: gray bins)'), geneBox.el) : null;
-    // layers (called overlays in the code and the store): "+ Add layer" opens a popover (a gene box, then the yes/no
-    // fields not shown yet); every layer is a chip of the row under the controls, in its color, with its remove button
+    const searchGenes = (q, signal, offset = 0) => source.genes.search(st.sample, q, signal, { offset, limit: GENE_PAGE });
+    // "Color by genes": one line per gene (genes joined by + on one line are summed); "+ Add layer" adds a line under
+    // the last. One line colors the bins by its UMIs; two or more draw every gene in its own color (see geneLines)
+    const linesEl = h('div', { class: 'sv-lines', role: 'group', 'aria-labelledby': ids.genes });
+    const linesNote = h('p', { class: 'sv-hint sv-lines-note', hidden: true });
+    let lineBoxes = []; // geneInput of every line shown, in order
+    let blankLine = false; // an empty line added with "+ Add layer", stored once a gene is typed in it
+    const geneCtl = hasGenes ? h('div', { class: 'sv-control sv-control-wide' },
+      h('span', { class: 'sv-control-label', id: ids.genes }, 'Color by genes (one per line; two or more: each in its own color)'),
+      linesEl, linesNote) : null;
+    // or every bin in the color of its top gene (the most UMIs in it and the 8 bins around it); a toggle
+    const topBtn = hasTop ? h('button', {
+      class: 'btn toggle sv-top', type: 'button', 'aria-pressed': 'false', onClick: toggleTop,
+      title: 'Color every bin by its top gene: the gene with the most UMIs in the bin and the 8 bins around it',
+    }, 'Top gene') : null;
+    const topCtl = topBtn ? h('div', { class: 'sv-control sv-control-auto' },
+      h('span', { class: 'sv-control-label' }, 'Or color by'), topBtn) : null;
+    // "Color by cells": one cell type per line (the gene signature the analysis assigned each bin), picked from the
+    // section's types; the picked types in their colors, every other bin gray; "All cell types" colors them all. Shown
+    // when the section's bins have a cell type (a run's per-bin table; not the data explorer's raw data)
+    const cellIds = { label: uid('sv-cells') };
+    const cellLinesEl = h('div', { class: 'sv-lines', role: 'group', 'aria-labelledby': cellIds.label });
+    const cellNote = h('p', { class: 'sv-hint sv-lines-note', hidden: true });
+    let cellBoxes = []; // geneInput of every cell line shown, in order
+    let cellBlank = false; // an empty cell line added with "+ Add cell type"
+    const addCellBtn = h('button', {
+      class: 'btn small ghost sv-add-line', type: 'button', onClick: addCellLine,
+      title: 'Add a line for one more cell type',
+    }, icon('plus', { size: 14 }), 'Add cell type');
+    const cellsCtl = h('div', { class: 'sv-control sv-control-wide', hidden: true },
+      h('span', { class: 'sv-control-label', id: cellIds.label }, 'Color by cells (one cell type per line)'),
+      cellLinesEl, cellNote, addCellBtn);
+    // "+ Add layer": one more line under "Color by genes", focused, to type a gene in and Show it. A yes/no layer (call,
+    // region, quality control) kept from an older view is a chip of the row under the controls, with its remove button
     const addBtn = h('button', {
-      class: 'btn sv-add', type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
-      title: hasGenes ? 'Add a layer on top of the coloring: a gene in its own color, or a call or region'
-        : 'Add a layer on top of the coloring: a call or region',
-      onClick: toggleAdd,
+      class: 'btn sv-add', type: 'button', disabled: !hasGenes, onClick: addLine,
+      title: 'Add one more line under Color by genes: type a gene and Show it (two or more lines: each gene in its own color)',
     }, icon('plus', { size: 15 }), 'Add layer');
-    let addPop = null; // the open popover of addBtn: {pop, box (its gene box)}
     const dimInput = h('input', { type: 'checkbox', checked: st.dim, onChange: () => { st.dim = dimInput.checked; requestRender(); } });
     const ovlChips = h('ul', { class: 'chip-list sv-ovl-chips', 'aria-label': 'Layers' });
     const ovlRow = h('div', { class: 'sv-ovl-row', hidden: true }, ovlChips,
@@ -1566,6 +2175,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     const controls = h('div', { class: 'sv-panel-controls' },
       h('div', { class: 'sv-control' }, h('label', { for: ids.sample }, 'Section'), sampleSel),
       geneCtl,
+      cellsCtl,
+      topCtl,
       h('div', { class: 'sv-control sv-control-auto' }, h('span', { class: 'sv-control-label' }, 'Layers'), addBtn));
     const canvas = h('canvas', {
       class: 'sv-canvas', tabIndex: 0, role: 'img',
@@ -1618,7 +2229,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     /** A panel wide enough has its legend in a narrow column beside the map (two or four panels; see run.css). */
     function markWidth() {
       const w = el.clientWidth;
-      if (w) el.classList.toggle('sv-wide', w >= (WIDE_PANEL[store.layout] || Infinity));
+      if (w) el.classList.toggle('sv-wide', w >= wideFrom(store.layout));
     }
 
     // ---- view geometry: a view is {cx, cy (µm at the centre of the canvas), scale (css px per µm)}
@@ -1768,6 +2379,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       const side = sidePx(t.scale);
       drawBins(g, style.groups, data, lt, dpr, side, palette, dimOf());
       if (ovl) drawBins(g, ovl.groups, data, lt, dpr, side, palette, 0);
+      for (const c of outlinesDrawn()) drawOutline(g, c.outline, lt, dpr, c.edge || OUTLINE_COLOR, OUTLINE_HALO);
       layerState = { scale: t.scale, tx: t.tx, ty: t.ty, margin, dpr, w: size.w, h: size.h };
     }
 
@@ -1963,6 +2575,10 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       for (const gk of neededGeneKeys()) {
         const gv = geneVecs.get(gk);
         if (gv) row(`${geneText(gv.used.length ? gv.used : gk.split(','))} (UMIs)`, formatNumber(gv.counts[i]), gk === colorKey || st.overlays.includes(GENE_OVERLAY + gk));
+      }
+      if (st.field === TOP_FIELD && topVec) {
+        const c = topVec.codes[i];
+        row(topVec.pooled ? 'Top gene (bin + 8 around)' : 'Top gene', c >= 0 ? topVec.genes[c] : '—', true);
       }
       const calls = [];
       let anyCall = false;
@@ -2165,12 +2781,18 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     function shownText() {
       let what;
       if (st.field === GENE_FIELD) what = st.genes.length ? `${geneText(geneNames())} (UMIs)` : 'gene expression';
+      else if (st.field === TOP_FIELD) what = 'top gene per bin';
+      else if (st.field === CELL_FIELD) {
+        const picked = pickedCells();
+        what = !picked ? 'cell types' : (picked.length <= 2 ? picked.join(', ') : `${picked.length} cell types`);
+      }
       else if (st.field === NONE_FIELD) what = '';
       else what = st.field && data.fields.has(st.field) ? fieldLabel(st.field) : 'bins';
-      const n = st.overlays.length;
+      const drawn = drawnOverlays();
+      const n = drawn.length;
       let layers = '';
-      if (n === 1 || n === 2) layers = st.overlays.map(layerLabel).join(', ');
-      else if (n > 2) layers = `${n} layers`;
+      if (n === 1 || n === 2) layers = drawn.map(layerLabel).join(', ');
+      else if (n > 2) layers = drawn.every(isGeneKey) ? `${n} genes` : `${n} layers`;
       if (!what) return layers || 'bins (no coloring)';
       return layers ? `${what} + ${layers}` : what;
     }
@@ -2187,7 +2809,9 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
 
     function legendTitle() {
       if (st.field === GENE_FIELD) return st.genes.length ? `${geneText(geneNames())} (UMIs)` : 'Gene expression';
-      if (st.field === NONE_FIELD) return 'No coloring';
+      if (st.field === TOP_FIELD) return 'Top gene per bin';
+      if (st.field === CELL_FIELD) return pickedCells() ? 'Cell types picked' : 'Cell type';
+      if (st.field === NONE_FIELD) return drawnOverlays().some(isGeneKey) ? 'Genes, each in its own color' : 'No coloring';
       return st.field && data.fields.has(st.field) ? fieldLabel(st.field) : 'Bins';
     }
 
@@ -2256,6 +2880,172 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       return [scale ? colorbar(scale) : null, h('ul', { class: 'sv-facts' }, facts)];
     }
 
+    function topLegend() {
+      if (topError) return retryLine(topError, retryTop);
+      if (!topVec) return busyLine('Finding the top gene of every bin…');
+      const tv = topVec;
+      const n = tv.codes.length;
+      const facts = [
+        h('li', null, tv.pooled ? 'The gene with the most UMIs in the bin and the 8 bins around it'
+          : 'The gene with the most UMIs in the bin (the barcodes give no grid, so no neighbors are added)'),
+        h('li', null, `${fmt.int(tv.genes.length)} genes top a bin; the ${fmt.int(Math.min(TOP_COLORS, tv.genes.length))} topping the most have a color of their own`),
+      ];
+      if (tv.tied) facts.push(h('li', null, `${fmt.int(tv.tied)} bins (${fmt.pct(n ? (100 * tv.tied) / n : 0, 1)}) had a tie: the gene with the most UMIs in the section was taken`));
+      if (tv.unmatched) facts.push(h('li', { class: 'sv-warn' }, `${fmt.int(tv.unmatched)} bins of the map were not found in the raw data (no top gene)`));
+      return h('ul', { class: 'sv-facts' }, facts);
+    }
+
+    /** What the shaded overlap is (its entry is in the legend above), and the picked types without a positivity call. */
+    function overlapLegend() {
+      const facts = [];
+      if (rings.types.length < 2) {
+        facts.push(h('li', { class: 'sv-warn' }, `No overlap to show: positivity calls exist for ${rings.types.length ? rings.types.join(', ') : 'none'} of the picked types only`));
+      } else {
+        facts.push(h('li', null, `Overlap: the ${fmt.int(rings.n)} bins called positive (native depth) for two or more of ${rings.types.join(', ')}, in ${fmt.int(rings.combos.length)} ${rings.combos.length === 1 ? 'combination' : 'combinations'}, each in one color of its own (bins, shape and outline), chosen to contrast with every other color on the map`));
+        if (rings.without.length) facts.push(h('li', null, `No positivity call for ${rings.without.join(', ')}: not counted`));
+      }
+      // "Correlated genes…": per combination, the genes whose expression follows its bins (openOverlapGenes)
+      const finds = hasOverlapGenes && rings.combos.length ? h('ul', { class: 'sv-corr-list' }, rings.combos.map((c) => h('li', null,
+        shapeSwatch(c.color, c.shape),
+        h('span', { class: 'sv-item-label' }, c.label),
+        h('button', {
+          class: 'btn small', type: 'button', onClick: () => openOverlapGenes(c),
+          title: `Find the genes whose expression follows the ${fmt.int(c.idx.length)} bins of ${c.label} (correlation, with thresholds you can change)`,
+        }, 'Correlated genes…')))) : null;
+      return h('div', { class: 'sv-legend-section' }, h('h4', null, 'Overlap'), h('ul', { class: 'sv-facts' }, facts), finds);
+    }
+
+    /**
+     * "Correlated genes" of an overlap combination: a dialog with the thresholds (suggested r >= 0.1, FDR <= 0.05, 3
+     * bins of the overlap; each can be changed, "Find genes" asks again), the genes that pass by r (source.genes.
+     * overlapGenes: Pearson r of each gene's log-normalised expression with in the overlap or not), and buttons that
+     * show one gene, or the top three as gene lines, on the map.
+     */
+    function openOverlapGenes(combo) {
+      const sid = st.sample;
+      const indices = Array.from(combo.idx);
+      const num = (label, value, attrs, hint) => {
+        const id = uid('sv-corr');
+        const input = h('input', { class: 'input', type: 'number', id, value: String(value), ...attrs });
+        return { input, el: h('div', { class: 'sv-corr-field' }, h('label', { for: id }, label), input, h('span', { class: 'muted small' }, hint)) };
+      };
+      // the thresholds last used in this panel, else the suggested ones
+      const last = corrThresholds || { min_r: 0.1, max_fdr: 0.05, min_bins: 3 };
+      const minR = num('Correlation r at least', last.min_r, { min: -1, max: 1, step: 0.05 }, 'suggested 0.1 (from −1 to 1)');
+      const maxFdr = num('FDR at most', last.max_fdr, { min: 0, max: 1, step: 0.01 }, 'suggested 0.05 (from 0 to 1)');
+      const minBins = num('Bins of the overlap at least', Math.min(last.min_bins, indices.length), { min: 0, max: indices.length, step: 1 }, `suggested 3 (of ${fmt.int(indices.length)})`);
+      const findBtn = h('button', { class: 'btn primary', type: 'button', onClick: () => run() }, 'Find genes');
+      const summary = h('p', { class: 'muted small' }, '');
+      const tbody = h('tbody');
+      const table = h('div', { class: 'table-wrap sv-corr-table' }, h('table', { class: 'table compact' },
+        h('thead', null, h('tr', null,
+          h('th', { class: 'num' }, '#'), h('th', null, 'Gene'), h('th', { class: 'num', title: 'Pearson correlation with in the overlap (1) or not (0)' }, 'r'),
+          h('th', { class: 'num', title: 'Benjamini–Hochberg corrected p-value' }, 'FDR'),
+          h('th', { class: 'num', title: 'Share of the overlap bins detecting the gene' }, 'In overlap'),
+          h('th', { class: 'num', title: 'Share of the other bins detecting the gene' }, 'Outside'),
+          h('th', null, ''))),
+        tbody));
+      let res = null;
+      let ctrl = null;
+      const fmtP = (v) => (!(v > 0) ? '< 1e-300' : (v < 0.001 ? v.toExponential(1) : v.toFixed(3)));
+      const read = () => {
+        const r = Number(minR.input.value);
+        const f = Number(maxFdr.input.value);
+        const b = Number(minBins.input.value);
+        if (!(r >= -1 && r <= 1)) return 'Correlation r must be a number from −1 to 1.';
+        if (!(f >= 0 && f <= 1)) return 'FDR must be a number from 0 to 1.';
+        if (!(Number.isInteger(b) && b >= 0 && b <= indices.length)) return `Bins must be a whole number from 0 to ${indices.length}.`;
+        return { min_r: r, max_fdr: f, min_bins: b, limit: 200 };
+      };
+      async function run() {
+        const t = read();
+        if (typeof t === 'string') { summary.textContent = t; summary.className = 'sv-warn small'; return; }
+        corrThresholds = { min_r: t.min_r, max_fdr: t.max_fdr, min_bins: t.min_bins }; // kept for the next time
+        if (ctrl) ctrl.abort();
+        const my = new AbortController();
+        ctrl = my;
+        findBtn.disabled = true;
+        summary.className = 'muted small';
+        summary.textContent = `Correlating every gene with the ${fmt.int(indices.length)} bins of ${combo.label}…`;
+        mount(tbody);
+        try {
+          res = await source.genes.overlapGenes(sid, indices, t, my.signal);
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          res = null;
+          summary.className = 'sv-warn small';
+          summary.textContent = `The genes could not be found: ${(err && err.message) || err}`;
+          return;
+        } finally {
+          if (ctrl === my) { ctrl = null; findBtn.disabled = false; }
+        }
+        const shown = res.genes.length;
+        summary.textContent = `${fmt.int(res.n_pass)} of ${fmt.int(res.n_tested)} genes pass (r ≥ ${t.min_r}, FDR ≤ ${t.max_fdr}, `
+          + `in ≥ ${t.min_bins} of the ${fmt.int(res.n_overlap)} overlap bins), over ${fmt.int(res.n_bins)} bins of the section`
+          + (res.n_pass > shown ? `; the ${fmt.int(shown)} with the highest r are listed` : '') + '. '
+          + 'Expression: log1p of the UMIs per 10,000 UMIs of the bin.';
+        mount(tbody, res.genes.map((g, k) => h('tr', null,
+          h('td', { class: 'num muted' }, String(k + 1)),
+          h('td', { class: 'mono' }, g.gene),
+          h('td', { class: 'num' }, g.r.toFixed(3)),
+          h('td', { class: 'num' }, fmtP(g.fdr)),
+          h('td', { class: 'num' }, `${fmt.num(g.pct_in, 1)}%`),
+          h('td', { class: 'num' }, `${fmt.num(g.pct_out, 1)}%`),
+          h('td', null, h('button', {
+            class: 'btn small ghost', type: 'button', title: `Color the map by the UMIs of ${g.gene}`,
+            onClick: () => { dialog.close(); showGeneLines([g.gene]); },
+          }, 'Show')))));
+      }
+      const dialog = modal({
+        title: `Genes correlated with ${combo.label}`, size: 'wide',
+        body: h('div', { class: 'stack' },
+          h('p', null, `${sampleText(sid)} · ${fmt.int(indices.length)} overlap bins. Each gene is tested over the section's bins: the Pearson correlation of its expression with in the overlap (1) or not (0). The thresholds are suggestions; change them and press Find genes.`),
+          h('div', { class: 'sv-corr-thresholds' }, minR.el, maxFdr.el, minBins.el, findBtn),
+          summary, table),
+        actions: [
+          {
+            label: 'Show top 3 as gene lines', icon: 'map',
+            onClick: () => {
+              if (!res || !res.genes.length) return false;
+              showGeneLines(res.genes.slice(0, 3).map((g) => g.gene));
+              return undefined;
+            },
+          },
+          {
+            label: 'Copy list', icon: 'copy',
+            onClick: async () => {
+              if (!res || !res.genes.length) return false;
+              const text = ['gene\tr\tp\tfdr\tbins_in_overlap\tpct_in_overlap\tpct_outside',
+                ...res.genes.map((g) => [g.gene, g.r, g.p, g.fdr, g.bins_in, g.pct_in, g.pct_out].join('\t'))].join('\n');
+              try {
+                await navigator.clipboard.writeText(text);
+                toast(`${fmt.int(res.genes.length)} genes copied (tab-separated)`, 'success', { timeout: 2500 });
+              } catch {
+                toast('The browser did not allow copying', 'error');
+              }
+              return false;
+            },
+          },
+          { label: 'Close', kind: 'primary' },
+        ],
+        onClose: () => { if (ctrl) ctrl.abort(); },
+      });
+      for (const f of [minR, maxFdr, minBins]) f.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+      run();
+    }
+
+    /** The map colored by these genes, one line each (from "Correlated genes"); the cell lines wait meanwhile. */
+    function showGeneLines(genes) {
+      if (linesAside()) st.field = NONE_FIELD; // leave the cell (or Top gene) coloring for the genes
+      setLines(genes.map((g) => genesKey([g])), 0);
+    }
+
+    function retryTop() {
+      topError = null;
+      ensureTop();
+      restyle();
+    }
+
     function numberLegend() {
       const cut = clampFact(style.scale, 'the bins');
       return [colorbar(style.scale), cut ? h('ul', { class: 'sv-facts' }, cut) : null];
@@ -2272,25 +3062,36 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
 
     function overlayLegend() {
       const layers = ovl ? ovl.layers : [];
-      const items = layers.map((l) => h('li', { class: 'sv-ovl' },
-        h('span', { class: 'swatch', style: { background: l.color } }),
-        h('span', { class: 'sv-item-label' }, l.label),
-        h('span', { class: l.count === null && l.status !== LOADING ? 'sv-item-count sv-warn' : 'sv-item-count' },
-          l.count === null ? l.status : fmt.int(l.count))));
+      const items = layers.map((l) => h('li', {
+        class: 'sv-ovl',
+        title: l.total !== null && l.total !== undefined
+          ? `${l.label}: drawn on ${fmt.int(l.count)} bins; in ${fmt.int(l.total)} bins (overlap included)` : null,
+      },
+      h('span', { class: 'swatch', style: { background: l.color } }),
+      h('span', { class: 'sv-item-label' }, l.label),
+      h('span', { class: l.count === null && l.status !== LOADING ? 'sv-item-count sv-warn' : 'sv-item-count' },
+        l.count === null ? l.status : fmt.int(l.count))));
+      // the overlap combinations of the genes: each in its own color, outlined as clusters
+      for (const c of ovl && ovl.combos ? ovl.combos : []) {
+        items.push(h('li', { class: 'sv-ovl', title: `Bins detecting ${c.label}` },
+          shapeSwatch(c.color, c.shape),
+          h('span', { class: 'sv-item-label' }, `${c.label} (${fmt.int(c.clusters)} ${c.clusters === 1 ? 'cluster' : 'clusters'})`),
+          h('span', { class: 'sv-item-count' }, fmt.int(c.idx.length))));
+      }
       if (ovl && ovl.several) {
         items.push(h('li', { class: 'sv-ovl' },
           h('span', { class: 'swatch sv-swatch-ink', style: { background: severalColor() } }),
-          h('span', { class: 'sv-item-label' }, 'In two or more layers'),
+          h('span', { class: 'sv-item-label' }, severalLabel()),
           h('span', { class: 'sv-item-count' }, fmt.int(ovl.several))));
       }
-      const errors = st.overlays.filter((k) => k.startsWith(GENE_OVERLAY)).map((k) => k.slice(GENE_OVERLAY.length))
+      const errors = drawnOverlays().filter(isGeneKey).map((k) => k.slice(GENE_OVERLAY.length))
         .filter((gk) => geneErrors.has(gk) && !(st.field === GENE_FIELD && genesKey(st.genes) === gk))
         .map((gk) => retryLine(`${geneText(gk.split(','))}: ${geneErrors.get(gk)}`, () => retryGenes(gk)));
       const notes = layers.filter((l) => l.note).map((l) => h('li', { class: 'sv-warn' }, `${l.label}: ${l.note}`));
       return h('div', { class: 'sv-legend-section' },
-        h('h4', null, 'Layers'),
-        layers.some(isGeneLayer) ? h('p', { class: 'sv-hint' }, 'A gene marks the bins detecting it (1 UMI or more).') : null,
-        h('ul', { class: 'sv-ovl-list', title: 'Bins in each layer (overlap included)' }, items),
+        h('h4', null, layers.length && layers.every(isGeneLayer) ? 'Genes' : 'Layers'),
+        layers.some(isGeneLayer) ? h('p', { class: 'sv-hint' }, 'A gene marks the bins detecting it (1 UMI or more); a bin detecting several takes the color of its combination of genes (each combination its own color and shape), outlined with its neighbors.') : null,
+        h('ul', { class: 'sv-ovl-list', title: 'Bins drawn in each color' }, items),
         notes.length ? h('ul', { class: 'sv-facts' }, notes) : null,
         errors);
     }
@@ -2313,6 +3114,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       if (!data) { mount(legendEl); return; }
       const parts = [h('h3', { class: 'sv-legend-title' }, legendTitle())];
       if (st.field === GENE_FIELD) parts.push(geneLegend());
+      else if (st.field === TOP_FIELD) parts.push(topLegend());
       else if (style && style.kind === 'number' && style.scale) parts.push(numberLegend());
       if (style && style.legend.length) {
         parts.push(h('div', { class: 'sv-legend', role: 'group', 'aria-label': `${legendTitle()}: click an entry to hide or show it` },
@@ -2321,7 +3123,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
             dataset: { key: e.key }, title: 'Click to hide or show; Alt+click to show only this entry',
             onClick: (ev) => toggle(e.key, ev.altKey),
           },
-          h('span', { class: 'swatch', style: { background: e.color === NEUTRAL ? 'var(--plot-neutral)' : e.color } }),
+          e.shape ? shapeSwatch(e.color, e.shape)
+            : h('span', { class: 'swatch', style: { background: e.color === NEUTRAL ? 'var(--plot-neutral)' : e.color } }),
           h('span', { class: 'sv-item-label' }, e.label),
           h('span', { class: 'sv-item-count' }, fmt.int(e.count))))));
       }
@@ -2331,7 +3134,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
           h('span', null, `${fmt.int(shownCount)} of ${fmt.int(data.valid)} bins shown`),
           anyOff ? h('button', { class: 'btn ghost small', type: 'button', onClick: showAll }, 'Show all') : null));
       }
-      if (st.overlays.length) parts.push(overlayLegend());
+      if (rings) parts.push(overlapLegend());
+      if (drawnOverlays().length) parts.push(overlayLegend());
       parts.push(imageLegend());
       mount(legendEl, parts);
     }
@@ -2368,12 +3172,14 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
      * overlay cannot be drawn (gene not in the data, counts that failed to load) is marked.
      */
     function paintOverlayRow() {
-      ovlRow.hidden = !st.overlays.length;
+      // the chips of the calls, region and quality control (the genes are the lines of "Color by genes"); the row also
+      // holds "Dim the coloring under the layers", so it shows while anything is drawn on top
+      ovlRow.hidden = !drawnOverlays().length;
       const layers = ovl ? ovl.layers : [];
       // a focused remove button keeps the focus when the chips are made again (gene counts arriving, a rename)
       const focused = ovlChips.contains(document.activeElement)
         ? [...ovlChips.querySelectorAll('button')].indexOf(document.activeElement) : -1;
-      mount(ovlChips, st.overlays.map((key) => {
+      mount(ovlChips, st.overlays.filter((k) => !isGeneKey(k)).map((key) => {
         const l = layers.find((x) => x.key === key);
         const label = l ? l.label : overlayLabel(key);
         const bad = !!l && ((l.count === null && l.status !== LOADING) || !!l.note);
@@ -2393,7 +3199,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     // ---- coloring and overlays
     /** Overlay layers of this panel with their colors: the configured signature color when free, else the palette. */
     function overlayLayers() {
-      const layers = st.overlays.map((key) => {
+      const layers = drawnOverlays().map((key) => {
         if (key.startsWith(GENE_OVERLAY)) {
           const gk = key.slice(GENE_OVERLAY.length);
           const gv = geneVecs.get(gk);
@@ -2401,6 +3207,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
           return {
             key, label: geneText(gv && gv.used.length ? gv.used : gk.split(',')), color: null,
             mask: gv && !none ? (i) => gv.counts[i] > 0 : null,
+            value: gv && !none ? (i) => gv.counts[i] : null,
             status: none ? 'not in the data' : (gv ? '' : (geneErrors.has(gk) ? 'failed' : LOADING)),
             note: gv && !none && gv.missing.length ? `not in the data: ${gv.missing.join(', ')}` : '',
           };
@@ -2417,16 +3224,21 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
         if (l.color && !tooClose(l.color, used)) used.push(l.color);
         else l.color = null; // e.g. the pooled and the native call of one signature: the second takes a palette color
       }
-      // palette colors apart from the other overlays, first the ones also apart from the colors of the coloring under
-      // them (categories, calls); configured colors stay as they are (one signature, one color)
+      // the gene lines and the combinations of their overlaps: colors chosen together, each as far as can be (CIELAB)
+      // from the others and from everything else on the map: background, gray bins, the coloring under them, the
+      // configured colors of the other layers (farColors); the genes take the first, the combinations the rest
+      const genes = layers.filter(isGeneLayer);
       const under = style ? style.legend.map((e) => e.color).filter((c) => c !== NEUTRAL) : [];
-      const free = OVERLAY_PALETTE.filter((c) => !tooClose(c, used));
-      const apart = free.filter((c) => !tooClose(c, under));
-      const order = [...apart, ...free.filter((c) => !apart.includes(c))];
+      const pal = mapPalette();
+      const far = farColors(genes.length + comboCount(genes.length), [pal.bg, pal.neutral, pal.text, ...used, ...under]);
+      genes.forEach((l, k) => { l.color = far[k] || OVERLAY_PALETTE[k % OVERLAY_PALETTE.length]; });
+      geneEdges = far.slice(genes.length);
+      // a yes/no layer without a configured color (rare): a palette color apart from all of those
+      const free = OVERLAY_PALETTE.filter((c) => !tooClose(c, [...used, ...far]));
       let next = 0;
       for (const l of layers) {
         if (l.color) continue;
-        l.color = order.length ? order[next % order.length] : OVERLAY_PALETTE[next % OVERLAY_PALETTE.length];
+        l.color = free.length ? free[next % free.length] : OVERLAY_PALETTE[next % OVERLAY_PALETTE.length];
         next += 1;
       }
       return layers;
@@ -2457,6 +3269,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       if (!data) {
         style = null;
         ovl = null;
+        rings = null;
         vis = null;
         scaleUsed = '';
         paintTitle();
@@ -2467,14 +3280,35 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       }
       const range = scaleRangeFor(ownScale());
       scaleUsed = rangeText(range);
+      // two or more cell types picked: the bins positive for two or more of them are shaded (not in a type's color)
+      // and outlined as clusters
+      const picked = st.field === CELL_FIELD && cellField() ? pickedCells() : null;
+      if (picked && picked.length >= 2) {
+        const f = cellField();
+        const colors = categoryColors(f, data.colors);
+        const codeOf = new Map(f.categories.map((name, c) => [name, c]));
+        const pal = mapPalette();
+        rings = cellOverlap(data, picked, (t) => colors[codeOf.get(t)] || OUTLINE_COLOR, [pal.bg, pal.neutral, pal.text]);
+      } else {
+        rings = null;
+      }
       if (st.field === GENE_FIELD) {
         const gv = st.genes.length ? geneVecs.get(genesKey(st.genes)) : null;
         style = gv ? buildGeneStyle(data, gv, new Set(st.hidden[GENE_FIELD] || []), range) : buildStyle(data, null, new Set());
+      } else if (st.field === TOP_FIELD) {
+        style = topVec ? buildTopStyle(data, topVec, new Set(st.hidden[TOP_FIELD] || [])) : buildStyle(data, null, new Set());
+      } else if (st.field === CELL_FIELD && cellField()) {
+        style = buildCellStyle(data, cellField(), pickedCells(), new Set(st.hidden[CELL_FIELD] || []), rings ? rings.combos : []);
       } else {
         const f = data.fields.get(st.field) || null;
         style = buildStyle(data, f, new Set(st.hidden[f ? f.key : st.field] || []), range, st.field === NONE_FIELD);
       }
-      ovl = st.overlays.length ? buildOverlays(data, overlayLayers()) : null;
+      if (drawnOverlays().length) {
+        const layers = overlayLayers(); // the gene lines' colors and their combinations' (geneEdges), far apart
+        ovl = buildOverlays(data, layers, geneEdges.length ? geneEdges : [OUTLINE_COLOR]);
+      } else {
+        ovl = null;
+      }
       if (ovl && ovl.groups.length) {
         vis = style.visible.slice();
         shownCount = 0;
@@ -2490,6 +3324,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       paintTitle();
       paintLegend();
       paintOverlayRow();
+      paintLineSwatches();
       requestRender();
       syncScales(self);
       measureSoon(); // the overlay row may have come or gone
@@ -2502,153 +3337,385 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
      * to the gray bins (its values show in the tooltip).
      */
     function normalizeField() {
-      if (st.field === GENE_FIELD && hasGenes && st.genes.length) return;
-      const f = data.fields.get(st.field);
-      if (f && f.type === 'bool') {
-        if (!st.overlays.includes(st.field) && st.overlays.length < MAX_OVERLAYS) st.overlays.push(st.field);
-        // its negative bins hidden (only the positive or passing bins shown): the gray bins hidden, the same picture
-        if (st.hidden && Array.isArray(st.hidden[st.field]) && st.hidden[st.field].includes('no')) st.hidden[NONE_FIELD] = [BASE];
+      const kept = (st.field === GENE_FIELD && hasGenes && st.genes.length) || (st.field === TOP_FIELD && hasTop)
+        || (st.field === CELL_FIELD && !!cellField());
+      if (st.field === CELL_FIELD && kept && !st.cells.length) st.cells = [ALL_CELLS]; // a view from the Cell type toggle
+      if (!kept) {
+        const f = data.fields.get(st.field);
+        if (f && f.type === 'bool') {
+          if (!st.overlays.includes(st.field) && st.overlays.length < MAX_OVERLAYS) st.overlays.push(st.field);
+          // its negative bins hidden (only the positive or passing bins shown): the gray bins hidden, the same picture
+          if (st.hidden && Array.isArray(st.hidden[st.field]) && st.hidden[st.field].includes('no')) st.hidden[NONE_FIELD] = [BASE];
+        }
+        st.field = NONE_FIELD;
       }
-      st.field = NONE_FIELD;
+      // the gene lines in their stored form (a gene added from the data explorer, a view kept from before)
+      if (hasGenes) storeLines(geneLines());
     }
 
-    /** Region, quality control and calls (yes/no fields) of the section that are not overlays yet, in field order. */
-    function freeBools() {
-      return data ? data.order.filter((k) => data.fields.get(k).type === 'bool' && !st.overlays.includes(k)) : [];
-    }
-
-    /** "+ Add layer" can add something: a gene (when the source has genes) or a yes/no field not shown yet. */
+    /** "+ Add layer" adds a gene line: there is room for one more (the source has genes). */
     function paintAddBtn() {
-      addBtn.disabled = !hasGenes && !freeBools().length;
+      addBtn.disabled = !hasGenes || geneLines().length + st.overlays.filter((k) => !isGeneKey(k)).length >= MAX_OVERLAYS;
     }
 
-    function syncControls() {
-      if (geneBox) geneBox.set(st.field === GENE_FIELD ? st.genes.join(', ') : '');
+    function syncControls(focusLine = -1) {
+      paintLines(focusLine);
+      if (topBtn) topBtn.setAttribute('aria-pressed', st.field === TOP_FIELD ? 'true' : 'false');
+      paintCellLines();
       paintAddBtn();
       dimInput.checked = st.dim;
     }
 
-    /** Color the bins by the summed counts of `genes`; none: gray bins. */
-    function setGenes(genes) {
-      let list = genes;
-      if (list.length > MAX_GENES) {
-        toast(`At most ${MAX_GENES} genes are summed; the first ${MAX_GENES} are shown.`, 'warning');
-        list = list.slice(0, MAX_GENES);
+    /** The "Top gene" toggle: every bin in the color of its top gene, or back to the gene lines (none: gray bins). */
+    function toggleTop() {
+      const lines = geneLines();
+      if (st.field === TOP_FIELD) {
+        st.field = NONE_FIELD;
+      } else {
+        st.field = TOP_FIELD;
+        topError = null; // a failed load is tried again
       }
-      st.genes = list;
-      st.field = hasGenes && list.length ? GENE_FIELD : NONE_FIELD;
-      geneErrors.delete(genesKey(list)); // a gene list that failed before is tried again
+      storeLines(lines); // kept while Top gene is on, shown again when it is off
       if (!data) return;
       syncControls();
+      ensureTop();
       ensureGenes();
       prune();
       restyle();
+      tellPage();
     }
 
-    // ---- "+ Add layer": a popover with a gene box (Enter or a suggestion adds the genes typed, one overlay each, or one
-    // for genes joined by +) and the yes/no fields not shown yet (a click adds one); either closes it
-    function toggleAdd() {
-      if (addPop && addPop.pop.isOpen()) addPop.pop.close();
-      else openAdd();
+    // ---- gene lines. "Color by genes" is a list of lines, one gene each (or genes joined by +, summed). The panel's
+    // state keeps them as before, so that saved views, viewer.show() and the data explorer's gene table go on working:
+    // one line is the gene coloring (field GENE_FIELD, st.genes: the bins colored by its UMIs); two or more are gene
+    // overlays ('gene:Ctsk'), each in its own color, a bin detecting several in the color of its combination (one group per
+    // combination of genes, outlined as clusters)
+    // (buildOverlays). While Top gene is on the lines are kept as gene overlays and not drawn (drawnOverlays).
+    const isGeneKey = (k) => k.startsWith(GENE_OVERLAY);
+    // the colorings that take the place of the gene lines (kept as gene overlays, not drawn, while one is on)
+    const linesAside = () => st.field === TOP_FIELD || st.field === CELL_FIELD;
+    /** The section's cell type field (a category), null when its bins have none (raw data). */
+    const cellField = () => {
+      const f = data ? data.fields.get(CELL_FIELD) : null;
+      return f && f.type === 'category' ? f : null;
+    };
+
+    /** Genes keys of the lines, in order: the genes coloring the panel, then its gene overlays (duplicates once). */
+    function geneLines() {
+      const keys = [];
+      if (st.field === GENE_FIELD && st.genes.length) keys.push(genesKey(st.genes));
+      for (const k of st.overlays) if (isGeneKey(k)) keys.push(k.slice(GENE_OVERLAY.length));
+      const seen = new Set();
+      return keys.filter((gk) => {
+        const f = foldGenes(gk.split(','));
+        if (seen.has(f)) return false;
+        seen.add(f);
+        return true;
+      });
     }
 
-    function openAdd() {
-      if (st.overlays.length >= MAX_OVERLAYS) {
+    /** Store `lines` (genes keys) in the panel's state: one line as the gene coloring, else as gene overlays. */
+    function storeLines(lines) {
+      const others = st.overlays.filter((k) => !isGeneKey(k));
+      if (lines.length === 1 && !linesAside()) {
+        st.genes = lines[0].split(',');
+        st.field = GENE_FIELD;
+        st.overlays = others;
+        return;
+      }
+      if (st.field === GENE_FIELD) st.field = NONE_FIELD;
+      st.genes = [];
+      st.overlays = [...lines.map((gk) => GENE_OVERLAY + gk), ...others];
+    }
+
+    /** The overlays drawn: all of them, but not the gene lines while Top gene is on. */
+    function drawnOverlays() {
+      return linesAside() ? st.overlays.filter((k) => !isGeneKey(k)) : st.overlays;
+    }
+
+    /** New gene lines (genes keys) for the panel; focusLine: the line that keeps the focus. */
+    function setLines(lines, focusLine = -1) {
+      let next = lines;
+      const room = Math.max(0, MAX_OVERLAYS - st.overlays.filter((k) => !isGeneKey(k)).length);
+      if (next.length > room) {
+        tooManyOverlays(next.slice(room).map((gk) => GENE_OVERLAY + gk));
+        next = next.slice(0, room);
+      }
+      storeLines(next);
+      for (const gk of next) geneErrors.delete(gk); // genes that failed before are tried again
+      if (!data) { paintLines(focusLine); return; }
+      syncControls(focusLine);
+      ensureGenes();
+      prune();
+      restyle();
+      tellPage();
+    }
+
+    /** Line k submitted: its genes replace it (one line each; genes joined by + stay one line); empty: it goes. */
+    function submitLine(k, text) {
+      const lines = geneLines();
+      const typed = parseGeneLayers(text).map((genes) => genesKey(genes));
+      if (typed.length && linesAside()) st.field = NONE_FIELD; // showing genes ends the Top gene or Cell type coloring
+      if (k >= lines.length) blankLine = false;
+      const next = [...lines.slice(0, k), ...typed, ...lines.slice(k + 1)];
+      const seen = new Set();
+      const unique = next.filter((gk) => {
+        const f = foldGenes(gk.split(','));
+        if (seen.has(f)) return false;
+        seen.add(f);
+        return true;
+      });
+      if (unique.length < next.length) toast('A gene already on a line is shown once.', 'info', { timeout: 2500 });
+      setLines(unique, Math.min(k, Math.max(0, unique.length - 1)));
+    }
+
+    function removeLine(k) {
+      const lines = geneLines();
+      if (k >= lines.length) { // the empty line added last
+        blankLine = false;
+        paintLines();
+        addBtn.focus();
+        return;
+      }
+      lines.splice(k, 1);
+      setLines(lines, lines.length ? Math.min(k, lines.length - 1) : 0);
+    }
+
+    /** "+ Add layer": an empty line under the last one, focused (the first line when there is none). */
+    function addLine() {
+      const lines = geneLines();
+      if (!lines.length || blankLine) { // the first line, or the empty line already there
+        paintLines(lines.length);
+        return;
+      }
+      if (lines.length + st.overlays.filter((k) => !isGeneKey(k)).length >= MAX_OVERLAYS) {
         tooManyOverlays([]);
         return;
       }
-      const parts = [];
-      let box = null;
-      if (hasGenes) {
-        const boxId = uid('sv-add-gene');
-        box = geneInput({
-          id: boxId, label: 'Gene', placeholder: 'e.g. Ctsk', submitLabel: 'Add', search: searchGenes, suggestOnFocus: false,
-          onSubmit: (names, text) => addGenes(text),
+      blankLine = true;
+      paintLines(lines.length);
+    }
+
+    /** Make the lines again from the panel's state (plus the empty one); focusLine: the line whose box gets the focus. */
+    function paintLines(focusLine = -1) {
+      if (!hasGenes) return;
+      // a line being typed in keeps its text and the focus (its genes renamed meanwhile, another line's genes loaded)
+      const typing = lineBoxes.findIndex((b) => b.input === document.activeElement);
+      const typed = typing >= 0 ? lineBoxes[typing].input.value : null;
+      for (const b of lineBoxes) b.destroy();
+      const lines = geneLines();
+      const shown = lines.map((gk) => gk.split(',').join(' + '));
+      if (!lines.length || blankLine) shown.push('');
+      lineBoxes = [];
+      mount(linesEl, shown.map((text, k) => {
+        const box = geneInput({
+          label: `Gene line ${k + 1}`, placeholder: k ? 'one more gene, e.g. Acp5' : 'e.g. Ctsk', submitLabel: 'Show',
+          search: searchGenes, suggestOnFocus: !text, onSubmit: (names, typed) => submitLine(k, typed),
         });
-        const hintId = uid('sv-add-hint');
-        box.input.setAttribute('aria-describedby', hintId);
-        parts.push(h('div', { class: 'sv-add-section' },
-          h('label', { class: 'sv-add-label', for: boxId }, 'Gene'),
+        box.set(text);
+        box.input.setAttribute('aria-label', `Gene line ${k + 1}`);
+        lineBoxes.push(box);
+        const removable = k < lines.length || k > 0; // every line but the one empty line of a panel without genes
+        return h('div', { class: 'sv-line', dataset: { key: k < lines.length ? lines[k] : '' } },
+          h('span', { class: 'swatch sv-line-swatch', 'aria-hidden': 'true' }),
           box.el,
-          h('p', { class: 'sv-add-hint', id: hintId },
-            'Drawn in its own color on the bins detecting it. Several at once: Ctsk, Acp5. Joined by +, one color for the bins detecting any of them: Ctsk + Acp5.')));
+          removable ? h('button', {
+            class: 'btn small ghost icon-only', type: 'button', title: 'Remove this line',
+            'aria-label': `Remove gene line ${k + 1}${text ? ` (${text})` : ''}`, onClick: () => removeLine(k),
+          }, icon('x', { size: 14 })) : null);
+      }));
+      paintLineSwatches();
+      if (focusLine >= 0 && lineBoxes.length) {
+        lineBoxes[Math.min(focusLine, lineBoxes.length - 1)].focus();
+      } else if (typing >= 0 && typing < lineBoxes.length) {
+        lineBoxes[typing].set(typed);
+        lineBoxes[typing].focus();
       }
-      const bools = freeBools();
-      if (bools.length) {
-        const headId = uid('sv-add-calls');
-        const items = bools.map((k) => h('li', null, h('button', {
-          class: 'sv-add-item', type: 'button',
-          onClick: () => {
-            closeAdd(true);
-            addOverlays([k]);
-          },
-        }, fieldLabel(k))));
-        parts.push(h('div', { class: 'sv-add-section' },
-          h('div', { class: 'sv-add-label', id: headId }, hasGenes ? 'Or a call, region or quality control' : 'Calls, region and quality control'),
-          h('ul', { class: 'sv-add-list', role: 'list', 'aria-labelledby': headId, onKeydown: listKeys }, items)));
+    }
+
+    /**
+     * The swatch of every line as drawn now: the viridis ramp for one line (bins colored by its UMIs), the gene's own
+     * color for two or more, nothing while Top gene is on; a line that cannot be drawn says why in its title.
+     */
+    function paintLineSwatches() {
+      if (!hasGenes) return;
+      const lines = geneLines();
+      const top = linesAside(); // Top gene or Cell type on: the lines are not drawn
+      const which = st.field === CELL_FIELD ? 'Color by cells' : 'Top gene';
+      linesNote.hidden = !(top && lines.length);
+      linesNote.textContent = top && lines.length ? `Not drawn while ${which} is on; Show on a line draws the genes again.` : '';
+      for (const row of linesEl.children) {
+        const gk = row.dataset.key;
+        const sw = row.querySelector('.sv-line-swatch');
+        let bg = 'transparent';
+        let title = '';
+        if (gk && !top) {
+          if (lines.length === 1) {
+            bg = `linear-gradient(90deg, ${VIRIDIS.join(', ')})`;
+            title = 'The bins are colored by the UMIs of this line (dark: few, bright: many)';
+          } else {
+            const l = ovl ? ovl.layers.find((x) => x.key === GENE_OVERLAY + gk) : null;
+            if (l && l.color) bg = l.color;
+            title = l && l.count === null && l.status !== LOADING ? `${l.label}: ${l.status}` : (l && l.note ? `${l.label}: ${l.note}` : '');
+          }
+        }
+        sw.style.background = bg;
+        sw.style.visibility = bg === 'transparent' ? 'hidden' : 'visible'; // an empty swatch would look like a checkbox
+        sw.title = title;
+        row.classList.toggle('warn', !!title && lines.length > 1);
       }
-      if (!parts.length) return; // nothing to add (a section still loading, every yes/no field shown already)
-      const pop = popover(addBtn, parts, {
-        label: 'Add a layer to this map', cls: 'sv-add-pop',
-        onClose: () => {
-          if (box) box.destroy();
-          if (addPop && addPop.pop === pop) addPop = null;
-        },
-      });
-      addPop = { pop, box };
     }
 
-    /** ↑ / ↓ (Home / End) move between the items of the popover's list. */
-    function listKeys(e) {
-      const list = [...e.currentTarget.querySelectorAll('button')];
-      const i = list.indexOf(document.activeElement);
-      let next = null;
-      if (e.key === 'ArrowDown') next = i + 1;
-      else if (e.key === 'ArrowUp') next = i - 1;
-      else if (e.key === 'Home') next = 0;
-      else if (e.key === 'End') next = list.length - 1;
-      if (next === null || !list.length) return;
-      e.preventDefault();
-      list[(next + list.length) % list.length].focus();
+    // ---- "Color by cells": st.cells holds the cell types picked, one per line (ALL_CELLS: every type); the panel is
+    // colored by them while st.field is CELL_FIELD (Show on a cell line). The gene lines wait meanwhile, as for Top
+    // gene; Show on a gene line (or Top gene) colors by genes again and leaves the cell lines waiting in turn.
+    /** The section's cell types with their bins, the most bins first: [{name, n}]. */
+    function cellTypes() {
+      const f = cellField();
+      if (!f) return [];
+      const n = new Int32Array(f.categories.length);
+      for (let i = 0; i < data.n; i += 1) if (data.ok[i] && f.codes[i] >= 0) n[f.codes[i]] += 1;
+      return f.categories.map((name, c) => ({ name, n: n[c] })).filter((t) => t.n > 0).sort((a, b) => b.n - a.n);
     }
 
-    function closeAdd(focusBack) {
-      if (addPop) addPop.pop.close({ focus: focusBack });
+    /** Suggestions of a cell line: "All cell types", then the section's types containing the text typed. */
+    async function searchCells(q, signal, offset = 0) {
+      if (offset > 0) return [];
+      const text = String(q || '').toLowerCase();
+      const out = cellTypes().filter((t) => t.name.toLowerCase().includes(text)).map((t) => ({ gene: t.name, n_bins: t.n }));
+      if (ALL_CELLS_TEXT.toLowerCase().startsWith(text)) out.unshift({ gene: ALL_CELLS_TEXT, n_bins: data ? data.valid : null });
+      return out;
     }
 
-    /** Overlays of the genes typed in the popover; one already shown flashes instead of coming twice. */
-    function addGenes(text) {
-      const groups = parseGeneLayers(text);
-      if (!groups.length) {
-        if (addPop && addPop.box) addPop.box.focus();
+    /** The cell types picked, null for all of them (the panel colored by every type). */
+    function pickedCells() {
+      return !st.cells.length || st.cells.includes(ALL_CELLS) ? null : st.cells;
+    }
+
+    /** Cell line k submitted: "All cell types", or the cell types typed (one line each); empty: the line goes. */
+    function submitCellLine(k, text) {
+      const f = cellField();
+      if (!f) return;
+      const cells = st.cells.slice();
+      const words = String(text || '').trim();
+      let typed;
+      if (/^all( cell types)?$/i.test(words)) {
+        typed = [ALL_CELLS];
+      } else {
+        const byName = new Map(f.categories.map((c) => [c.toLowerCase(), c]));
+        const names = parseTokens(words);
+        const unknown = names.filter((t) => !byName.has(t.toLowerCase()));
+        if (unknown.length) toast(`Not a cell type of this section: ${unknown.join(', ')}.`, 'warning');
+        typed = names.map((t) => byName.get(t.toLowerCase())).filter(Boolean);
+        if (names.length && !typed.length) return; // nothing usable typed: the line stays as it was
+      }
+      if (k >= cells.length) cellBlank = false;
+      let next = [...cells.slice(0, k), ...typed, ...cells.slice(k + 1)];
+      // "All cell types" stands alone: picking it drops the other lines, picking a type drops it
+      if (typed.includes(ALL_CELLS)) next = [ALL_CELLS];
+      else if (typed.length) next = next.filter((c) => c !== ALL_CELLS);
+      st.cells = [...new Set(next)];
+      // Show with a cell type colors the map by the cell lines; an emptied line only goes
+      setCellColoring(typed.length > 0 || st.field === CELL_FIELD, Math.min(k, Math.max(0, st.cells.length - 1)));
+    }
+
+    function removeCellLine(k) {
+      if (k >= st.cells.length) { // the empty line added last
+        cellBlank = false;
+        paintCellLines();
+        addCellBtn.focus();
         return;
       }
-      const shown = new Map();
-      for (const k of st.overlays) if (k.startsWith(GENE_OVERLAY)) shown.set(foldGenes(k.slice(GENE_OVERLAY.length).split(',')), k);
-      const keys = [];
-      const again = [];
-      for (const genes of groups) {
-        const f = foldGenes(genes);
-        if (shown.has(f)) { again.push(shown.get(f)); continue; }
-        shown.set(f, null);
-        keys.push(GENE_OVERLAY + genesKey(genes));
-      }
-      const room = Math.max(0, MAX_OVERLAYS - st.overlays.length);
-      if (keys.length > room) tooManyOverlays(keys.slice(room));
-      closeAdd(true);
-      addOverlays(keys.slice(0, room));
-      if (again.length) {
-        flashChips(again);
-        toast(`Already on the map: ${again.map(layerLabel).join(', ')}.`, 'info', { timeout: 2500 });
+      st.cells.splice(k, 1);
+      setCellColoring(st.field === CELL_FIELD, st.cells.length ? Math.min(k, st.cells.length - 1) : 0);
+    }
+
+    /** "+ Add cell type": an empty cell line under the last one, focused (the first line when there is none). */
+    function addCellLine() {
+      if (!st.cells.length || cellBlank) { paintCellLines(st.cells.length); return; }
+      cellBlank = true;
+      paintCellLines(st.cells.length);
+    }
+
+    /**
+     * Color the panel by the picked cell types (on), or stop (off, or nothing picked: back to the gene lines, which
+     * waited meanwhile). focusLine: the cell line that keeps the focus.
+     */
+    function setCellColoring(on, focusLine = -1) {
+      const lines = geneLines();
+      if (on && st.cells.length) st.field = CELL_FIELD;
+      else if (st.field === CELL_FIELD) st.field = NONE_FIELD;
+      storeLines(lines);
+      syncControls();
+      if (focusLine >= 0) paintCellLines(focusLine);
+      ensureGenes();
+      prune();
+      restyle();
+      tellPage();
+    }
+
+    /** Make the cell lines again from the panel's state (plus the empty one); hidden without cell types. */
+    function paintCellLines(focusLine = -1) {
+      const f = cellField();
+      cellsCtl.hidden = !f;
+      const typing = cellBoxes.findIndex((b) => b.input === document.activeElement);
+      const typed = typing >= 0 ? cellBoxes[typing].input.value : null;
+      for (const b of cellBoxes) b.destroy();
+      cellBoxes = [];
+      if (!f) { mount(cellLinesEl); return; }
+      const on = st.field === CELL_FIELD;
+      const colors = categoryColors(f, data.colors);
+      const codeOf = new Map(f.categories.map((name, c) => [name, c]));
+      const shown = st.cells.map((c) => (c === ALL_CELLS ? ALL_CELLS_TEXT : c));
+      if (!st.cells.length || cellBlank) shown.push('');
+      mount(cellLinesEl, shown.map((text, k) => {
+        const box = geneInput({
+          label: `Cell type line ${k + 1}`, placeholder: k ? 'one more cell type' : 'e.g. osteoclast', submitLabel: 'Show',
+          search: searchCells, suggestOnFocus: !text, onSubmit: (names, t) => submitCellLine(k, t),
+        });
+        box.set(text);
+        box.input.setAttribute('aria-label', `Cell type line ${k + 1}`);
+        cellBoxes.push(box);
+        const c = k < st.cells.length ? codeOf.get(st.cells[k]) : undefined;
+        const bg = on && c !== undefined && pickedCells() ? colors[c] : 'transparent';
+        return h('div', { class: 'sv-line' },
+          h('span', { class: 'swatch sv-line-swatch', 'aria-hidden': 'true', style: { background: bg, visibility: bg === 'transparent' ? 'hidden' : 'visible' } }),
+          box.el,
+          k < st.cells.length || k > 0 ? h('button', {
+            class: 'btn small ghost icon-only', type: 'button', title: 'Remove this line',
+            'aria-label': `Remove cell type line ${k + 1}${text ? ` (${text})` : ''}`, onClick: () => removeCellLine(k),
+          }, icon('x', { size: 14 })) : null);
+      }));
+      cellNote.hidden = on || !st.cells.length;
+      cellNote.textContent = cellNote.hidden ? '' : 'Not drawn while the map is colored by genes or Top gene; Show on a line draws the cell types again.';
+      if (focusLine >= 0 && cellBoxes.length) {
+        cellBoxes[Math.min(focusLine, cellBoxes.length - 1)].focus();
+      } else if (typing >= 0 && typing < cellBoxes.length) {
+        cellBoxes[typing].set(typed);
+        cellBoxes[typing].focus();
       }
     }
 
-    function addOverlays(keys) {
-      const fresh = keys.filter((k) => !st.overlays.includes(k));
-      if (!fresh.length) return;
-      st.overlays.push(...fresh);
-      for (const k of fresh) if (k.startsWith(GENE_OVERLAY)) geneErrors.delete(k.slice(GENE_OVERLAY.length));
-      overlaysChanged();
+    /** Load the top genes of the section while the panel is colored by them. */
+    function ensureTop() {
+      if (!data || !hasTop || st.field !== TOP_FIELD || topVec || topPending || topError) return;
+      const sid = st.sample;
+      const cached = store.topData.get(sid);
+      if (cached) { topVec = cached; return; }
+      topPending = true;
+      const token = loadToken;
+      loadTop(sid, data).then((tv) => {
+        if (!alive || token !== loadToken) return;
+        topPending = false;
+        topVec = tv;
+        restyle();
+      }, (err) => {
+        if (!alive || token !== loadToken) return;
+        topPending = false;
+        if (err && err.name === 'AbortError') return;
+        topError = (err && err.message) || String(err);
+        restyle();
+      });
     }
 
     function removeOverlay(key) {
@@ -2675,16 +3742,6 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       tellPage();
     }
 
-    /** Draw the eye to chips (an overlay asked for again). */
-    function flashChips(keys) {
-      for (const li of ovlChips.children) {
-        if (!keys.includes(li.dataset.key)) continue;
-        li.classList.remove('flash');
-        void li.offsetWidth; // restart the animation
-        li.classList.add('flash');
-      }
-    }
-
     /**
      * An overlay typed in another case ('ctsk') takes the names the data has ('Ctsk') once its counts are there: the
      * gene list of a page marks it, and the same gene typed again in yet another case is seen as shown. False when
@@ -2705,7 +3762,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     function neededGeneKeys() {
       const keys = [];
       if (st.field === GENE_FIELD && st.genes.length) keys.push(genesKey(st.genes));
-      for (const k of st.overlays) if (k.startsWith(GENE_OVERLAY)) keys.push(k.slice(GENE_OVERLAY.length));
+      for (const k of drawnOverlays()) if (isGeneKey(k)) keys.push(k.slice(GENE_OVERLAY.length));
       return [...new Set(keys)];
     }
 
@@ -2713,6 +3770,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     function wants() {
       const keys = [`bins\n${st.sample}`];
       for (const gk of neededGeneKeys()) keys.push(`gene\n${st.sample}\n${gk}`);
+      if (hasTop && st.field === TOP_FIELD) keys.push(`top\n${st.sample}`);
       if (hasImage && store.image.on) keys.push(`image\n${st.sample}`);
       return keys;
     }
@@ -2743,7 +3801,10 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
           geneVecs.set(gk, gv);
           const moved = canonicalize(gk, gv);
           restyle();
-          if (moved) tellPage();
+          if (moved) {
+            paintLines();
+            tellPage();
+          }
         }, (err) => {
           if (!alive || token !== loadToken) return;
           genePending.delete(gk);
@@ -2752,7 +3813,10 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
           restyle();
         });
       }
-      if (renamed) tellPage();
+      if (renamed) {
+        paintLines();
+        tellPage();
+      }
     }
 
     /** The overlays of this panel changed (added, removed, renamed): an sv-change event for the page (data explorer). */
@@ -2809,11 +3873,13 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     async function load() {
       const token = ++loadToken;
       const sid = st.sample;
-      closeAdd(false); // its list of yes/no fields was the one of the section shown before
       setHover(-1);
       geneVecs = new Map();
       geneErrors = new Map();
       genePending = new Set();
+      topVec = null;
+      topError = null;
+      topPending = false;
       imageEntry = null;
       imageError = null;
       imagePending = false;
@@ -2844,6 +3910,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       // the linked view fits the sections shown until someone moves it
       if (store.link && (!goodView(store.view) || store.view.auto)) fitLinked();
       ensureGenes();
+      ensureTop();
       ensureImage();
       prune();
       restyle();
@@ -2854,7 +3921,12 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     function apply(patch) {
       const before = st.sample;
       const dropped = [];
+      const genesBefore = new Set(st.overlays.filter(isGeneKey));
       patchState(st, patch, dropped);
+      // a gene added as a line (the data explorer's +) is drawn: it ends the Top gene coloring
+      if ((st.field === TOP_FIELD || st.field === CELL_FIELD) && st.overlays.some((k) => isGeneKey(k) && !genesBefore.has(k))) {
+        st.field = NONE_FIELD;
+      }
       if (dropped.length) tooManyOverlays(dropped);
       if (!samples.some((s) => s.id === st.sample)) st.sample = before;
       if (Array.isArray(patch.genes) || typeof patch.genes === 'string') geneErrors.delete(genesKey(st.genes));
@@ -2866,6 +3938,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       normalizeField();
       syncControls();
       ensureGenes();
+      ensureTop();
       prune();
       restyle();
     }
@@ -2873,7 +3946,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
     // ---- export
     function fileTag() {
       const what = st.field === GENE_FIELD ? genesKey(st.genes) || 'genes'
-        : (st.field === NONE_FIELD ? st.overlays.map(overlayLabel).join('_') || 'bins' : st.field || 'bins');
+        : (st.field === TOP_FIELD ? 'top_gene' : st.field === CELL_FIELD ? `cells_${(pickedCells() || ['all']).join('_')}`
+          : (st.field === NONE_FIELD ? st.overlays.map(overlayLabel).join('_') || 'bins' : st.field || 'bins'));
       return `${st.sample}_${what}`;
     }
 
@@ -2882,9 +3956,10 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       let hgt = 8 + 24;
       if (style && style.scale) hgt += 36 + 18 + (style.scale.clamped ? 18 : 0);
       if (style && style.kind === 'gene') hgt += 18 * (1 + (style.gene.missing.length ? 1 : 0));
+      if (style && style.kind === 'top') hgt += 18;
       hgt += 19 * (style ? style.legend.filter((e) => !e.off).length : 0);
       if (ovl && ovl.layers.length) {
-        hgt += 26 + 19 * (ovl.layers.length + (ovl.several ? 1 : 0)) + (ovl.layers.some(isGeneLayer) ? 18 : 0);
+        hgt += 26 + 19 * (ovl.layers.length + (ovl.combos || []).length + (ovl.several ? 1 : 0)) + (ovl.layers.some(isGeneLayer) ? 18 : 0);
       }
       return hgt + 8;
     }
@@ -2893,9 +3968,20 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       g.save();
       g.textBaseline = 'top';
       let top = y;
-      const swatchRow = (color, label, count) => {
-        g.fillStyle = groupColor(color, P);
-        g.fillRect(x, top + 1, 12, 12);
+      const swatchRow = (color, label, count, shape = null) => {
+        if (shape) { // an overlap combination: its shape in its one color, with a dark edge
+          g.beginPath();
+          shapePath(g, shape, x + 6, top + 7, 6);
+          g.fillStyle = color;
+          g.fill();
+          g.lineJoin = 'round';
+          g.strokeStyle = OUTLINE_HALO;
+          g.lineWidth = 1.2;
+          g.stroke();
+        } else {
+          g.fillStyle = groupColor(color, P);
+          g.fillRect(x, top + 1, 12, 12);
+        }
         g.font = `12px ${FONT}`;
         const text = count === null || count === undefined ? '—' : fmt.int(count);
         const cw = g.measureText(text).width;
@@ -2936,7 +4022,12 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
           top += 18;
         }
       }
-      for (const e of style ? style.legend : []) if (!e.off) swatchRow(e.color, e.label, e.count);
+      if (style && style.kind === 'top') {
+        g.fillStyle = P.muted;
+        g.fillText(style.top.pooled ? 'most UMIs in the bin and the 8 around it' : 'most UMIs in the bin', x, top, width);
+        top += 18;
+      }
+      for (const e of style ? style.legend : []) if (!e.off) swatchRow(e.color, e.label, e.count, e.shape);
       if (ovl && ovl.layers.length) {
         top += 6;
         g.fillStyle = P.text;
@@ -2946,11 +4037,12 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
         if (ovl.layers.some(isGeneLayer)) {
           g.fillStyle = P.muted;
           g.font = `12px ${FONT}`;
-          g.fillText('genes: the bins detecting them', x, top, width);
+          g.fillText('genes: the one with most UMIs per bin', x, top, width);
           top += 18;
         }
         for (const l of ovl.layers) swatchRow(l.color, l.label, l.count);
-        if (ovl.several) swatchRow(SEVERAL, 'In two or more layers', ovl.several);
+        for (const c of ovl.combos || []) swatchRow(c.color, `${c.label} (${c.clusters} clusters)`, c.idx.length, c.shape);
+        if (ovl.several) swatchRow(SEVERAL, severalLabel(), ovl.several);
       }
       g.restore();
     }
@@ -2985,6 +4077,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       const side = sidePx(t.scale);
       drawBins(tg, style.groups, data, t, ratio, side, P, dimOf());
       if (ovl) drawBins(tg, ovl.groups, data, t, ratio, side, P, 0);
+      for (const c of outlinesDrawn()) drawOutline(tg, c.outline, t, ratio, c.edge || OUTLINE_COLOR, OUTLINE_HALO);
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.globalAlpha = im ? Math.max(0, 1 - store.image.opacity) : 1;
       g.drawImage(tmp, Math.round(mx * ratio), Math.round(my * ratio));
@@ -3007,8 +4100,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       tip.hidden = true;
       fetchBinGenes.cancel();
       if (binCtrl) binCtrl.abort();
-      if (geneBox) geneBox.destroy();
-      closeAdd(false);
+      for (const b of lineBoxes) b.destroy();
+      for (const b of cellBoxes) b.destroy();
       layer.width = 0;
       layer.height = 0;
     }
@@ -3049,7 +4142,7 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
   return {
     el,
     show(patch = {}) {
-      const i = Number.isInteger(patch.panel) && patch.panel >= 0 && patch.panel < LAYOUTS[LAYOUTS.length - 1] ? patch.panel : 0;
+      const i = Number.isInteger(patch.panel) && patch.panel >= 0 && patch.panel < MAX_PANELS ? patch.panel : 0;
       if (panels[i]) {
         panels[i].apply(patch);
         return;
