@@ -76,6 +76,22 @@ def worker_env(deterministic: bool, clean: bool = False) -> dict:
     return env
 
 
+def killed_message(returncode: int, hosted: bool = False) -> str:
+    """Why a worker stopped by a signal (POSIX: negative exit code) failed, when the server did not stop it itself
+    (time limit, cancel, shutdown). [FIX] 2026-11-09: SIGKILL from outside is the out-of-memory killer in practice;
+    the run page used to show the first log line ("reading ...h5") and suggest a path problem."""
+    try:
+        name = signal.Signals(-returncode).name
+    except ValueError:
+        name = f"signal {-returncode}"
+    if -returncode == getattr(signal, "SIGKILL", 9):
+        where = ("this server; analyse large sections on your own computer instead" if hosted else
+                 "this computer; close other programs, or analyse fewer or smaller sections")
+        return (f"The analysis ran out of memory: the system stopped the worker ({name}). "
+                f"These sections need more memory than is free on {where}.")
+    return f"The worker was stopped by {name}."
+
+
 _JOB_HANDLE = None
 
 
@@ -393,6 +409,8 @@ class JobManager:
         if active.timed_out and not (active.cancel or active.interrupt):
             error = (f"stopped after {self.max_seconds / 60:g} minutes, the longest an analysis may run on this "
                      f"server; run larger analyses on your own computer")
+        elif returncode is not None and returncode < 0 and not (active.cancel or active.interrupt):
+            error = killed_message(returncode, hosted=self.clean_env)
         self._finalize(active, returncode, error=error)
 
     # ---- worker output ---------------------------------------------------------------------------------------------

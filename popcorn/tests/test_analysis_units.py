@@ -394,3 +394,20 @@ def test_native_results_equal_the_original_pipeline(tiny_demo, tiny_config, orig
     cols = ["ratio_obs_null_mean", "ratio_obs_null_lo", "ratio_obs_null_hi", "p_greater_than_null_mean"]
     np.testing.assert_allclose(new_sum[cols].to_numpy(float), old_sum[cols].to_numpy(float))
     pd.testing.assert_frame_equal(new_dist.reset_index(drop=True), old_dist.reset_index(drop=True), check_dtype=False)
+
+
+@pytest.mark.parametrize("chunk", [7, 16384])
+def test_scaled_pca_matches_scanpy_scale_and_arpack_pca(chunk):
+    """[FIX] 2026-11-09: scaled_pca() replaces sc.pp.scale(max_value) + sc.tl.pca(arpack) to keep the dense matrix out
+    of memory; same scores to float32 precision (clipping engaged, a constant gene, rows split across chunks)."""
+    rng = np.random.default_rng(3)
+    X = rng.poisson(rng.gamma(0.4, 2.0, size=60), size=(301, 60)).astype(np.float32)
+    X[:3, 5] = 400.0                                    # values far above max_value after scaling: clipped
+    X[:, 7] = 0.0                                       # zero standard deviation (set to 1, as in scale)
+    X = np.log1p(X)
+    ref = ad.AnnData(sp.csr_matrix(X))
+    sc.pp.scale(ref, max_value=3.0)
+    sc.tl.pca(ref, n_comps=12, svd_solver="arpack", random_state=0)
+    got = ba.scaled_pca(sp.csr_matrix(X), 12, max_value=3.0, chunk=chunk)
+    assert got.shape == (301, 12) and got.dtype == np.float32
+    np.testing.assert_allclose(got, ref.obsm["X_pca"], rtol=0, atol=1e-4)

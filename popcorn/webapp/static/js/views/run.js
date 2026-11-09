@@ -647,7 +647,8 @@ export async function renderRun(container, { id, tab }) {
           h('strong', null, r.status === 'interrupted' ? 'The run was interrupted.' : 'The analysis failed.'),
           r.error ? h('pre', { class: 'run-pre run-error' }, String(r.error)) : null,
           tb,
-          h('div', { class: 'faint small' }, 'Fix the cause (often a path, a missing file or a parameter), then use Re-run, or change the project and start a new run.'))));
+          /ran out of memory/.test(r.error || '') ? null
+            : h('div', { class: 'faint small' }, 'Fix the cause (often a path, a missing file or a parameter), then use Re-run, or change the project and start a new run.'))));
     } else if (r.status === 'cancelled') {
       out.push(banner('warning', 'This run was cancelled before it finished; outputs written until then are kept. Re-run starts it again from the beginning.'));
     }

@@ -140,7 +140,8 @@ environment variables), and the Next.js site rewrites `/popcorn` to it. A hosted
   16 MB, to the project's upload folder `<workspace>/uploads/<project id>` (its data root), then offers the samples it
   finds there. A project may upload 3 GB, and the server keeps 4 GB of disk free; **Remove uploaded data** and deleting
   the project delete the files. Large sections may still need more memory than the site's server has (the small demo
-  needs about 850 MB): analyse those here, on your own computer;
+  needs about 850 MB, the two SR007144 sections at 16 µm, 150,000 bins, about 3 GB): analyse those here, on your
+  own computer. A run the system stops for lack of memory fails with "The analysis ran out of memory";
 * data is read only from the uploads, the server's data folders (default `<workspace>/data`) and the synthetic demo;
   the folder browser, the data checks, the explorer and the runs refuse every other path;
 * at most two analyses are queued or running at once (HTTP 429 beyond), each is stopped after 30 minutes and uses one

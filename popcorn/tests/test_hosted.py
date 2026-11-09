@@ -240,6 +240,14 @@ def test_run_time_limit(tmp_path):
         assert c.get("/api/health").json()["hosted"]["max_run_minutes"] == 2 / 60
 
 
+def test_killed_worker_is_reported_as_out_of_memory():
+    """[FIX] 2026-11-09: a worker the system kills (exit code -9, the out-of-memory killer) fails with a reason, not
+    with the first line of its log."""
+    hosted = jobs_module.killed_message(-9, hosted=True)
+    assert hosted.startswith("The analysis ran out of memory") and "your own computer" in hosted
+    assert "close other programs" in jobs_module.killed_message(-9)
+    assert jobs_module.killed_message(-15) == "The worker was stopped by SIGTERM."
+
 def test_clean_worker_environment(monkeypatch):
     monkeypatch.setenv("MONGODB_URI", "mongodb://user:secret@db")
     monkeypatch.setenv("CLERK_SECRET_KEY", "sk_live_x")

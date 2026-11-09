@@ -293,6 +293,60 @@ def qc_filter(a, min_genes=MIN_GENES, min_counts=MIN_COUNTS, max_pct_mt=MAX_PCT_
 # 2. NORMALIZATION, EMBEDDING AND CLUSTERING (Leiden domains: Supplementary Figure S5 only)
 # ============================================================================
 
+def scaled_pca(X, n_comps, max_value=10.0, chunk=16384):
+    """
+    [FIX] 2026-11-09. Principal components of the gene-wise standardized and clipped matrix, i.e. what
+    `sc.pp.scale(adata, max_value=max_value); sc.tl.pca(adata, n_comps, svd_solver="arpack")` returns in
+    obsm["X_pca"], without materializing the dense standardized matrix: rows are densified, standardized and clipped
+    chunk by chunk (float64; standard deviation with ddof=1, zero deviations set to 1, clipped to [-max_value,
+    max_value], as sc.pp.scale), the gene x gene covariance is accumulated, and the components are its leading
+    eigenvectors with the sign convention of sklearn's PCA (largest loading of each component positive). Peak memory
+    is one chunk plus the covariance matrix (2,000 genes: 32 MB) instead of several copies of the dense matrix.
+    The scores agree with arpack to float32 precision (the dtype scanpy stores); Leiden domains on 150,000 bins move
+    with differences of that size, as they do between machines and BLAS libraries.
+    """
+    X = X.tocsr() if sp.issparse(X) else np.asarray(X)
+    n, p = X.shape
+
+    def block(i):
+        b = X[i:i + chunk]
+        return (b.toarray() if sp.issparse(b) else np.array(b)).astype(np.float64)
+
+    s1, s2 = np.zeros(p), np.zeros(p)
+    for i in range(0, n, chunk):
+        z = block(i)
+        s1 += z.sum(axis=0)
+        s2 += np.einsum("ij,ij->j", z, z)
+    mean = s1 / n
+    std = np.sqrt(np.maximum(s2 / n - mean ** 2, 0) * n / max(n - 1, 1))
+    std[std == 0] = 1
+
+    def scaled(i):
+        z = block(i)
+        z -= mean
+        z /= std
+        if max_value is not None:
+            np.clip(z, -max_value, max_value, out=z)
+        return z
+
+    s, g = np.zeros(p), np.zeros((p, p))
+    for i in range(0, n, chunk):
+        z = scaled(i)
+        s += z.sum(axis=0)
+        g += z.T @ z
+    m = s / n
+    w, v = np.linalg.eigh((g - n * np.outer(m, m)) / max(n - 1, 1))
+    v = v[:, np.argsort(w)[::-1][:n_comps]]
+    signs = np.sign(v[np.argmax(np.abs(v), axis=0), np.arange(v.shape[1])])
+    v *= np.where(signs == 0, 1, signs)
+    scores = np.empty((n, v.shape[1]), dtype=np.float32)
+    for i in range(0, n, chunk):
+        z = scaled(i)
+        z -= m
+        scores[i:i + chunk] = z @ v
+    return scores
+
+
 def normalize_and_cluster(a, resolution=0.3, n_top_genes=2000, n_pcs=30, n_neighbors=15, harmony=True,
                           target_sum=1e4, scale_max_value=10, n_iterations=2, seed=RANDOM_SEED, cluster=True,
                           progress=None):
@@ -318,12 +372,13 @@ def normalize_and_cluster(a, resolution=0.3, n_top_genes=2000, n_pcs=30, n_neigh
     # subset and scaled, so that gene-set scoring and differential expression keep the full log-normalized matrix.
     sc.pp.highly_variable_genes(a, flavor="seurat", n_top_genes=n_top_genes,
                                 batch_key="sample" if n_sections > 1 else None)
-    tmp = a[:, a.var.highly_variable].copy()
-    sc.pp.scale(tmp, max_value=scale_max_value)                                 # [SHAMIM] step 6
-    n_comps = int(min(50, tmp.n_obs - 1, tmp.n_vars - 1))
-    sc.tl.pca(tmp, n_comps=n_comps, svd_solver="arpack", random_state=seed)     # [SHAMIM] step 6 (seed added)
-    a.obsm["X_pca"] = tmp.obsm["X_pca"]
-    del tmp
+    # [SHAMIM, MODIFIED] step 6: scale(max_value) and a 50-component PCA of the HVG matrix. [FIX] 2026-11-09: computed
+    # by scaled_pca() chunk by chunk instead of sc.pp.scale + sc.tl.pca(svd_solver="arpack"), which densified the HVG
+    # matrix (float64) and copied it several times: about 10 GB for the two 16 um sections, where the hosted server's
+    # worker was killed (exit code -9). Same scaling and components; see scaled_pca().
+    hv = a.var["highly_variable"].to_numpy()
+    n_comps = int(min(50, a.n_obs - 1, int(hv.sum()) - 1))
+    a.obsm["X_pca"] = scaled_pca(a.X[:, hv], n_comps, max_value=scale_max_value)
 
     # [RUN] Harmony on the section label (residual between-section variation; Methods).
     rep = "X_pca"
