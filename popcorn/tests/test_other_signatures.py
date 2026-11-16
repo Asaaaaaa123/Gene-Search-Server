@@ -152,22 +152,22 @@ def test_the_default_configuration_reports_nothing():
     assert pc.validate_config(pc.default_config()) == ([], [])
 
 
-def test_s1_names_each_setting_its_field_and_both_ways_out():
+def test_s1_names_each_setting_and_both_ways_out():
+    """The messages name the configuration key to change and the step to switch off (they used to point at the
+    Parameters tab of the web application, which is gone)."""
     errors, warns = pc.validate_config(s1(pc.default_config()))
     assert len(errors) == 3, errors
-    for prefix, field, step in (
-            ("compartments.signature = 'osteoclast'", "Osteoclast compartments (Figure 4h) > Signature split into "
-                                                      "compartments", "Osteoclast compartments (Figure 4h)"),
-            ("uncoupling.a = 'osteoblast'", "Distance to nearest partner (Figure 4i) > From (signature)",
-             "Distance to nearest partner (Figure 4i)"),
-            ("uncoupling.b = 'osteoclast'", "Distance to nearest partner (Figure 4i) > To (signature)",
-             "Distance to nearest partner (Figure 4i)")):
+    for prefix, key, step in (
+            ("compartments.signature = 'osteoclast'", "compartments", "Osteoclast compartments (Figure 4h)"),
+            ("uncoupling.a = 'osteoblast'", "uncoupling", "Distance to nearest partner (Figure 4i)"),
+            ("uncoupling.b = 'osteoclast'", "uncoupling", "Distance to nearest partner (Figure 4i)")):
         e = starting_with(errors, prefix)
-        assert "is not a signature of this project" in e and f"Parameters > {field}" in e
-        assert f'switch off the step "{step}" (Parameters > Analysis steps)' in e
+        assert "is not a signature of this project" in e and "name another signature there" in e
+        assert f'switch off the step "{step}" (steps.{key}: false)' in e
     for k in ("a", "b"):
         assert "Figure 4a-f is not drawn" in starting_with(warns, f"figures.lineage_maps.{k} = ")
-    assert "Parameters > Proximity pairs" in starting_with(warns, "proximity.pairs is empty")
+    assert "add pairs to proximity.pairs" in starting_with(warns, "proximity.pairs is empty")
+    assert not any("Parameters" in m for m in errors + warns)
     assert not any(w.startswith(("figures.composition", "positivity panel")) for w in warns)  # others are left
 
     # way out 1: the steps switched off; nothing about them is reported any more
@@ -192,7 +192,7 @@ def test_s2_reports_every_setting_left_on_the_bone_signatures():
                                                          "uncoupling.a", "uncoupling.b"]
     assert "Figure 3b is not drawn" in starting_with(warns, "figures.composition_signatures lists no signature")
     for panel in ("Figure4g_bone_lineage_positivity", "Figure6a_myeloid_positivity"):
-        assert "Positivity panels" in starting_with(warns, f"positivity panel {panel!r} lists no signature")
+        assert "figures.positivity_panels" in starting_with(warns, f"positivity panel {panel!r} lists no signature")
     starting_with(warns, "figures.lineage_maps.a = 'osteoclast'")
     starting_with(warns, "proximity.pairs is empty")
     assert "habitat_fixed_b" in starting_with(warns, "sensitivity_analyses.uncoupling.habitat_classes (bone lineage)")
@@ -205,7 +205,7 @@ def test_s3_either_way_out_leaves_a_clean_configuration():
                                     for w in warns)
     # without the bone signatures, Krt7 / Krt18 would flag ordinary epithelium as A549 lesion
     w = starting_with(warns, "sensitivity_analyses.lesion.genes (Krt7, Krt18)")
-    assert "A549 lesion flag" in w and "empty the list" in w
+    assert "A549 xenograft" in w and "empty the list (sensitivity_analyses.lesion.genes: [])" in w
 
 
 def test_settings_that_lose_figures_or_tests_are_warnings():
@@ -216,7 +216,7 @@ def test_settings_that_lose_figures_or_tests_are_warnings():
     cfg = s3_repoint(pc.default_config())
     cfg["samples"][0]["condition"], cfg["samples"][1]["condition"] = "untreated", "treated"
     w = starting_with(pc.validate_config(cfg)[1], "compartments.tumor_conditions (tumor) lists the condition of no")
-    assert "Tumor conditions" in w and "switch the step off" in w
+    assert "in compartments.tumor_conditions" in w and "switch the step off" in w
     cfg["compartments"]["tumor_conditions"] = ["treated"]
     assert pc.validate_config(cfg) == ([], [])
 
@@ -234,7 +234,7 @@ def test_a_receptor_panel_of_other_genes_needs_the_figure_genes_too():
     cfg = s3_repoint(pc.default_config())
     cfg["receptor_panel"] = {"Il6ra": "IL-6R", "Socs3": "STAT3 target"}
     w = starting_with(pc.validate_config(cfg)[1], "figures.receptor_genes (Tnfsf11, ")
-    assert "Figure 6b is not drawn" in w and "Parameters > Figures > Receptor genes shown in Figure 6b" in w
+    assert "Figure 6b is not drawn" in w and "list its genes in figures.receptor_genes" in w
     cfg["figures"]["receptor_genes"] = ["Socs3", "Il6ra"]
     assert pc.validate_config(cfg) == ([], [])
     cfg["figures"]["receptor_genes"] = []
@@ -287,9 +287,30 @@ def test_step_switches_explain_what_they_are_for():
     fields = [(sec["key"], f) for sec in pc.PARAM_SCHEMA[:-1] for f in sec["fields"]]
     assert all(f["uses_step"] in pc.STEP_LABELS for _, f in fields if "uses_step" in f)
     assert ("compartments", "tumor_conditions") in {(s, f["key"]) for s, f in fields}
-    titles = {sec["key"]: sec["title"] for sec in pc.PARAM_SCHEMA}
-    for key in ("compartments", "uncoupling"):                 # the messages name the cards the form shows
-        assert titles[key] in " ".join(pc.validate_config(s1(pc.default_config()))[0])
+    for key in ("compartments", "uncoupling"):                 # the messages name the step to switch off
+        assert pc.STEP_LABELS[key] in " ".join(pc.validate_config(s1(pc.default_config()))[0])
+
+
+def test_the_application_runs_the_base_run_only():
+    """app_config: the steps that became tools of the Analysis tab are off whatever the configuration says, so a
+    project without the bone signatures has nothing to fix; the three steps the application offers stay as they are."""
+    assert list(pc.APP_STEPS) == ["leiden", "assignment", "write_h5ad"]
+    assert set(pc.APP_STEPS) | set(pc.APP_STEPS_OFF) == set(pc.STEP_LABELS) and not set(pc.APP_STEPS) & set(pc.APP_STEPS_OFF)
+    assert all(len(label) > 10 and len(text) > 40 for label, text in pc.APP_STEPS.values())
+    cfg = pc.default_config()
+    cfg["steps"]["leiden"] = False
+    app = pc.app_config(cfg)
+    assert app["steps"] == {**{k: False for k in pc.APP_STEPS_OFF}, "leiden": False, "assignment": True,
+                            "write_h5ad": True}
+    assert cfg["steps"]["figures"] is True and cfg["steps"]["uncoupling"] is True       # a copy: the original is left
+    assert pc.validate_config(s1(pc.default_config()))[0] and pc.validate_config(pc.app_config(s1(pc.default_config()))) == ([], [])
+    errors, warns = pc.validate_config(pc.app_config(s2(pc.default_config())))
+    assert errors == [] and not any(w.startswith(("figures.", "positivity panel", "proximity", "sensitivity"))
+                                    for w in warns)
+    assert pc.app_config({"steps": "broken"})["steps"] == {k: False for k in pc.APP_STEPS_OFF}
+    # what such a run does (Leiden switched off above): the base run and nothing of the bone study
+    assert [key for key, _, on in ba._steps(app) if on] == ["load", "normalize", "scores", "roi", "positivity",
+                                                            "assignment", "tables", "write_h5ad", "summary"]
 
 
 def test_figure4i_sensitivity_skips_a_deleted_signature():
@@ -303,8 +324,10 @@ def test_figure4i_sensitivity_skips_a_deleted_signature():
 
 
 def test_unsaved_settings_and_gene_lists_are_checked(tmp_path, tiny_demo):
-    """POST /validate with data false: the configuration check of unsaved settings (the project page's chips); the
-    data check also lists the ubiquitous transcripts and the A549 lesion genes missing from the probe set."""
+    """POST /validate with data false: the configuration check of unsaved settings (the project page's chips), as a run
+    of the application uses them (pc.app_config: the bone-study steps are tools of the Analysis tab, so a project
+    without the bone signatures has nothing to fix); the data check also lists the ubiquitous transcripts missing from
+    the probe set, and the A549 lesion genes without a warning (no run of the application uses them)."""
     with TestClient(create_app(tmp_path / "ws", worker_module="tests.fake_worker"),
                     base_url="http://127.0.0.1:8765") as client:
         samples = [dict(s) for s in tiny_demo["samples"]]
@@ -313,8 +336,11 @@ def test_unsaved_settings_and_gene_lists_are_checked(tmp_path, tiny_demo):
         url = f"/api/projects/{p['id']}/validate"
         draft = s1(copy.deepcopy(p["config"]))
         r = client.post(url, json={"config": draft, "data": False}).json()
-        assert set(r) == {"ok", "errors", "warnings"} and r["ok"] is False
-        assert (r["errors"], r["warnings"]) == pc.validate_config(pc.merge_with_defaults(draft))
+        assert set(r) == {"ok", "errors", "warnings"} and r["ok"] is True
+        assert (r["errors"], r["warnings"]) == pc.validate_config(pc.app_config(pc.merge_with_defaults(draft)))
+        draft["qc"]["max_pct_mt"] = 140                       # a setting the base run uses
+        r = client.post(url, json={"config": draft, "data": False}).json()
+        assert r["ok"] is False and r["errors"] == ["qc.max_pct_mt must be <= 100, got 140"]
         assert client.post(url, json={"data": False}).json() == {"ok": True, "errors": [], "warnings": []}
         assert client.post(url, json={"data": "no"}).status_code == 400
 
@@ -325,7 +351,7 @@ def test_unsaved_settings_and_gene_lists_are_checked(tmp_path, tiny_demo):
         assert "the Leiden screen marks no domain unresolved" in starting_with(
             rep["warnings"], "ubiquitous transcripts: none of the 2 genes")
         assert rep["genes"]["lesion_genes"]["missing"] == ["Krt7", "Krt18"]   # not in the tiny probe set
-        starting_with(rep["warnings"], "A549 lesion flag: none of its genes (Krt7, Krt18)")
+        assert not any(w.startswith(("A549", "host receptor panel", "adipocyte genes")) for w in rep["warnings"])
         cfg["sensitivity_analyses"]["lesion"]["genes"] = []
         cfg["ubiquitous"] = ["Actb", "ACTB"]
         rep = client.post(url, json={"config": cfg}).json()
@@ -333,23 +359,27 @@ def test_unsaved_settings_and_gene_lists_are_checked(tmp_path, tiny_demo):
         assert "1 of 2 genes missing from the probe set (ACTB)" in starting_with(rep["warnings"], "ubiquitous")
 
 
-def test_the_app_starts_a_run_only_after_one_way_out(tmp_path):
+def test_the_app_runs_a_project_without_the_bone_signatures(tmp_path):
+    """The application runs the base run (pc.app_config): a project whose bone signatures were deleted has nothing to
+    fix, and the run's snapshot has the bone-study steps off; a request to switch one on is refused with the reason."""
     with TestClient(create_app(tmp_path / "ws", worker_module="tests.fake_worker"),
                     base_url="http://127.0.0.1:8765") as client:
         p = client.post("/api/projects", json={"name": "no bone", "config": {}}).json()
         cfg = s1(p["config"])
         put = client.put(f"/api/projects/{p['id']}", json={"config": cfg}).json()
-        assert any(e.startswith("compartments.signature") for e in put["validation"]["errors"])
-        r = client.post(f"/api/projects/{p['id']}/runs")
-        assert r.status_code == 409 and "uncoupling.a = 'osteoblast'" in r.json()["detail"]
-        cfg["steps"].update(compartments=False, uncoupling=False)
-        assert client.put(f"/api/projects/{p['id']}", json={"config": cfg}).json()["validation"]["errors"] == []
-        rid = client.post(f"/api/projects/{p['id']}/runs").json()["id"]
+        assert put["validation"]["errors"] == []
+        r = client.post(f"/api/projects/{p['id']}/runs", json={"steps": {"compartments": True}})
+        assert r.status_code == 400 and "tools of the run's Analysis tab" in r.json()["detail"]
+        run = client.post(f"/api/projects/{p['id']}/runs", json={"steps": {"leiden": False}}).json()
+        assert run["config"]["steps"] == {**{k: False for k in pc.APP_STEPS_OFF}, "leiden": False,
+                                          "assignment": True, "write_h5ad": True}
         deadline = time.monotonic() + 60
-        while client.get(f"/api/runs/{rid}").json()["status"] in ("queued", "running"):
+        while client.get(f"/api/runs/{run['id']}").json()["status"] in ("queued", "running"):
             assert time.monotonic() < deadline
             time.sleep(0.05)
-        assert client.get(f"/api/runs/{rid}").json()["status"] == "succeeded"
+        assert client.get(f"/api/runs/{run['id']}").json()["status"] == "succeeded"
+        defaults = client.get("/api/defaults").json()
+        assert [s["key"] for s in defaults["app_steps"]] == list(pc.APP_STEPS)
 
 
 # ============================================================================
@@ -498,8 +528,9 @@ def test_figures_with_emptied_lists_are_skipped_not_failed(s3_run, tmp_path):
     entries = bf.make_figures(results, cfg, progress)
     assert all(e["error"] is None for e in entries) and progress.warnings == []
     skipped = {s["step"]: s["reason"] for s in progress.skipped}
-    assert "composition bars in Parameters > Figures" in skipped["Draw Figure 3b — tissue composition"]
-    assert "Positivity panels" in skipped["Draw Figure 4g — bone-lineage positivity"]
+    assert "list the signatures of the composition bars there" in skipped["Draw Figure 3b — tissue composition"]
+    assert "figures.positivity_panels" in skipped["Draw Figure 4g — bone-lineage positivity"]
     assert "figures.lineage_maps.a = 'osteoclast'" in skipped["Draw Figures 4a-f — osteoclast and osteoblast maps"]
-    assert "Receptor genes shown in Figure 6b" in skipped["Draw Figure 6b — host receptor panel"]
+    assert "list the genes of Figure 6b there" in skipped["Draw Figure 6b — host receptor panel"]
+    assert not any("Parameters" in reason for reason in skipped.values())
     assert progress.reported == bf.planned_steps(cfg)

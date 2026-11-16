@@ -1,9 +1,12 @@
-# Bone Spatial Studio
+# Popcorn
 
 The Visium HD bone-lesion analysis of the manuscript (`bone_analysis.py`, `bone_figures.py`), fixed and turned into a
-local web application. Configure the sections, parameters and gene signatures in the browser, draw a region of interest
-on the H&E image, run the analysis in the background with live progress, and browse the summary, figures, tables and
-per-bin spatial maps. The command line keeps working as before.
+local web application that reads the sections of most spatial transcriptomics instruments: 10x Visium HD and Visium,
+10x Xenium, Vizgen MERSCOPE, Bruker CosMx, STOmics Stereo-seq, AnnData (`.h5ad`) files and plain count tables
+([Instruments](#instruments)). Choose the sections and gene signatures in the browser, look at the raw data, run the
+base analysis in the background with live progress (quality control, normalization, signature scores and positivity
+calls, tissue assignment), then make the analyses you want with the tools of the run's **Analysis** tab and browse the
+tables and per-bin spatial maps. The command line keeps working as before and still draws the manuscript's figures.
 
 Every change to the original scripts is marked in the code by a `[FIX]` or `[APP]` note.
 
@@ -32,27 +35,63 @@ Without the scripts: `python -m pip install -r requirements.txt`, then `python -
 ## Use
 
 1. **Projects → New project** (or **Try the demo**, which generates two small synthetic tibiae).
-2. **Data**: choose the folder that holds the Space Ranger outputs (e.g. `data/`, containing `SR007144_LL-2-1/` and
-   `SR007144_RL-1-5/`), **Detect samples**, pick the reference (control) section; the data check confirms the bin
-   folders, images, microns per pixel and which signature genes are in the probe set.
-3. **Explore** (or click the bin count of a section in the Data tab): read the raw data before running anything,
-   with the settings as they are (saved or not). A table gives the bins, genes and UMIs of each section, the median
-   UMIs, genes and mitochondrial share per bin and the bins that pass the quality control of the Parameters tab; the
-   maps show these per-bin numbers or any gene on the H&E image, in one, two or four linked panels; the gene list of
-   a section is ranked by UMIs and searchable: click a gene to put it on the map, or its + to add it in its own
-   color, so that several genes show at once (the map's "+ Add layer" button does the same).
-4. **Parameters** and **Signatures**: the defaults are the manuscript setup; every value has a help text and a
-   reset button. Gene signatures (Table 1) can be edited, added, renamed or removed (see
-   [Using it for other gene groups](#using-it-for-other-gene-groups)).
-5. **Region of interest** (optional): draw polygons on the H&E image of each section (D draw, Enter close, Esc cancel,
-   Backspace remove a corner, Del remove the polygon, Ctrl+Z undo, Ctrl+S save) and switch on "Use the drawn region".
-6. **Run → Start analysis**. The run page shows each step, the live log, then the summary, figures (PNG/PDF), tables
-   (sortable, searchable, downloadable; **Export** at the top downloads all results, the figures or the tables as
-   one zip), a spatial viewer of every bin (tissue classes, calls, Leiden domains or any gene; one, two or four
-   linked panels, layers of genes, calls and region, H&E underneath) and the exact configuration used.
+2. **Data**: choose the folder that holds the sections (e.g. `data/`, containing the Space Ranger outputs
+   `SR007144_LL-2-1/` and `SR007144_RL-1-5/`, or the output folders of another instrument), **Detect samples**, pick
+   the reference (control) section; the data check names each section's instrument and confirms its files, positions,
+   images, microns per pixel and which signature genes are in the probe set. When every section comes from one
+   instrument, quality-control thresholds suited to it are set.
+3. **Explore** (or click the count of a section in the Data tab): read the raw data before running anything, with the
+   settings as they are (saved or not). A table gives the bins (spots, cells), genes and UMIs of each section, the
+   median UMIs, genes and mitochondrial share per bin and the bins that pass quality control, whose thresholds are set
+   there; the maps show these per-bin numbers or any gene (on the H&E image of Space Ranger sections), in one, two or
+   four linked panels; the gene list of a section is ranked by UMIs and searchable: click a gene to put it on the map,
+   or its + to add it in its own color, so that several genes show at once (the map's "+ Add layer" button does the
+   same).
+4. **Signatures**: the defaults are the manuscript setup. Gene signatures (Table 1) can be edited, added, renamed or
+   removed (see [Using it for other gene groups](#using-it-for-other-gene-groups)).
+5. **Region of interest** (optional, sections with an H&E image): draw polygons on the H&E image of each section
+   (D draw, Enter close, Esc cancel, Backspace remove a corner, Del remove the polygon, Ctrl+Z undo, Ctrl+S save) and
+   switch on "Use the drawn region in the analysis".
+6. **Run → Start analysis** runs the base run (Leiden domains and the AnnData file can be switched off). The run page
+   shows each step, the live log, then the summary, the **Analysis** tab, the tables (sortable, searchable,
+   downloadable; **Export** at the top downloads all results or the tables as one zip), a spatial viewer of every bin
+   (tissue classes, calls, Leiden domains or any gene; one, two or four linked panels, layers of genes, calls and
+   region, H&E underneath when there is one) and the exact configuration used.
+7. **Analysis**: **New analysis** offers the tools, each with its own settings: expression of chosen genes by group
+   (violin, box, dot plot, heatmap), differential expression between two groups (volcano plot; Wilcoxon or t test,
+   Benjamini–Hochberg), composition of sections or groups (bars with Wilson intervals), genes co-expressed with a
+   gene, two genes against each other, the score of a gene set, distances from one group to the nearest of another
+   against random placement, neighborhood enrichment, spatially variable genes (Moran's I) and a chart from any table
+   of the run. A group is any category of the per-bin table (section, condition, cell type, Leiden domain, positivity
+   call) or a region drawn on the sections (**Regions**). Every result is a card kept with the run, with its chart
+   (PNG, SVG) and table (CSV); **Templates** keeps the settings of a set of cards to make the same charts for another
+   run.
 
 Runs, projects and drawn regions are stored in `workspace/` (or `--workspace`, or the `BSS_WORKSPACE` variable).
-Each run keeps a frozen copy of its configuration, so it can be reproduced with **Re-run**.
+Each run keeps a frozen copy of its configuration (with the instrument each section was read as), so it can be
+reproduced with **Re-run**; its Analysis cards and regions are kept in its folder, templates in `workspace/templates/`.
+
+## Instruments
+
+`spatial_readers.py` reads every instrument into the same thing: the raw counts of every unit and its position in
+micrometres. The run, the maps and the tools then work alike on all of them, and one project may mix instruments. A
+sample's instrument is found from its files, or named by `"platform"` in its entry of the configuration.
+
+| Instrument | Unit | Files read |
+|---|---|---|
+| 10x Visium HD (`visium_hd`) | bin of the analysis bin size | `square_XXXum/filtered_feature_bc_matrix.h5`, `spatial/` positions, scale factors and H&E image |
+| 10x Visium (`visium`) | spot (55 µm) | `outs/filtered_feature_bc_matrix.h5`, `outs/spatial/tissue_positions.csv` (or `tissue_positions_list.csv`); µm per pixel from the spot diameter |
+| 10x Xenium (`xenium`) | cell | `cell_feature_matrix.h5` (Gene Expression features only), `cells.parquet` or `cells.csv.gz` (centroids in µm) |
+| Vizgen MERSCOPE (`merscope`) | cell | `cell_by_gene.csv` (Blank-* barcodes left out), `cell_metadata.csv` (centres in µm) |
+| Bruker CosMx (`cosmx`) | cell | `*_exprMat_file.csv(.gz)` (negative probes, system controls and background cells left out), `*_metadata_file.csv(.gz)` (global pixels of 0.12028 µm) |
+| STOmics Stereo-seq (`stereo_seq`) | bin of the analysis bin size (cell for a cell-bin file) | a `.gef` (square bins, else cell bins) or `.gem(.gz)` file; DNBs 500 nm apart |
+| AnnData (`h5ad`) | spot | an `.h5ad` file: raw counts from `layers["counts"]`, `.raw` or `X`; positions from `obsm["spatial"]` |
+| Tables (`table`) | spot | a 10x MEX folder (`matrix.mtx`, `barcodes.tsv`, `features.tsv`) or `counts.csv`, with `coordinates.csv` (id, x, y in µm) |
+
+Positions that are not micrometres take the sample's µm / px. The transcript tables and morphology images of the
+imaging platforms are not read. Imaging panels hold no mitochondrial genes, so their quality-control preset does not
+filter on the mitochondrial share (`pipeline_config.QC_PRESETS`). The Loupe Browser export is for Visium HD sections.
+`python -m tools.make_platform_data OUT_DIR` writes the demo sections in every layout, for trying them out.
 
 On a remote server, keep the default `--host 127.0.0.1` and open an SSH tunnel
 (`ssh -L 8765:127.0.0.1:8765 user@server`); with `--host 0.0.0.0` a token is required and printed with the URL.
@@ -60,34 +99,42 @@ On a remote server, keep the default `--host 127.0.0.1` and open an SSH tunnel
 ## Using it for other gene groups
 
 The defaults are the manuscript's: mouse bone and marrow signatures (Table 1) and a few steps built around osteoclasts
-and osteoblasts in an A549 bone lesion. Quality control, Leiden domains, scores and positivity calls, depth matching,
-the region of interest, the tissue assignment (Figure 3), Moran's I, the per-bin table, the summary and the maps work
-with any signatures.
+and osteoblasts in an A549 bone lesion. A run of the application is the base run, which works with any signatures:
+quality control, Leiden domains, scores and positivity calls, depth matching, the region of interest, the tissue
+assignment (Figure 3), the per-bin table, the summary and the maps (`pipeline_config.app_config` switches the other
+steps off). The bone study's questions are tools of the Analysis tab, asked with your own signatures and groups: the
+Figure 4h compartments are a differential expression between two groups, the Figure 4i distance is the distance tool,
+the positivity and composition panels (Figures 3b, 4g, 6a) are the composition tool, the receptor panel and the
+adipocyte genes (Figure 6b, Supplementary Figure S4) are expression by group, Supplementary Figure S5 is a heatmap of
+expression by Leiden domain and Supplementary Figure S2 is the spatially variable genes. The command line (below) runs
+every step and draws the manuscript's figures, configured by the same `config.json`; the points 2 and 3 below are about
+it.
 
 1. **Signatures** tab: delete the signatures you do not need and add your own (scored genes, core genes, competing
    signatures, and the switches *Positivity call* and *Tissue assignment*); replace the tissue classes. Deleting a
    signature removes it from every list; the dialog names the settings that still select it and where to change them.
 2. The **configuration check** (top of the project page; it checks your unsaved settings as you edit them, while runs
-   use the saved ones) lists every setting that still names a missing signature:
-   * errors, the analysis cannot start: *Osteoclast compartments (Figure 4h)* and *Distance to nearest partner
-     (Figure 4i)* need signatures with a positivity call. Choose yours under **Parameters**, or switch the step off
-     under **Parameters → Analysis steps**.
+   use the saved ones) lists every setting of the base run that still names a missing signature. For the command
+   line, `python pipeline_config.py --check my_config.json` (or `bone_analysis.py --config`) reports the rest, each
+   with the setting to change:
+   * errors, the analysis cannot start: *Osteoclast compartments (Figure 4h)* (`compartments`) and *Distance to
+     nearest partner (Figure 4i)* (`uncoupling`) need signatures with a positivity call; name yours, or switch the step
+     off (`steps.compartments: false`).
    * warnings, the figure or table is skipped: empty signature lists of the Figure 3b composition bars and the
-     positivity panels, the Figure 4a–f maps (**Parameters → Figures**); Figure 6b genes that are not in the host
-     receptor panel; no proximity pairs; no section whose condition is a tumor condition (*Osteoclast compartments →
-     Tumor conditions*); habitat classes of the Figure 4i sensitivity analysis that none of your signatures has; the
-     A549 lesion genes still listed in a project without the osteoclast and osteoblast signatures.
-3. Steps of the bone/A549 study are marked *bone study* under **Parameters → Analysis steps**: host receptor panel
-   (Figure 6b), adipocyte genes (Supplementary Figure S4), osteoclast compartments (Figure 4h), distance to the nearest
-   partner (Figure 4i; osteoblast to osteoclast in the manuscript) and the three-gene-set sensitivity (off by default;
-   it tests only the osteoclast and osteoblast gene sets). The receptor panel and the adipocyte genes take any gene list
-   (Signatures tab); with a panel of your own, also choose the genes Figure 6b draws (**Parameters → Figures →
-   Receptor genes shown in Figure 6b**) and switch off the shading of the first two (RANKL and OPG). Figure 4h calls its
-   compartments growth plate and tumor-associated only for the manuscript's osteoclast bins split by the chondrocyte
-   score; any other split is named after the split signature (*high-endothelium* and *low-endothelium*, say). In the
-   sensitivity analyses, the Figure 4h and 4i parts run only with their steps, and the A549 lesion flag counts the
-   cross-captured human genes Krt7 and Krt18: empty that list (*Sensitivity analyses: A549 lesion flag*) in other
-   studies, where they are ordinary epithelial genes (the run log says how many bins were flagged).
+     positivity panels, the Figure 4a–f maps (`figures.*`); Figure 6b genes that are not in the host receptor panel;
+     no proximity pairs (`proximity.pairs`); no section whose condition is a tumor condition
+     (`compartments.tumor_conditions`); habitat classes of the Figure 4i sensitivity analysis that none of your
+     signatures has; the A549 lesion genes still listed in a project without the osteoclast and osteoblast signatures.
+3. Steps of the bone/A549 study (command line): host receptor panel (Figure 6b), adipocyte genes (Supplementary Figure
+   S4), osteoclast compartments (Figure 4h), distance to the nearest partner (Figure 4i; osteoblast to osteoclast in
+   the manuscript) and the three-gene-set sensitivity (off by default; it tests only the osteoclast and osteoblast gene
+   sets). The receptor panel and the adipocyte genes take any gene list (Signatures tab); with a panel of your own,
+   also choose the genes Figure 6b draws (`figures.receptor_genes`). Figure 4h calls its compartments growth plate and
+   tumor-associated only for the manuscript's osteoclast bins split by the chondrocyte score; any other split is named
+   after the split signature (*high-endothelium* and *low-endothelium*, say). In the sensitivity analyses, the Figure
+   4h and 4i parts run only with their steps, and the A549 lesion flag counts the cross-captured human genes Krt7 and
+   Krt18: empty that list (`sensitivity_analyses.lesion.genes: []`) in other studies, where they are ordinary
+   epithelial genes (the run log says how many bins were flagged).
 4. Gene names must match the probe set exactly. The defaults are mouse symbols (`Lyz2`, `Ptprc`); human data needs
    human symbols (`LYZ`, `PTPRC`), also in the ubiquitous transcripts of the Leiden screen (Signatures tab). The data
    check lists the missing genes of every signature, the receptor panel, the adipocyte genes, the ubiquitous
@@ -134,11 +181,12 @@ The Geno Intelligence site serves this application at `/popcorn` (button "Popcor
 environment variables), and the Next.js site rewrites `/popcorn` to it. A hosted server is open to everyone, so:
 
 * the data is uploaded instead of chosen on disk: the **Data** tab of a project has an **Upload data** card in place
-  of the data root. Choose the Space Ranger output folder of a section (or a folder holding several); the browser
-  uploads only the files the analysis reads, `square_<size>/filtered_feature_bc_matrix.h5` and the positions, scale
-  factors and H&E images of `square_<size>/spatial/`, for the analysis and quality-control bin sizes, in chunks of
-  16 MB, to the project's upload folder `<workspace>/uploads/<project id>` (its data root), then offers the samples it
-  finds there. A project may upload 3 GB, and the server keeps 4 GB of disk free; **Remove uploaded data** and deleting
+  of the data root. Choose the output folder of a section (or a folder holding several); the browser uploads only the
+  files the analysis reads, in chunks of 16 MB, to the project's upload folder `<workspace>/uploads/<project id>` (its
+  data root), then offers the samples it finds there: for Visium HD `square_<size>/filtered_feature_bc_matrix.h5` and
+  the positions, scale factors and H&E images of `square_<size>/spatial/`, for the analysis and quality-control bin
+  sizes; for Visium the same files of `outs/`; for the other instruments their count and position files (never their
+  transcript tables or images; the server refuses any other file, `webapp/server.py` `upload_parts`). A project may upload 3 GB, and the server keeps 4 GB of disk free; **Remove uploaded data** and deleting
   the project delete the files. Large sections may still need more memory than the site's server has (the small demo
   needs about 850 MB, the two SR007144 sections at 16 µm, 150,000 bins, about 3 GB): analyse those here, on your
   own computer. A run the system stops for lack of memory fails with "The analysis ran out of memory";
@@ -171,9 +219,11 @@ The outputs and their columns are listed in [docs/ARCHITECTURE.md](docs/ARCHITEC
 | `bone_analysis.py` | analysis pipeline (fixed; `[FIX]` / `[APP]` notes mark every change) |
 | `bone_figures.py` | figures (fixed) |
 | `bone_pending_masks.py` | hand-drawn region of interest (GeoJSON → per-bin mask) |
-| `pipeline_config.py` | the configuration: defaults = manuscript setup, validation, parameter help |
-| `webapp/` | the web application (FastAPI server, job runner, browser interface) |
+| `pipeline_config.py` | the configuration: defaults = manuscript setup, validation, parameter help, the base run of the application, QC presets per instrument |
+| `spatial_readers.py` | readers of the other instruments' outputs (Visium, Xenium, MERSCOPE, CosMx, Stereo-seq, `.h5ad`, tables) |
+| `webapp/` | the web application (FastAPI server, job runner, browser interface; `webapp/analysis.py`: the tools of the Analysis tab) |
 | `tools/make_demo_data.py` | synthetic Visium HD data for the demo and the tests |
+| `tools/make_platform_data.py` | the demo sections rewritten in the layout of every other instrument |
 | `tests/` | `python -m pytest` (the slow end-to-end ones run the whole analysis on tiny data; `-m "not slow"` skips them) |
 
 ## Notes

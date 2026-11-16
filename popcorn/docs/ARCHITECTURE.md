@@ -1,14 +1,18 @@
-# Bone Spatial Studio — architecture and contracts
+# Popcorn — architecture and contracts
 
-Bone Spatial Studio turns the manuscript pipeline (`bone_analysis.py`, `bone_figures.py`) into a local web
-application: configure samples, parameters and gene signatures in the browser, draw a region of interest on the H&E
-image, run the analysis in the background with live progress, and browse the figures, tables and per-bin maps.
+Popcorn turns the manuscript pipeline (`bone_analysis.py`, `bone_figures.py`) into a local web
+application: choose the sections (of any instrument `spatial_readers.py` reads, section 9) and gene signatures in the
+browser, draw a region of interest on the H&E image, run the base analysis in the background with live progress, then
+make the analyses you want with the tools of a run's Analysis tab (section 8) and browse the tables and per-bin maps.
+The application has no Parameters tab and no Figures tab any more (2026-11-14): a run does what every dataset needs
+(`pipeline_config.app_config`), the study-specific steps and the manuscript figures stay with the command line.
 
 Everything below is a contract between components. Names, signatures, file names and JSON shapes must match exactly.
 
 ```
 popcorn/
   pipeline_config.py        configuration: defaults, schema, validation, path resolution, Progress     (shared contract)
+  spatial_readers.py        readers of the outputs of other instruments than Space Ranger (section 9)
   bone_analysis.py          analysis library + CLI          (fixed and generalised from the manuscript version)
   bone_figures.py           figure library + CLI            (fixed and generalised)
   bone_pending_masks.py     hand-drawn region of interest: GeoJSON polygons -> per-bin mask
@@ -19,11 +23,14 @@ popcorn/
     storage.py              projects and runs on disk (workspace/)
     jobs.py                 job queue: one analysis at a time in a subprocess, log capture, event parsing, cancel
     worker.py               `python -m webapp.worker <run_dir>`: runs the analysis and the figures for one run
+    analysis.py             the tools of a run's Analysis tab (section 8): numpy/scipy only, no scanpy in the server
     static/                 single-page front end (no build step, no CDN; works offline)
-      index.html, css/app.css (base design system), css/project.css, css/run.css
+      index.html, css/app.css (base design system), css/project.css, css/run.css, css/analysis.css
       js/core.js (helpers), js/main.js (shell + routes)
-      js/views/{projects,project,runs,run,help}.js, js/components/*.js
+      js/views/{projects,project,runs,run,help}.js, js/components/*.js (analysis.js, charts.js, region-editor.js:
+      the Analysis tab)
   tools/make_demo_data.py   synthetic Space Ranger-like data (two small "tibiae") for the demo and the tests
+  tools/make_platform_data.py  the demo sections rewritten in the layout of every other instrument (tests, trials)
   tests/                    pytest: unit, end-to-end (demo data), API
   requirements.txt, README.md, start.ps1, start.sh
 ```
@@ -45,8 +52,22 @@ else "high-<split_by label>", "low-<split_by label>"; file and column names keep
 `PARAM_SCHEMA`, `STEP_LABELS`, `Progress`.
 
 Key facts used everywhere:
-* `cfg["samples"]`: ordered list of `{id, label, condition, color, path, microns_per_pixel}`; N >= 1 sections
-  (default two). `cfg["reference_sample"]` is the denominator of every fold change / ratio of ratios.
+* `cfg["samples"]`: ordered list of `{id, label, condition, color, path, microns_per_pixel, platform?}`; N >= 1
+  sections (default two). `cfg["reference_sample"]` is the denominator of every fold change / ratio of ratios.
+  `platform` (one of `PLATFORM_IDS`: visium_hd, visium, xenium, merscope, cosmx, stereo_seq, h5ad, table) names the
+  instrument; without it `sample_platform(cfg, sample)` finds it from the files (`spatial_readers.detect`, cached by
+  path and modification time; visium_hd when nothing is recognised). `path` may name a file (an .h5ad, .gef or .gem).
+  `sample_path(cfg, sample)` is the folder or file; `section_dir(cfg, sample, bin_size=None)` the Space Ranger folder
+  of a 10x sample (square_<bin_size>/ of Visium HD, outs/ of Visium; None for the others). A run of the application
+  records each sample's platform in its snapshot (server.record_platforms).
+* `QC_PRESETS[platform]` = {min_genes, min_counts, max_pct_mt} suited to the instrument (a 16 µm bin, a 55 µm spot,
+  an imaged cell; max_pct_mt 100 for imaging panels without mitochondrial genes); GET /api/defaults lists them and the
+  Data tab sets them when every section comes from one instrument and the thresholds are still a default.
+* `APP_STEPS` (leiden, assignment, write_h5ad: label and help) are the steps a run of the application may switch;
+  `APP_STEPS_OFF` every other step (receptor and adipocyte panels, compartments, uncoupling, proximity, Moran's I,
+  sensitivity analyses, figures, ...). `app_config(cfg)` returns a copy with those off: what the application runs (the
+  base run), validated with it, so a project without the bone signatures has nothing to fix. The command line runs
+  every step.
 * Gene sets: `cfg["signatures"][name] = {label, table_label, color, class, canonical, core, extended, competes,
   excluded}`; `cfg["primary"]` (ordered: signatures with a positivity call), `cfg["programs"]` (ordered: signatures
   competing in the tissue assignment), `cfg["classes"]` (drawn tissue classes, ordered; a signature whose class is not
@@ -60,7 +81,7 @@ Key facts used everywhere:
   human-readable lines; `events=False` prints only the readable lines (CLI).
 * Settings that name single signatures are checked against `cfg["signatures"]` (other gene groups, README "Using it
   for other gene groups"), only while the step that uses them is on. Errors (the run is refused), each naming the
-  setting, its Parameters field and both ways out (another signature, or the step switched off):
+  setting (its configuration key) and both ways out (another signature, or the step switched off, `steps.<key>: false`):
   `compartments.signature` (needs a positivity call) and `compartments.split_by` (steps.compartments),
   `uncoupling.a` / `.b` (positivity calls; steps.uncoupling). Warnings (the output is skipped): `figures.lineage_maps`
   unknown or without a call, `figures.composition_signatures` with no known signature (or unknown names), a positivity
@@ -73,9 +94,11 @@ Key facts used everywhere:
   epithelium as A549 lesion).
 * `STEP_HELP` (what each step is for) and `BONE_STUDY_STEPS` (receptor_panel, adipocyte_panel, compartments,
   uncoupling, sensitivity: specific to the bone-lesion study). `PARAM_SCHEMA` ends with a section `{"key": "steps"}`
-  that is not a configuration section: one bool field per STEP_LABELS key with its help and `"study": "bone"`; the
-  Analysis steps card and the Run tab read it. Signature fields may carry `"uses_step"` (a steps key) and
-  `"needs_call": true`; `compartments.tumor_conditions` is a str_list field.
+  that is not a configuration section: one bool field per STEP_LABELS key with its help and `"study": "bone"`
+  (documentation for whoever writes configuration files; the application's Run tab lists APP_STEPS). Signature fields
+  may carry `"uses_step"` (a steps key) and `"needs_call": true`; `compartments.tumor_conditions` is a str_list field.
+* `python pipeline_config.py --check config.json` prints the errors and warnings of a configuration for the command
+  line (every step; exit code 1 on errors).
 
 ## 2. Python entry points
 
@@ -105,6 +128,14 @@ warnings and the compartment DE table's description use `pc.compartment_names` a
 ("<label> compartments: ..."), unchanged for the manuscript configuration.
 Module-level constants (SAMPLES, SIG, PRIMARY, PROGRAMS, RECEPTOR_PANEL, ADIPOCYTE_GENES, UBIQUITOUS, PALETTE,
 UM_PER_PX, MIN_GENES, ...) stay importable; they are derived from / consistent with `pipeline_config.DEFAULT_CONFIG`.
+Sections of any instrument: `read_section(cfg, sample, bin_size, progress=None) -> (AnnData, platform)` reads Space
+Ranger outputs with `read_visium_hd` (Visium HD at bin_size; Visium spots, microns per pixel from the 55 µm spot
+diameter when the scale factors have none) and every other platform with `spatial_readers.read` +
+`section_anndata(sec, sample_name, condition)` (counts float32 CSR in X, the units' ids as obs_names, positions in
+obsm["spatial"] with their micrometres per unit as scalefactors["microns_per_pixel"], array_row / array_col for units on
+a grid). `load_sections` and the QC-figure step use it, so the whole pipeline runs on any of them, mixed in one run
+(tests/test_platforms_api.py: an .h5ad copy of the demo gives the Visium HD calls bin by bin, except a few pooled calls
+whose 8th nearest neighbour is a tie broken differently in micrometres than in pixels).
 
 ### bone_figures.py
 ```python
@@ -238,7 +269,12 @@ workspace/runs/<rid>/run.json              run record (section 5, GET /api/runs/
 workspace/runs/<rid>/config.json           effective config snapshot; roi.masks rewritten to absolute paths of rois/ below
 workspace/runs/<rid>/rois/<sid>.geojson    copies of the project's drawn regions at submission time
 workspace/runs/<rid>/log.txt               full stdout+stderr of the worker (event lines removed)
-workspace/runs/<rid>/results/              outputs (section 3), results/figures/
+workspace/runs/<rid>/results/              outputs (section 3), results/figures/ (command line; none in the app)
+workspace/runs/<rid>/analyses/<aid>.json   a card of the Analysis tab (tool, title, params, view, status, result)
+workspace/runs/<rid>/analyses/<aid>.npz    its per-bin arrays (float32; e.g. a gene-set score on the map)
+workspace/runs/<rid>/regions.json          regions drawn on the run's sections in the Analysis tab
+workspace/templates/<tid>.json             a template: a named set of cards (tool, title, params, view)
+workspace/uploads/<pid>/                   the data uploaded to a project on a hosted server (its data root)
 workspace/demo_data/                       synthetic data from tools/make_demo_data.py
 ```
 Ids: project `p-<8 hex>`; run `r-YYYYMMDD-HHMMSS-<4 hex>` (sortable). All JSON written atomically (tmp + os.replace).
@@ -255,7 +291,9 @@ GET  /api/health            -> {"ok": true, "app_version": "1.0.0", "python": "3
                                required: scanpy anndata numpy pandas scipy sklearn statsmodels igraph leidenalg pyarrow
                                h5py matplotlib PIL; optional: harmonypy squidpy (fallbacks exist). Versions are computed
                                once (importlib.metadata, never importing scanpy in the server process).
-GET  /api/defaults          -> {"config": default_config(), "param_schema": PARAM_SCHEMA, "step_labels": STEP_LABELS}
+GET  /api/defaults          -> {"config": default_config(), "param_schema": PARAM_SCHEMA, "step_labels": STEP_LABELS,
+                                "app_steps": [{"key", "label", "help"}] (APP_STEPS: what a run of the app may switch),
+                                "platforms": [{"id", "label", "unit": "bin"|"spot"|"cell", "qc": QC_PRESETS[id]}]}
 GET  /api/docs/{name}       -> {"name", "markdown"} for name in readme | changes | architecture
 
 GET  /api/projects          -> [{"id", "name", "created", "updated", "n_samples", "data_root",
@@ -272,15 +310,17 @@ POST /api/projects/{pid}/duplicate -> project          ("<name> (copy)", same co
 POST /api/projects/{pid}/validate  body {"config"?: dict (unsaved edits; default = saved config), "data"?: bool}
      -> report:
      {"ok": bool, "errors": [str], "warnings": [str],
-      "samples": [{"id", "bin_dir": str|null, "bin_sizes": ["008um", "016um"], "has_positions": bool,
-                   "has_scalefactors": bool, "has_hires_image": bool, "microns_per_pixel": float|null,
-                   "n_bins": int|null, "message": str}],
+      "samples": [{"id", "platform", "platform_label", "unit", "bin_dir": str|null (for other instruments: their
+                   main file), "bin_sizes": ["008um", "016um"], "has_positions": bool, "has_scalefactors": bool,
+                   "has_hires_image": bool, "microns_per_pixel": float|null, "n_bins": int|null (units: bins, spots
+                   or cells), "message": str, "notes": [str]}],
       "genes": {"n_features": int|null,
                 "signatures": {"<name>": {"present": [..], "missing": [..], "core_present": int}},
                 "receptor_panel": {"missing": [..]}, "adipocyte_genes": {"missing": [..]},
                 "ubiquitous": {"missing": [..]}, "lesion_genes": {"missing": [..]}}}
      n_bins / gene names come from filtered_feature_bc_matrix.h5 read with h5py (matrix/shape, matrix/features/name);
-     fast, no scanpy. Warnings for the missing genes of each list; for the ubiquitous transcripts a stronger one when
+     fast, no scanpy. Other instruments: server.other_sample_report with spatial_readers.inspect (headers and
+     positions only, the counts are not read). Warnings for the missing genes of each list; for the ubiquitous transcripts a stronger one when
      none is present (the Leiden screen marks no domain unresolved); for the A549 lesion genes
      (sensitivity_analyses.lesion.genes) only when none is present and steps.sensitivity_analyses is on.
      "data": false -> {"ok", "errors", "warnings"} of the configuration check alone (validate_config, as the project's
@@ -288,19 +328,26 @@ POST /api/projects/{pid}/validate  body {"config"?: dict (unsaved edits; default
      "data" is not a boolean.
 POST /api/projects/{pid}/detect-samples  body {"data_root"?: str}
      -> {"data_root": str, "candidates": [{"folder": "SR007144_LL-2-1", "path": "SR007144_LL-2-1/outs/binned_outputs",
-         "suggested_id": "LL-2-1", "bin_sizes": ["002um", "008um", "016um"]}]}
-     scans data_root and its children (depth <= 4) for folders containing square_*um/filtered_feature_bc_matrix.h5;
-     path is relative to data_root when possible; suggested_id strips a leading "SR<digits>_" run prefix.
+         "suggested_id": "LL-2-1", "bin_sizes": ["002um", "008um", "016um"], "platform": "visium_hd", "unit": "bin",
+         "platform_label": "10x Visium HD"}]}
+     scans data_root and its children (depth <= 4) for folders containing square_*um/filtered_feature_bc_matrix.h5,
+     and for the outputs of the other instruments (spatial_readers.candidates: a Visium outs/ folder, a Xenium bundle,
+     a MERSCOPE region, CosMx flat files, a Stereo-seq GEF or GEM, each .h5ad file, count tables; a recognised folder is
+     not searched further); path is relative to data_root when possible; suggested_id strips a leading "SR<digits>_"
+     run prefix; a name found again from another instrument gets "-<platform>", else "-2", "-3", ...
 GET  /api/fs/list?path=<dir>  -> {"path": abs, "parent": abs|null, "roots": ["C:\\", ...] | ["/"],
      "entries": [{"name", "path", "is_dir": true, "looks_like_spaceranger": bool}]}   directories only, sorted;
-     empty path -> the user's home folder. looks_like_spaceranger: contains outs/, binned_outputs/ or square_*um/.
+     empty path -> the user's home folder. looks_like_spaceranger: contains outs/, binned_outputs/ or square_*um/,
+     or a file another instrument's output starts with (experiment.xenium, cell_by_gene.csv, *_exprMat_file.csv, *.gef,
+     *.gem, *.h5ad, ...).
 GET  /api/projects/{pid}/samples/{sid}/image        -> image/png  tissue_hires_image.png of the analysis bin
                                                        (falls back to any square_*um/spatial/); 404 if none
 GET  /api/projects/{pid}/samples/{sid}/image-meta   -> {"width", "height", "frame": "hires", "scalefactors": {...},
                                                          "microns_per_pixel": float|null}
 GET  /api/projects/{pid}/samples/{sid}/bins-preview -> {"x": [..], "y": [..], "n_total": int}
      in-tissue bin centres of the analysis bin size in hires pixels (pxl * tissue_hires_scalef), at most 60,000
-     (evenly subsampled); 404 when positions are missing
+     (evenly subsampled); 404 when positions are missing. The three image routes answer 404 for other instruments,
+     saying that their regions are drawn in a run's Analysis tab (server.no_image_message).
 
 Data explorer: the raw sections before any run. Every body may carry {"config": dict} (unsaved edits, exactly as
 /validate; default = saved config); the analysis bin size of that config is read. A section is read as
@@ -309,9 +356,14 @@ features of filtered_feature_bc_matrix.h5 (names made unique like var_names_make
 suffix (made unique), joined to the positions file by barcode, bins without coordinates dropped, matrix order kept.
 POST /api/projects/{pid}/explore/samples
      -> {"bin_size", "samples": [{"id", "label", "condition", "color", "n_bins": int|null, "has_image": bool,
-         "ok": bool, "message": str}]}   cheap: n_bins = in-tissue rows of the positions file (the matrix is not read);
-        message = "1,234 bins at 016um" or why the section cannot be read (ok false also for more than 1,000,000 bins,
-        the most a section the explorer and the gene maps read: 002um sections have millions)
+         "ok": bool, "message": str, "platform", "unit"}]}   cheap: n_bins = in-tissue rows of the positions file (the
+        matrix is not read; other instruments: spatial_readers.inspect); message = "1,234 bins at 016um" ("1,050 cells
+        (10x Xenium)") or why the section cannot be read (ok false also for more than 1,000,000 bins, the most a
+        section the explorer and the gene maps read: 002um sections have millions)
+     Other instruments (server.SectionSource: Space Ranger files, or what spatial_readers located): read with
+     spatial_readers.read into the same RawSection, positions in micrometres (x_px * microns_per_pixel with
+     microns_per_pixel = their micrometres per unit), no image; the reader's notes join the payload's notes, and
+     "summary" gains "platform" and "unit".
 POST /api/projects/{pid}/explore/{sid}/bins
      -> the bin payload of GET /api/runs/{rid}/bins (sample, n, x, y in µm = full-res pixel * microns_per_pixel rounded
         to 0.01 like the per-bin table's x_um/y_um, fields, "colors": {}) with fields total_umi, n_genes, pct_mt
@@ -429,7 +481,8 @@ GET  /api/runs/{rid}/export/loupe  -> application/zip, attachment "<rid>_loupe.z
      files for 10x Genomics Loupe Browser and README.txt (see "Loupe Browser export" below). 404 unknown run or no
      per-bin table (detail says when the run stopped before writing one); 409 while the run is queued or running; 422
      when a section's raw data can no longer be found or read, no bin of the table is a barcode of its matrix, a
-     section of the table is not in the run's config, or the run's bins are smaller than 8 µm (no .cloupe exists).
+     section of the table is not in the run's config, a section is not Visium HD (its platform in the run's snapshot),
+     or the run's bins are smaller than 8 µm (no .cloupe exists).
      The UI: "Loupe Browser" in the run page's Export menu
 GET  /api/runs/{rid}/export/results?part=all|figures|tables  -> application/zip, attachment "<rid>_results.zip",
      "<rid>_figures.zip" or "<rid>_tables.zip" (server.results_zip): files at their paths under results/. figures =
@@ -437,7 +490,17 @@ GET  /api/runs/{rid}/export/results?part=all|figures|tables  -> application/zip,
      gigabytes; downloaded on their own from the Tables tab) plus run_config.json and run_log.txt. PNG, PDF and .gz
      are stored, the rest deflated; built in a temporary file removed once sent. 400 unknown part; 404 unknown run or
      nothing of that part (detail says when the run stopped before writing any); 409 while queued or running. The UI:
-     "All results", "Figures" and "Tables" in the run page's Export menu; "Download all" of the Figures tab (figures)
+     "All results" and "Tables" in the run page's Export menu (figures: results of the command line only)
+
+Analysis tab (section 8): GET /api/runs/{rid}/analysis/context (the forms: sections, fields and their values,
+regions, tools described in the run's unit, tables, whether the raw counts can be read); GET|POST /api/runs/{rid}/analyses
+(cards; POST {"tool", "params", "title"?, "view"?} answers the finished card when quick, the running one otherwise,
+422 with the reason and no card when the settings cannot be computed); GET|PUT|DELETE /api/runs/{rid}/analyses/{aid}
+(PUT: title, view); POST .../{aid}/rerun {"params"?, ...}; GET .../{aid}/table.csv; GET .../{aid}/values?name= (per-bin
+values of one section, /bins order); GET|PUT /api/runs/{rid}/regions {"regions": [{"id"?, "name", "sample",
+"polygons" (µm, x_um / y_um frame), "color"?}]}; GET|POST /api/analysis/templates, DELETE /api/analysis/templates/{tid},
+POST /api/runs/{rid}/templates/{tid}/apply (every card of a template on the run; a card that does not fit fails with
+its reason).
 
 POST /api/demo                  -> {"project": project}   generates workspace/demo_data (once; ~1 min) with
                                    tools.make_demo_data.generate and creates a project "Demo — synthetic tibiae"
@@ -551,9 +614,17 @@ return a cleanup function (stop timers, remove listeners):
                            Duplicate and Delete project are in its "Project actions" menu (.row-actions). Header: Try
                            the demo (ghost) and New project, hidden while there is no project (the intro has them)
 #/projects/:id/:tab?       views/project.js   export async function renderProject(container, {id, tab})
-                           tabs: data | explore | parameters | signatures | roi | run
+                           tabs: data | explore | signatures | roi | run (old addresses: parameters -> explore,
+                           where the quality-control thresholds are)
                            explore = dataExplorer() on the draft config (section "Data explorer" below)
-                           header: the configuration-check chip only (see "Signatures and Parameters tabs"); Save
+                           data: the detection dialog shows each candidate's instrument and unit; a detected sample
+                           of another instrument names its platform; when every section comes from one instrument
+                           and the QC thresholds are a default, QC_PRESETS sets them (applyQcPreset). On a hosted
+                           server the Upload data card (components/upload-panel.js, neededFiles) sends only the files
+                           the readers read, and the server's upload_parts refuses any other (UPLOAD_OTHER_RE)
+                           run: "What a run does" (the base run; the APP_STEPS switches written to cfg.steps;
+                           Deterministic) and the project's runs
+                           header: the configuration-check chip only (see "Signatures tab"); Save
                            and Discard are in the bar at the bottom shown while there are unsaved changes (and
                            Ctrl+S). data: the sample table (a row's "Sample actions" menu: Move up, Move down, Remove
                            sample) and the Data check card ("Check again"). run: the project's runs (a click on a
@@ -565,17 +636,17 @@ return a cleanup function (stop timers, remove listeners):
                            running) and the row's "Run actions" menu (Open project, Delete run), which a poll leaves
                            open
 #/runs/:id/:tab?           views/run.js       export async function renderRun(container, {id, tab})
-                           tabs: progress | summary | figures | tables | viewer | config  (tab null -> progress
-                           while queued/running, summary when finished); viewer = spatialViewer(runSource(id)).
+                           tabs: progress | summary | analysis | tables | viewer | config  (tab null -> progress
+                           while queued/running, summary when finished; old address figures -> analysis);
+                           analysis = analysisWorkbench (section 8); viewer = spatialViewer(runSource(id)), drawn at
+                           the bin size, or at the spacing of the points for runs of spots or cells.
                            Header actions, built once (the menus read the run when they open): Cancel (only while
-                           queued or running), Export (menu: All results, Figures, Tables = GET /export/results;
+                           queued or running), Export (menu: All results, Tables = GET /export/results;
                            Loupe Browser = GET /export/loupe), Re-run, "Run actions" menu (Open project, Delete run;
                            Delete disabled while active). An export item is disabled while the run is active, while
                            that zip is being prepared, or when the manifest already fetched has nothing of its kind;
                            the zip is fetched (not linked) and saved, and a refusal shows the server's detail in a
-                           toast. figures = figureGallery: a card has no buttons, a click opens the viewer (fit or
-                           1:1, previous / next, Download PNG / PDF); "Download all" in the gallery's top line = the
-                           figures zip. tables = tableBrowser; each data object and other file is one download link
+                           toast. tables = tableBrowser; each data object and other file is one download link
                            (.h5ad objects are in no zip). config: Copy and Download are icon-only buttons beside
                            "Create project from this configuration"
 #/help/:topic?             views/help.js      export async function renderHelp(container, {topic})
@@ -583,31 +654,16 @@ return a cleanup function (stop timers, remove listeners):
 ```
 Components live in js/components/ and are imported by the views.
 
-### Signatures and Parameters tabs (components/signature-editor.js, components/param-form.js)
+### Signatures tab (components/signature-editor.js)
 * `deleteSignature(cfg, name)` removes the signature from every list (competitors, primary, programs, roi.exclude,
   sensitivity sets, positivity panels, composition bars) and drops the proximity pairs that use it; single-signature
-  settings stay. The delete dialog lists `signatureUsage(cfg, name)` -> `[{where, step}]` (the Parameters field that
-  still selects it; step = the steps key that needs it, null for the Figure 4a–f maps), says that the analysis cannot
-  start until another signature is chosen there or the step is switched off, and `deletionEffects(cfg, name)`: lists
-  it empties (composition bars, a positivity panel, roi.exclude, sensitivity.signatures with the step on) and pairs it
-  drops.
-* A signature field shows, under it, why its value cannot be used (unknown, or without a positivity call when
-  `needs_call`), with the same ways out, unless its `uses_step` is off; it is checked again when a step is switched.
-  Empty composition and panel lists say that the figure is not drawn; the Tumor conditions chips are marked when no
-  section has that condition. The Analysis steps card shows each step's help and a "bone study" badge from the
-  schema's "steps" section (the Run tab shows the help as the step's tooltip, and the badge).
+  settings stay (the base run of the application does not use them: app_config; the command line's check names them).
+  `deletionEffects(cfg, name)` lists what the deletion empties and drops, in the delete dialog.
 * Signatures tab buttons: Delete signature is in the "Signature actions" menu at the head of the signature, "Reset gene
   sets to manuscript defaults" in the "Gene set actions" menu of the Signatures card, beside Add (and in the empty
   state, beside Add signature); both ask for confirmation. The move and remove buttons of the calling-order lists and
   the tissue classes, and the remove buttons of excluded genes, receptor-panel rows, proximity pairs and positivity
   panels, are .row-actions.
-* Parameters navigation: the section links on the left (hidden below 960 px) are grouped and the cards follow their
-  order: Analysis (qc, clustering, scoring, roi), Figures (compartments, uncoupling, proximity, moran, the proximity
-  pairs, figures, steps), Sensitivity analyses (key sensitivity_analyses[.*], or a title starting "Sensitivity
-  analyses:"; linked without that prefix), Other (Reproducibility and any section added to the schema later). The
-  link of the first card in the band from 16 px to a third of the window's height is current (aria-current=
-  "location"); a click scrolls to the card, focuses its first visible control and keeps that link current until the
-  next scroll, click or key.
 * The configuration-check chip, the one control in the header of the project page, shows the check of the unsaved
   settings while there are any: POST /validate with "data": false, 300 ms after the last change (aborted when another
   follows), kept with the JSON of the config it checked; until it answers, and when it fails, it shows the saved
@@ -787,3 +843,63 @@ dataExplorer({projectId, name, state, getConfig, focus, onOpenData}) -> {el, des
 * Data tab: the bin count of every section the data check found is a button (sampleEditor onExplore; aria-label
   "<bins>: explore section <id>") that opens the Explore tab with that section in the highlighted panel; the Data
   check card's pointer has an "Explore tab" text link (reportPanel onExplore) that opens the tab.
+
+## 8. Analysis tab (webapp/analysis.py; components/analysis.js, charts.js, region-editor.js)
+
+A finished run is not a fixed set of figures: its Analysis tab makes the analyses the user asks for, each a card with
+its own settings, chart and table, computed by a tool on the run's per-bin table and, for gene tools, the raw counts of
+its sections. The server never imports scanpy or anndata: the statistics are numpy/scipy (Wilcoxon rank-sum with tie
+correction or scanpy's no-tie variant, Welch t, Pearson from sparse sums, Benjamini–Hochberg, Wilson intervals,
+Moran's I on a row-normalised Delaunay graph with analytic normal P values, a score_genes-like gene-set score, kNN
+neighbourhood enrichment by permutation, a distance null like uncoupling_metric).
+
+* `Context(samples, sample_codes, x, y, fields, expression, no_expression, regions, total_umi, target_sum, unit,
+  tables, table_names, cancelled)`: the bins of a run (server.run_context, in the order of GET /bins), positions in µm,
+  the category and yes/no columns of the per-bin table as `Field`s (with their configured colors), regions as fields
+  `region:<name>`, the raw counts as an `Expression` built when a tool first asks (server.run_expression: each section's
+  bins matched to its raw data as the gene maps match them), `unit` = "bin", "spot" or "cell" (the run's sections'
+  platform; texts of the tools and their results say it: `unit_text`, `Tool.describe(unit)`, `in_units`).
+* Settings shared by the tools: conditions `{"field", "values"}` or `{"genes", "detected"}`; scope `{"samples",
+  "roi", "where"}`; groupings `{"field", "values"?}`. `run_tool(tool_id, ctx, params) -> (result, arrays)`: result =
+  {title, summary, chart data, "table": {columns, rows, data}, "notes", ...}, arrays = per-bin values kept as .npz;
+  `ToolError` (HTTP 422) says what to change.
+* `TOOLS`: expression (genes by group: violin, box, dot plot, heatmap), de (two groups: volcano + table), composition
+  (shares of a category per section or group, Wilson intervals), coexpression (genes following one gene), gene_pair
+  (two genes: correlation, joint distribution), score (a gene set's score by group and on the map), distance (group A
+  to the nearest of group B against random placement, per section), neighborhood (kNN enrichment of category pairs),
+  svg (Moran's I per section), table_chart (a chart from any table of the run).
+* Cards run one at a time on a daemon thread (server.AnalysisRunner; one at a time bounds the memory, like the job
+  queue), stored as runs/<rid>/analyses/<aid>.json (+ .npz); a quick tool answers POST /analyses directly. Regions are
+  drawn on the run's sections in µm (region-editor.js; the H&E image underneath when the section has one) and stored in
+  runs/<rid>/regions.json. Templates (workspace/templates/) keep a set of cards' settings to apply to any run.
+* Front end: `analysisWorkbench({runId, store, binUm, onShowGenes})` — New analysis (a form per tool from the
+  context's tool descriptions), Regions, Templates; each card: chart (charts.js: SVG charts, canvas maps at the bin
+  size or, for spots and cells, the spacing of the points: `pointPitch`), table, menu (Change the settings, Duplicate,
+  Rename, PNG, SVG, CSV, Delete); a gene in a card's table opens it in the Spatial viewer.
+
+## 9. Instruments (spatial_readers.py)
+
+Every reader gives a `Section(platform, unit, X (CSR int64 units x genes), barcodes, genes, x, y,
+microns_per_unit, grid, size_um, n_read, sources, notes)`: the raw counts of every unit and its position, x and y
+times microns_per_unit being micrometres.
+
+* `PLATFORMS` {id: {label, unit}}: visium_hd (bin), visium (spot), xenium, merscope, cosmx (cell), stereo_seq (bin; cell
+  for a cell-bin GEF), h5ad and table (spot). `TEN_X` = visium_hd, visium: read by the Space Ranger readers
+  (bone_analysis.read_visium_hd, server.RawSection); `read` refuses them.
+* `detect(path) -> platform | None`, `candidates(folder) -> [(platform, path)]` (each .h5ad file of a folder is a
+  sample), `locate(path, platform=None, bin_um=None) -> Located(platform, path, files, bin_um)` (ReadError naming the
+  files the platform needs), `read(loc, microns_per_unit=None, max_units=None) -> Section`, `inspect(loc) -> {unit,
+  n_units, genes, microns_per_unit}` (headers only: the data check and the explorer's section list).
+* Xenium: cell_feature_matrix.h5 ("Gene Expression" features: control probes and unassigned codewords left out),
+  cells.parquet / cells.csv(.gz) centroids in µm; cells without a centroid are left out (a note says how many).
+  MERSCOPE: cell_by_gene.csv (Blank-* left out), cell_metadata.csv (EntityID; center_x, center_y in µm). CosMx:
+  *_exprMat_file.csv(.gz) (NegPrb*, SystemControl*, FalseCode* and the background cell_ID 0 left out; fov + cell_ID ids),
+  *_metadata_file.csv(.gz) CenterX/Y_global_px x 0.12028 µm. Stereo-seq: GEF (HDF5 geneExp/bin<N> with gene offsets
+  and expression x, y, count; resolution 500 nm; cellBin/ for cell bins) or GEM (tab table with # headers); DNBs summed
+  into square bins of the analysis bin size (grid = row, column). AnnData: read with h5py (no anndata): counts from
+  layers["counts"], raw/X or X when whole numbers, obs and var names (categorical and nullable-string encodings),
+  obsm["spatial"]. Tables: 10x MEX or a counts CSV with a coordinates CSV.
+* Units without a position are left out; a section of more than max_units refuses with the count (the server reads at
+  most RAW_SECTION_MAX_BINS). tools/make_platform_data.py rewrites the demo in every layout; tests/test_spatial_readers.py
+  checks that every reader gives back exactly the counts and positions it was given, and tests/test_platforms_api.py the
+  application on them (detection, data check, explorer, run snapshot, base runs compared with the Visium HD original).

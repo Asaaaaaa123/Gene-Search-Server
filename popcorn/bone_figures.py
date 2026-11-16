@@ -1617,8 +1617,8 @@ def _prep_3a(ctx):
 def _prep_3b(ctx):
     comp = ctx.load(COMPOSITION_CSV, ["sample", "program", "n_bins"], step="assignment")
     if not any(p in ctx.cfg["signatures"] for p in ctx.cfg["figures"]["composition_signatures"]):
-        raise _Skip("figures.composition_signatures lists no signature of this project: choose the signatures of the "
-                    "composition bars in Parameters > Figures")
+        raise _Skip("figures.composition_signatures lists no signature of this project: list the signatures of the "
+                    "composition bars there")
     return [([(FIG3B, "Figure 3b — tissue composition after depth matching")],
              lambda: figure3b(comp, ctx.cfg, ctx.out, ctx.summary))]
 
@@ -1629,11 +1629,11 @@ def _prep_4af(ctx):
     for k in ("a", "b"):
         sig = lm[k]
         if sig not in cfg["signatures"]:
-            raise _Skip(f"figures.lineage_maps.{k} = {sig!r} is not a signature of this project: choose the two "
-                        f"signatures in Parameters > Figures")
+            raise _Skip(f"figures.lineage_maps.{k} = {sig!r} is not a signature of this project: name the two "
+                        f"signatures in figures.lineage_maps")
         if sig not in cfg["primary"]:
             raise _Skip(f"{lbl(cfg, sig)} has no positivity call (not a primary signature): switch it on in the "
-                        f"Signatures tab, or choose another signature in Parameters > Figures")
+                        f"Signatures tab, or name another signature in figures.lineage_maps")
     cols = ["sample_id", "x_um", "y_um", f"positive_{_slug(cfg, lm['a'])}", f"positive_{_slug(cfg, lm['b'])}"]
     ctx.per_bin(cols, peek=True)
     return [([(FIG4AF, f"Figures 4a-f — {lbl(cfg, lm['a'])}- and {lbl(cfg, lm['b'])}-positive bins")],
@@ -1643,8 +1643,8 @@ def _prep_4af(ctx):
 def _prep_positivity(ctx, name, sigs):
     cfg = ctx.cfg
     if not any(s in cfg["signatures"] for s in sigs):
-        raise _Skip(f"positivity panel {name} lists no signature of this project: choose its signatures in "
-                    f"Parameters > Figures > Positivity panels")
+        raise _Skip(f"positivity panel {name} lists no signature of this project: list its signatures in "
+                    f"figures.positivity_panels")
     native = ctx.load(NATIVE_CSV, ["signature", "sample"])
     if "pct_positive" not in native.columns and not {"n_positive", "n_bins"} <= set(native.columns):
         raise _Skip(f"{NATIVE_CSV} has neither pct_positive nor n_positive and n_bins")
@@ -1708,7 +1708,7 @@ def _prep_6b(ctx):
     if cfg["steps"].get("receptor_panel", True) and not any(g in cfg["receptor_panel"] for g in shown):
         # [APP] a panel of other genes (validate_config warns): the setting to change, not only the table
         raise _Skip(f"figures.receptor_genes ({_join(shown) or 'empty'}) names no gene of the host receptor panel: "
-                    f"choose the genes of Figure 6b in Parameters > Figures > Receptor genes shown in Figure 6b")
+                    f"list the genes of Figure 6b there")
     return _prep_detection(ctx, RECEPTOR_CSV, "receptor_panel", list(cfg["figures"]["receptor_genes"]), FIG6B,
                            "Figure 6b — host receptor panel", "Host receptor panel.",
                            bool(cfg["figures"].get("receptor_shade_first_two")), False, cfg["receptor_panel"])
@@ -1768,7 +1768,7 @@ def _prep_sensitivity(ctx, module, key=None):
         if cfg["steps"].get("sensitivity_analyses", True) and step and not cfg["steps"].get(step, True):
             raise _Skip(_absent(cfg, name, step))
         if key == "proximity" and not cfg["proximity"].get("pairs"):
-            raise _Skip("no proximity pairs (Parameters > Proximity pairs)")
+            raise _Skip("no proximity pairs (proximity.pairs)")
         raise _Skip(_absent(cfg, name, "sensitivity_analyses"))
     rows = module.INPUTS[_SENSITIVITY_NEED_ROWS[key]] if key in _SENSITIVITY_NEED_ROWS else None
     if rows and (ctx.results / rows).is_file():

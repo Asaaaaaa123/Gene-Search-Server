@@ -2,7 +2,7 @@
 """
 tools/make_demo_data.py
 =======================
-Synthetic Visium HD data for Bone Spatial Studio: Space Ranger 3 binned outputs (square_008um/ and square_016um/) of
+Synthetic Visium HD data for Popcorn: Space Ranger 3 binned outputs (square_008um/ and square_016um/) of
 two mouse tibia sections, a control and a tumor-bearing one, used by the demo project of the web application and by
 the tests. The data are simulated; nothing in them is measured.
 

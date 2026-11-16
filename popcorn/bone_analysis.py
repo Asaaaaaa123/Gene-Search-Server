@@ -188,7 +188,7 @@ def _norm_bc(x):
     return re.sub(r"-\d+$", "", str(x).strip())
 
 
-def read_visium_hd(path, sample_name, condition=None, microns_per_pixel=None):
+def read_visium_hd(path, sample_name, condition=None, microns_per_pixel=None, spot_um=None):
     """
     [SHAMIM, MODIFIED] step 1, "Load Visium spatial data".
     Original: sc.read_visium(path) and adata.var_names_make_unique().
@@ -205,7 +205,16 @@ def read_visium_hd(path, sample_name, condition=None, microns_per_pixel=None):
     a.var_names_make_unique()                                                   # [SHAMIM] step 1
     a.obs_names = [_norm_bc(x) for x in a.obs_names.astype(str)]
     a.obs_names_make_unique()
-    tp = pd.read_parquet(spatial / "tissue_positions.parquet")
+    # [APP] 2026-11-14: standard Visium (Space Ranger outs/) writes the positions as CSV: tissue_positions.csv, or
+    # tissue_positions_list.csv without a header before Space Ranger 2.0. Visium HD's parquet is read as before.
+    if (spatial / "tissue_positions.parquet").is_file():
+        tp = pd.read_parquet(spatial / "tissue_positions.parquet")
+    elif (spatial / "tissue_positions.csv").is_file():
+        tp = pd.read_csv(spatial / "tissue_positions.csv")
+    else:
+        tp = pd.read_csv(spatial / "tissue_positions_list.csv", header=None,
+                         names=["barcode", "in_tissue", "array_row", "array_col", "pxl_row_in_fullres",
+                                "pxl_col_in_fullres"])
     bc = "barcode" if "barcode" in tp.columns else tp.columns[0]
     tp[bc] = tp[bc].astype(str).map(_norm_bc)
     tp = tp[tp[bc].isin(a.obs_names)].drop_duplicates(bc).set_index(bc).reindex(a.obs_names)
@@ -230,10 +239,58 @@ def read_visium_hd(path, sample_name, condition=None, microns_per_pixel=None):
     scalefactors = json.loads(sf.read_text()) if sf.exists() else {}
     if microns_per_pixel:
         scalefactors["microns_per_pixel"] = float(microns_per_pixel)
+    elif "microns_per_pixel" not in scalefactors and spot_um and scalefactors.get("spot_diameter_fullres"):
+        # [APP] standard Visium records no microns per pixel: a spot is spot_um (55 um) across
+        scalefactors["microns_per_pixel"] = float(spot_um) / float(scalefactors["spot_diameter_fullres"])
     a.uns["spatial"] = {sample_name: {"scalefactors": scalefactors}}
     a.obs["sample"] = sample_name
     a.obs["condition"] = condition or SAMPLES.get(sample_name, {}).get("condition", "unknown")
     return a
+
+
+def section_anndata(sec, sample_name, condition=None):
+    """[APP] 2026-11-14. A section read by spatial_readers (Xenium, MERSCOPE, CosMx, Stereo-seq, an .h5ad file or
+    plain tables) as the AnnData read_visium_hd makes of a Space Ranger section: the counts in X (float32 CSR, as
+    scanpy reads them), the units' ids as obs_names, the positions in obsm["spatial"] (in the section's own frame) with
+    their micrometres per unit as scalefactors["microns_per_pixel"], array_row and array_col for units on a grid."""
+    a = ad.AnnData(X=sp.csr_matrix(sec.X, dtype=np.float32),
+                   obs=pd.DataFrame(index=pd.Index(sec.barcodes, dtype=object)),
+                   var=pd.DataFrame(index=pd.Index(sec.genes, dtype=object)))
+    a.obsm["spatial"] = np.column_stack([sec.x, sec.y]).astype(float)
+    a.obs["in_tissue"] = 1
+    if sec.grid is not None:
+        a.obs["array_row"] = np.asarray(sec.grid[0], dtype=int)
+        a.obs["array_col"] = np.asarray(sec.grid[1], dtype=int)
+    a.uns["spatial"] = {sample_name: {"scalefactors": {"microns_per_pixel": float(sec.microns_per_unit)}}}
+    a.obs["sample"] = sample_name
+    a.obs["condition"] = condition or SAMPLES.get(sample_name, {}).get("condition", "unknown")
+    return a
+
+
+def read_section(cfg, sample, bin_size, progress=None):
+    """[APP] 2026-11-14. One section of a configuration, whatever instrument made it (pipeline_config.sample_platform):
+    Space Ranger outputs with read_visium_hd (Visium HD at `bin_size`, Visium spots), every other platform with
+    spatial_readers. Returns (AnnData, platform); FileNotFoundError or ValueError say what is missing or unreadable."""
+    import spatial_readers as sr
+    sid = sample["id"]
+    platform = pc.sample_platform(cfg, sample)
+    if platform in sr.TEN_X:
+        p = pc.section_dir(cfg, sample, bin_size)
+        if p is None:
+            where = f"square_{bin_size}/filtered_feature_bc_matrix.h5" if platform == "visium_hd" else \
+                "outs/filtered_feature_bc_matrix.h5 and outs/spatial/"
+            raise FileNotFoundError(f"{sid}: no {where} under {pc.sample_path(cfg, sample)}")
+        a = read_visium_hd(p, sid, sample.get("condition"), sample.get("microns_per_pixel"),
+                           spot_um=sr.VISIUM_SPOT_UM if platform == "visium" else None)
+        return a, platform
+    try:
+        loc = sr.locate(pc.sample_path(cfg, sample), platform, bin_um=pc.bin_um(bin_size))
+        sec = sr.read(loc, microns_per_unit=sample.get("microns_per_pixel") or None)
+    except sr.ReadError as exc:
+        raise ValueError(f"{sid}: {exc}") from exc
+    for note in sec.notes:
+        print(f"[{sid}] {note}")
+    return section_anndata(sec, sid, sample.get("condition")), platform
 
 
 def microns_per_pixel(a, sample) -> float:
@@ -1116,7 +1173,13 @@ def receptor_panel(a, panel=RECEPTOR_PANEL, n_reps=5, control="LL-2-1", tumour="
 # ============================================================================
 
 def _array_xy_um(adata, bin_um):
-    """[RUN] Bin positions in um from the array grid (adjacent bins are exactly bin_um apart; no pixel calibration)."""
+    """[RUN] Bin positions in um from the array grid (adjacent bins are exactly bin_um apart; no pixel calibration).
+    [APP] Units without a grid (cells of Xenium, MERSCOPE, CosMx, ...): their positions times their section's
+    micrometres per pixel."""
+    if "array_row" not in adata.obs or "array_col" not in adata.obs or adata.obs["array_row"].isna().any():
+        smp = adata.obs["sample"].astype(str).to_numpy()
+        mpp = np.array([microns_per_pixel(adata, s) for s in smp])
+        return np.asarray(adata.obsm["spatial"], dtype=float) * mpp[:, None]
     return np.column_stack([adata.obs["array_col"].to_numpy(float), adata.obs["array_row"].to_numpy(float)]) * bin_um
 
 
@@ -1540,11 +1603,8 @@ def load_sections(root, bin_str, samples=None, qc=None, progress=None):
     qc = qc or cfg["qc"]
     adatas, sweeps, loaded = {}, [], {}
     for s in samples or cfg["samples"]:
-        p = pc.resolve_bin_dir(cfg, s, bin_str)
-        if p is None:
-            raise FileNotFoundError(f"{s['id']}: no square_{bin_str}/filtered_feature_bc_matrix.h5 under "
-                                    f"{Path(str(cfg['data_root'])) / str(s.get('path') or s['id'])}")
-        a = qc_metrics(read_visium_hd(p, s["id"], s.get("condition"), s.get("microns_per_pixel")))
+        # [APP] 2026-11-14: any instrument's section (read_section); Visium HD as before
+        a = qc_metrics(read_section(cfg, s, bin_str, progress)[0])
         loaded[s["id"]] = a.n_obs
         sweeps.append(qc_sweep(a, s["id"], qc.get("sweep_thresholds", (0, 5, 10, 25, 50, 100, 200))))
         a = qc_filter(a, qc["min_genes"], qc["min_counts"], qc["max_pct_mt"])
@@ -1729,13 +1789,13 @@ def _run(cfg, out, progress):
             per_bin, sweeps = [], []
             for s in cfg["samples"]:
                 size = cfg["qc_bin_size"]
-                d = pc.resolve_bin_dir(cfg, s, size)
-                if d is None:
+                if pc.sample_platform(cfg, s) == "visium_hd" and pc.resolve_bin_dir(cfg, s, size) is None:
                     _warn(progress, f"{s['id']}: no square_{size} folder; Supplementary Figure S1 uses the "
                                     f"{cfg['bin_size']} bins")
                     size = cfg["bin_size"]
-                    d = pc.resolve_bin_dir(cfg, s, size)
-                x = qc_metrics(read_visium_hd(d, s["id"], s.get("condition"), s.get("microns_per_pixel")))
+                elif pc.sample_platform(cfg, s) in ("visium", "xenium", "merscope", "cosmx", "h5ad", "table"):
+                    size = cfg["bin_size"]                     # [APP] one size of unit only (spots, cells)
+                x = qc_metrics(read_section(cfg, s, size, progress)[0])
                 per_bin.append(x.obs[["n_genes_by_counts", "total_counts", "pct_counts_mt"]].assign(sample=s["id"], bin_size=size)
                                [["sample", "bin_size", "n_genes_by_counts", "total_counts", "pct_counts_mt"]])
                 sweeps.append(qc_sweep(x, s["id"], cfg["qc"]["sweep_thresholds"]).assign(bin_size=size))
@@ -1838,8 +1898,8 @@ def _run(cfg, out, progress):
         cp = cfg["compartments"]
         # [APP] a signature without calls (validate_config refuses it while the step is on): skipped, not done
         no_split = (None if f"pos_{cp['signature']}" in a.obs and f"score_{cp['split_by']}" in a.obs else
-                    f"needs a positivity call for {cp['signature']} and a score for {cp['split_by']} (Parameters > "
-                    f"Osteoclast compartments)")
+                    f"needs a positivity call for {cp['signature']} and a score for {cp['split_by']} "
+                    f"(compartments.signature, compartments.split_by)")
         if begin("compartments", unavailable=no_split):
             # [APP] the manuscript's compartment names only for its osteoclast / chondrocyte split
             gp_name, ta_name = names = pc.compartment_names(cfg)
@@ -1898,7 +1958,7 @@ def _run(cfg, out, progress):
         unc = cfg["uncoupling"]
         prefix = {"pooled_dm": "pooled_dm_", "pooled": "pooled_", "native": ""}[unc["calls"]]
         no_calls = (None if f"{prefix}pos_{unc['a']}" in a.obs and f"{prefix}pos_{unc['b']}" in a.obs else
-                    f"{unc['a']} and {unc['b']} need positivity calls (Parameters > Distance to nearest partner)")
+                    f"{unc['a']} and {unc['b']} need positivity calls (uncoupling.a, uncoupling.b)")
         if begin("uncoupling", ("assignment",) if prefix else (), unavailable=no_calls):
             summ, dist = uncoupling_metric(a, f"{prefix}pos_{unc['a']}", f"{prefix}pos_{unc['b']}",
                                            bin_um=pc.bin_um(cfg["bin_size"]), n_perm=unc["n_perm"],
@@ -1910,7 +1970,7 @@ def _run(cfg, out, progress):
                   "Distances observed and under the random-placement null (counts per replicate).")
             done.add("uncoupling")
         prox = cfg["proximity"]
-        no_pairs = None if prox["pairs"] else "no proximity pairs (Parameters > Proximity pairs)"
+        no_pairs = None if prox["pairs"] else "no proximity pairs (proximity.pairs)"
         if begin("proximity", unavailable=no_pairs):
             tables["prox"] = []
             for pair in prox["pairs"]:
@@ -2009,7 +2069,7 @@ def _sensitivity_analyses(a, cfg, W, progress, done):
         if n_flag and not any(n in cfg["signatures"] for n in ("osteoclast", "osteoblast")):
             _warn(progress, f"sensitivity analyses: {n_flag:,} bins express the A549 lesion genes "
                             f"({', '.join(found)}) and are reported as A549 lesion; unless the tissue holds an A549 "
-                            f"lesion, empty the list in Parameters > Sensitivity analyses: A549 lesion flag")
+                            f"lesion, empty the list (sensitivity_analyses.lesion.genes: [])")
     # [APP] each module runs only when the steps it re-examines ran (2026-11-03): switching off Figure 4h, 4i or the
     # proximity tables also switches off their sensitivity analysis, and a module never meets signatures that a
     # switched-off step was allowed to leave invalid

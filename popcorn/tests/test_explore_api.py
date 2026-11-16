@@ -205,7 +205,7 @@ def test_explore_samples(client, tiny_demo):
         n = int((positions["in_tissue"] == 1).sum())
         assert entry == {"id": sample["id"], "label": sample["label"], "condition": sample["condition"],
                          "color": sample["color"], "n_bins": n, "has_image": True, "ok": True,
-                         "message": f"{n:,} bins at 016um"}
+                         "message": f"{n:,} bins at 016um", "platform": "visium_hd", "unit": "bin"}
 
     # unsaved edits are explored instead of the saved configuration
     cfg = p["config"]

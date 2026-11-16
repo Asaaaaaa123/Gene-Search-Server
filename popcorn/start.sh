@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Bone Spatial Studio on macOS or Linux.
+# Start Popcorn on macOS or Linux.
 #
 #   ./start.sh                            (or: bash start.sh)
 #   ./start.sh --port 8800 --no-browser   every argument is passed on to "python -m webapp"

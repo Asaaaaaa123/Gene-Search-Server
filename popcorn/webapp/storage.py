@@ -1,7 +1,7 @@
 """
 webapp/storage.py
 =================
-Projects and runs of Bone Spatial Studio on disk (docs/ARCHITECTURE.md, section 4):
+Projects and runs of Popcorn on disk (docs/ARCHITECTURE.md, section 4):
 
     <workspace>/projects/<pid>/project.json      {"id", "name", "created", "updated", "config"}
     <workspace>/projects/<pid>/rois/<sid>.geojson
@@ -10,6 +10,10 @@ Projects and runs of Bone Spatial Studio on disk (docs/ARCHITECTURE.md, section 
     <workspace>/runs/<rid>/rois/<sid>.geojson    copies of the drawn regions at submission time
     <workspace>/runs/<rid>/log.txt               worker output (webapp.jobs)
     <workspace>/runs/<rid>/results/              analysis outputs
+    <workspace>/runs/<rid>/analyses/<aid>.json   a card of the Analysis tab: tool, settings, status (webapp.analysis)
+    <workspace>/runs/<rid>/analyses/<aid>.result.json, <aid>.npz   its result and per-bin values
+    <workspace>/runs/<rid>/regions.json          regions drawn on the run's sections in the Analysis tab
+    <workspace>/templates/<tid>.json             a saved set of analyses that can be applied to any run
     <workspace>/demo_data/                       synthetic data (tools/make_demo_data.py)
 
 Every JSON file is written atomically (temporary file + os.replace) while holding a lock shared by all Storage objects
@@ -39,6 +43,9 @@ log = logging.getLogger("bss.storage")
 
 PROJECT_ID_RE = re.compile(r"^p-[0-9a-f]{8}\Z")
 RUN_ID_RE = re.compile(r"^r-\d{8}-\d{6}-[0-9a-f]{4}\Z")
+ANALYSIS_ID_RE = re.compile(r"^a-[0-9a-f]{10}\Z")
+TEMPLATE_ID_RE = re.compile(r"^t-[0-9a-f]{8}\Z")
+ARRAY_NAME_RE = re.compile(r"^[A-Za-z0-9_.:\-]{1,120}\Z")
 # The rule pipeline_config.validate_config applies to sample ids; it also keeps rois/<sid>.geojson inside rois/.
 SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}\Z")
 _WINDOWS_DEVICE_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
@@ -195,9 +202,11 @@ class Storage:
         except ValueError as exc:
             raise StorageError(f"{path} is not valid JSON ({exc})") from exc
 
-    def write_json(self, path: Path, data) -> None:
+    def write_json(self, path: Path, data, compact: bool = False) -> None:
+        """compact: no indentation (results of the Analysis tab: tens of thousands of numbers)."""
         path = Path(path)
-        text = json.dumps(json_safe(data), indent=2, ensure_ascii=False, allow_nan=False)
+        text = json.dumps(json_safe(data), ensure_ascii=False, allow_nan=False,
+                          **({"separators": (",", ":")} if compact else {"indent": 2}))
         tmp = path.with_name(f".{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
         with self.lock:
             try:
@@ -405,3 +414,167 @@ class Storage:
             if not (d / "run.json").is_file():
                 raise NotFound(f"run {rid} not found")
             rmtree(d)
+
+    # ---- analyses: the cards of a run's Analysis tab (webapp.analysis) ------------------------------------------
+    def analyses_dir(self, rid) -> Path:
+        return self.run_dir(rid) / "analyses"
+
+    def _analysis_path(self, rid, aid, suffix: str = ".json") -> Path:
+        if not isinstance(aid, str) or not ANALYSIS_ID_RE.match(aid):
+            raise NotFound(f"analysis {aid!r} not found")
+        return self.analyses_dir(rid) / f"{aid}{suffix}"
+
+    def create_analysis(self, rid, tool: str, title: str, params: dict, view: dict | None = None) -> dict:
+        """A new card, status "running": {"id", "tool", "title", "params", "view", "status", "error", "created",
+        "updated", "seconds"}."""
+        d = self.analyses_dir(rid)
+        with self.lock:
+            d.mkdir(parents=True, exist_ok=True)
+            while True:
+                aid = f"a-{secrets.token_hex(5)}"
+                if not (d / f"{aid}.json").exists():
+                    break
+            now = now_iso()
+            card = {"id": aid, "tool": tool, "title": title, "params": params, "view": view or {},
+                    "status": "running", "error": None, "created": now, "updated": now, "seconds": None}
+            self.write_json(d / f"{aid}.json", card)
+        return card
+
+    def get_analysis(self, rid, aid, result: bool = False) -> dict:
+        """The card; with result=True also its "result" (None until the analysis has finished)."""
+        card = self.read_json(self._analysis_path(rid, aid), f"analysis {aid}")
+        if result:
+            try:
+                card["result"] = self.read_json(self._analysis_path(rid, aid, ".result.json"))
+            except NotFound:
+                card["result"] = None
+        return card
+
+    def save_analysis(self, rid, card: dict) -> dict:
+        """Write the card (never its result) with a new "updated" time; NotFound when it was deleted meanwhile."""
+        path = self._analysis_path(rid, card["id"])
+        with self.lock:
+            if not path.is_file():
+                raise NotFound(f"analysis {card['id']} not found")
+            data = {k: v for k, v in card.items() if k != "result"}
+            data["updated"] = now_iso()
+            self.write_json(path, data)
+        return data
+
+    def save_analysis_result(self, rid, aid, result: dict, arrays: dict | None = None) -> None:
+        """The result of a card and its per-bin arrays ({name: 1-D float array}, kept in <aid>.npz)."""
+        import numpy as np
+        with self.lock:
+            if not self._analysis_path(rid, aid).is_file():
+                raise NotFound(f"analysis {aid} not found")
+            npz = self._analysis_path(rid, aid, ".npz")
+            if arrays:
+                bad = [name for name in arrays if not ARRAY_NAME_RE.match(name)]
+                if bad:
+                    raise BadRequest(f"invalid array name {bad[0]!r}")
+                tmp = npz.with_name(f".{npz.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+                try:
+                    with open(tmp, "wb") as fh:
+                        np.savez_compressed(fh, **{name: np.asarray(a, dtype=np.float32) for name, a in arrays.items()})
+                    _replace(tmp, npz)
+                except OSError as exc:
+                    tmp.unlink(missing_ok=True)
+                    raise StorageError(f"cannot write {npz}: {exc}") from exc
+            else:
+                npz.unlink(missing_ok=True)
+            self.write_json(self._analysis_path(rid, aid, ".result.json"), result, compact=True)
+
+    def analysis_array(self, rid, aid, name: str):
+        """One per-bin array of a card (float32), NotFound when it has none of that name."""
+        import numpy as np
+        path = self._analysis_path(rid, aid, ".npz")
+        if not isinstance(name, str) or not ARRAY_NAME_RE.match(name):
+            raise NotFound(f"analysis {aid} has no values {name!r}")
+        try:
+            with self.lock, np.load(path, allow_pickle=False) as data:
+                if name not in data.files:
+                    raise NotFound(f"analysis {aid} has no values {name!r}")
+                return data[name]
+        except FileNotFoundError:
+            raise NotFound(f"analysis {aid} has no values {name!r}") from None
+        except (OSError, ValueError) as exc:
+            raise StorageError(f"cannot read {path}: {exc}") from exc
+
+    def list_analyses(self, rid) -> list[dict]:
+        """The cards of a run without their results, newest first."""
+        d = self.analyses_dir(rid)
+        out = []
+        if d.is_dir():
+            for path in d.glob("a-*.json"):
+                if not ANALYSIS_ID_RE.match(path.stem):
+                    continue  # <aid>.result.json
+                try:
+                    out.append(self.read_json(path))
+                except StorageError as exc:
+                    log.warning("skipping analysis %s of run %s: %s", path.stem, rid, exc)
+        return _newest_first(out)
+
+    def delete_analysis(self, rid, aid) -> None:
+        with self.lock:
+            if not self._analysis_path(rid, aid).is_file():
+                raise NotFound(f"analysis {aid} not found")
+            for suffix in (".json", ".result.json", ".npz"):
+                self._analysis_path(rid, aid, suffix).unlink(missing_ok=True)
+
+    # ---- regions drawn on a run's sections ----------------------------------------------------------------------
+    def read_regions(self, rid) -> list[dict]:
+        try:
+            data = self.read_json(self.run_dir(rid) / "regions.json")
+        except NotFound:
+            return []
+        regions = data.get("regions") if isinstance(data, dict) else None
+        return [r for r in regions if isinstance(r, dict)] if isinstance(regions, list) else []
+
+    def write_regions(self, rid, regions: list[dict]) -> None:
+        with self.lock:
+            if not (self.run_dir(rid) / "run.json").is_file():
+                raise NotFound(f"run {rid} not found")
+            self.write_json(self.run_dir(rid) / "regions.json", {"regions": regions}, compact=True)
+
+    # ---- templates: sets of analyses that can be applied to any run ---------------------------------------------
+    @property
+    def templates_dir(self) -> Path:
+        return self.root / "templates"
+
+    def _template_path(self, tid) -> Path:
+        if not isinstance(tid, str) or not TEMPLATE_ID_RE.match(tid):
+            raise NotFound(f"template {tid!r} not found")
+        return self.templates_dir / f"{tid}.json"
+
+    def list_templates(self) -> list[dict]:
+        out = []
+        if self.templates_dir.is_dir():
+            for path in self.templates_dir.glob("t-*.json"):
+                if TEMPLATE_ID_RE.match(path.stem):
+                    try:
+                        out.append(self.read_json(path))
+                    except StorageError as exc:
+                        log.warning("skipping template %s: %s", path.stem, exc)
+        return _newest_first(out)
+
+    def get_template(self, tid) -> dict:
+        return self.read_json(self._template_path(tid), f"template {tid}")
+
+    def create_template(self, name: str, cards: list[dict]) -> dict:
+        """{"id", "name", "created", "cards": [{"tool", "title", "params", "view"}]}"""
+        with self.lock:
+            self.templates_dir.mkdir(parents=True, exist_ok=True)
+            while True:
+                tid = f"t-{secrets.token_hex(4)}"
+                if not (self.templates_dir / f"{tid}.json").exists():
+                    break
+            template = {"id": tid, "name": name, "created": now_iso(), "cards": cards}
+            self.write_json(self.templates_dir / f"{tid}.json", template)
+        return template
+
+    def delete_template(self, tid) -> None:
+        path = self._template_path(tid)
+        with self.lock:
+            if not path.is_file():
+                raise NotFound(f"template {tid} not found")
+            path.unlink()

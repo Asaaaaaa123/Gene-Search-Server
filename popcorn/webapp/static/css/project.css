@@ -1,4 +1,4 @@
-/* Bone Spatial Studio — project list, project editor (data, parameters, signatures, region of interest, run) and the
+/* Popcorn — project list, project editor (data, parameters, signatures, region of interest, run) and the
    input widgets they use. Base tokens and components come from app.css. */
 
 :root {
@@ -175,7 +175,10 @@ button.vchip:hover { border-color: currentColor; }
 .report-status .muted { font-weight: 400; }
 .report-h { margin-top: 6px; }
 .report p { margin: 0; }
-.report-table .path-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-table td.mono { white-space: nowrap; }
+.report-table .report-ref { margin-left: 6px; }
+.report-table .report-label { font-family: var(--font); }
+.report-cond { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .report-genes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .report-genes-title { font-weight: 600; }
 /* the bin count of a section that was found: a quiet link into the Explore tab (its arrow shows on hover or focus) */
@@ -225,6 +228,11 @@ tr.dx-click:hover .dx-row-btn, .dx-row-btn:focus-visible { color: var(--accent-t
 .dx-row-msg .spinner { width: 14px; height: 14px; border-width: 2px; }
 .dx-act { width: 1%; text-align: right; }
 .dx-qc { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+/* the quality-control thresholds (they were in the Parameters tab) */
+.dx-qc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.dx-qc-title { flex: 0 0 100%; font-size: 12px; font-weight: 650; color: var(--text); }
+.dx-qc-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.dx-qc-field .input { width: 130px; font-weight: 400; }
 .dx-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-muted); }
 .dx-notes li { display: flex; align-items: flex-start; gap: 6px; }
 .dx-notes li > .icon { margin-top: 3px; color: var(--info); }
@@ -423,6 +431,8 @@ tr.dx-click:hover .dx-row-btn, .dx-row-btn:focus-visible { color: var(--accent-t
 .plan-step.off > .icon { color: var(--text-faint); }
 .plan-step.slow { padding: 2px 0; }
 .plan-det { padding-top: 10px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plan-help { flex: 0 0 100%; padding-left: 44px; }
+.plan-note { margin: 0; }
 .start-btn { height: 40px; padding: 0 22px; font-size: 14.5px; }
 .run-progress { display: flex; align-items: center; gap: 8px; }
 .run-progress .progress { flex: 1 1 auto; min-width: 80px; }

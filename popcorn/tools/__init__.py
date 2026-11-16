@@ -1,1 +1,1 @@
-"""Helper tools of Bone Spatial Studio (synthetic demo data)."""
+"""Helper tools of Popcorn (synthetic demo data)."""

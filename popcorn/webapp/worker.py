@@ -1,7 +1,7 @@
 """
 webapp/worker.py
 ================
-`python -m webapp.worker <run_dir>`: one analysis run of Bone Spatial Studio, started by webapp.jobs in its own process.
+`python -m webapp.worker <run_dir>`: one analysis run of Popcorn, started by webapp.jobs in its own process.
 
 Reads <run_dir>/config.json, reports progress as pipeline_config.Progress events (@@EVENT lines on stdout), runs
 bone_analysis.run_analysis_from_config into <run_dir>/results and then, when steps.figures is on,

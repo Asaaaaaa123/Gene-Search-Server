@@ -1,5 +1,5 @@
 <#
-Start Bone Spatial Studio on Windows.
+Start Popcorn on Windows.
 
   .\start.ps1                          (if scripts are blocked: powershell -ExecutionPolicy Bypass -File .\start.ps1)
   .\start.ps1 --port 8800 --no-browser   every argument is passed on to "python -m webapp"

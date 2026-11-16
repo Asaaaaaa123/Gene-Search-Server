@@ -353,7 +353,7 @@ export function roiEditor({ projectId, cfg, store, savedRois, getVersion, sample
   const analysisNotes = h('div', { class: 'stack' });
   mount(sideAnalysis, useSwitch,
     h('p', { class: 'muted small' }, 'When on, each section is restricted to the bins inside its drawn region, intersected with the '
-      + 'transcriptional region of interest (Parameters → Region of interest). Sections without a drawn region are not restricted. '
+      + 'transcriptional region of interest (bins scoring above the 90th percentile for skeletal muscle, nerve or smooth muscle are left out). Sections without a drawn region are not restricted. '
       + 'This switch is a project setting (Save in the bar at the bottom of the page, or Ctrl+S); regions are saved with “Save region”.'),
     analysisNotes);
 
@@ -838,7 +838,9 @@ export function roiEditor({ projectId, cfg, store, savedRois, getVersion, sample
       if (err.status === 404) {
         showMessage(emptyState({
           icon: 'image', title: 'No H&E image for this section',
-          text: `${err.message}. Regions are drawn on spatial/tissue_hires_image.png of the section's Space Ranger output; check its folder in the Data tab.`,
+          // another instrument's section: the server says where its regions are drawn instead
+          text: /Analysis tab/.test(err.message) ? `${err.message}.`
+            : `${err.message}. Regions are drawn on spatial/tissue_hires_image.png of the section's Space Ranger output; check its folder in the Data tab.`,
         }));
       } else {
         showMessage(errorPanel(err, { retry: () => loadSample() }));

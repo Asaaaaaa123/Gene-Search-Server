@@ -1,6 +1,8 @@
-// run.js — one run: header (status, times, actions) and the tabs progress | summary | figures | tables | viewer |
+// run.js — one run: header (status, times, actions) and the tabs progress | summary | analysis | tables | viewer |
 // config. The run record is polled every 1.5 s while the run is queued or running. Results are fetched when their tab
 // is first opened and kept in memory while the view lives; they are fetched again once after the run finishes.
+// The Analysis tab (components/analysis.js) is where the user makes the charts they want, with tools, from the run's
+// results; the run itself draws no figures in the application.
 // Header actions: Export (a menu of zip downloads), Re-run and a "Run actions" menu (open the project, delete the run);
 // Cancel joins them while the run is queued or running.
 import {
@@ -9,7 +11,7 @@ import {
 } from '../core.js';
 import { logView, downloadText } from '../components/log-view.js';
 import { tableBrowser, fileUrl, formatNumber } from '../components/table-viewer.js';
-import { figureGallery } from '../components/figure-gallery.js';
+import { analysisWorkbench } from '../components/analysis.js';
 import { spatialViewer, runSource } from '../components/spatial-viewer.js';
 
 const ACTIVE = new Set(['queued', 'running']);
@@ -18,18 +20,18 @@ const POLL_MS = 1500;
 const TABS = [
   { id: 'progress', label: 'Progress', icon: 'activity' },
   { id: 'summary', label: 'Summary', icon: 'chart' },
-  { id: 'figures', label: 'Figures', icon: 'image' },
+  { id: 'analysis', label: 'Analysis', icon: 'flask' },
   { id: 'tables', label: 'Tables', icon: 'table' },
   { id: 'viewer', label: 'Spatial viewer', icon: 'map' },
   { id: 'config', label: 'Configuration', icon: 'sliders' },
 ];
-const RESULT_TABS = new Set(['summary', 'figures', 'tables', 'viewer']);
+const TAB_ALIASES = { figures: 'analysis' };   // addresses kept from before the Analysis tab replaced the figures
+const RESULT_TABS = new Set(['summary', 'analysis', 'tables', 'viewer']);
 const STEP_TEXT = { pending: 'pending', running: 'running', done: 'done', skipped: 'skipped', failed: 'failed' };
 const WARNINGS_SHOWN = 8;
 const PER_BIN_TABLE = /^per_bin_signature_calls_\d+um\.csv\.gz$/;
-// files of a run that GET /export/results?part=tables and ?part=figures put in their zips (server.py results_zip)
+// files of a run that GET /export/results?part=tables puts in its zip (server.py results_zip)
 const TABLE_FILE = /\.(?:csv|tsv)(?:\.gz)?$/i;
-const FIGURE_FILE = /^figures\/.+\.(?:png|pdf)$/i;
 
 const isColor = (c) => typeof c === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
 const numOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -45,7 +47,14 @@ function secondsText(s) {
   return v < 10 ? `${v.toFixed(1)} s` : fmt.duration(v);
 }
 
+// the platforms whose units are square bins of the analysis bin size (spatial_readers.PLATFORMS)
+const BIN_PLATFORMS = new Set(['visium_hd', 'stereo_seq']);
+
+/** The bin size of a run in µm; NaN (the maps then use the spacing of the points) when a section holds spots or
+ * cells (the run's snapshot names each sample's platform). */
 function binUmOf(cfg) {
+  const samples = cfg && Array.isArray(cfg.samples) ? cfg.samples : [];
+  if (samples.some((s) => s && s.platform && !BIN_PLATFORMS.has(s.platform))) return NaN;
   const m = cfg && /^(\d{3})um$/.exec(String(cfg.bin_size || ''));
   return m ? Number(m[1]) : NaN;
 }
@@ -326,8 +335,10 @@ export async function renderRun(container, { id, tab }) {
 
   const st = {
     run: first, destroyed: false, gone: false, cache: {},
-    logStore: {}, tableStore: {}, viewerStore: {}, tracebackOpen: false, warningsOpen: false,
+    logStore: {}, tableStore: {}, viewerStore: {}, analysisStore: {}, viewerShow: null,
+    tracebackOpen: false, warningsOpen: false,
   };
+  if (TAB_ALIASES[tab]) tab = TAB_ALIASES[tab];
   const known = TABS.some((t) => t.id === tab);
   st.tab = known ? tab : (ACTIVE.has(first.status) ? 'progress' : 'summary');
   if (tab && !known) setPathSilently(`/runs/${enc}/${st.tab}`);
@@ -436,15 +447,10 @@ export async function renderRun(container, { id, tab }) {
   // ---- export: zips of the results, built by the server on request
   const EXPORTS = {
     all: {
-      label: 'All results', icon: 'folder', hint: 'Figures, tables, summary, configuration and log (.zip)',
+      label: 'All results', icon: 'folder', hint: 'Tables, summary, configuration and log (.zip)',
       what: 'the results', preparing: 'Preparing the results for download…',
       url: apiUrl(`/api/runs/${enc}/export/results`), file: `${id}_results.zip`,
-      note: 'Data objects (.h5ad) are not included; the Tables tab downloads them one by one.',
-    },
-    figures: {
-      label: 'Figures', icon: 'image', hint: 'PNG and PDF (.zip)',
-      what: 'the figures', preparing: 'Preparing the figures for download…',
-      url: apiUrl(`/api/runs/${enc}/export/results`, { part: 'figures' }), file: `${id}_figures.zip`,
+      note: 'Data objects (.h5ad) are not included; the Tables tab downloads them one by one. The charts of the Analysis tab are downloaded from their cards.',
     },
     tables: {
       label: 'Tables', icon: 'table', hint: 'CSV files (.zip)',
@@ -483,14 +489,12 @@ export async function renderRun(container, { id, tab }) {
   function exportItems() {
     const active = isActive();
     // what the manifest (fetched for a finished run) already says is missing; unknown -> left to the server. The server
-    // zips files by their type, whatever list of the manifest they are in (a table of another kind is in "other", a
-    // figure missing from figures/manifest.json too), so every listed file is looked at.
+    // zips files by their type, whatever list of the manifest they are in (a table of another kind is in "other"), so
+    // every listed file is looked at.
     const m = cachedManifest();
     const listOf = (k) => (m && Array.isArray(m[k]) ? m[k].filter((x) => x && typeof x === 'object') : []);
     const files = ['tables', 'objects', 'other'].flatMap(listOf).map((x) => String(x.file || ''));
     const missing = m ? {
-      figures: listOf('figures').some((f) => f.png_url || f.pdf_url) || files.some((f) => FIGURE_FILE.test(f))
-        ? null : 'This run has no figures',
       tables: files.some((f) => TABLE_FILE.test(f)) ? null : 'This run wrote no tables',
       loupe: files.some((f) => PER_BIN_TABLE.test(f)) ? null : 'This run has no per-bin table to export',
     } : {};
@@ -502,7 +506,7 @@ export async function renderRun(container, { id, tab }) {
       else if (missing[kind]) off = missing[kind];
       return { label: x.label, icon: x.icon, hint: off || x.hint, disabled: !!off, onClick: () => exportZip(kind) };
     };
-    return [{ heading: 'Download' }, item('all'), item('figures'), item('tables'), 'separator', item('loupe')];
+    return [{ heading: 'Download' }, item('all'), item('tables'), 'separator', item('loupe')];
   }
 
   function setNotice(node) {
@@ -519,9 +523,6 @@ export async function renderRun(container, { id, tab }) {
     }
     const m = cachedManifest();
     if (!m) return {};
-    if (tid === 'figures' && Array.isArray(m.figures) && m.figures.length) {
-      return { badge: m.figures.length, badgeKind: m.figures.some((f) => f && f.error) ? 'warn' : '' };
-    }
     if (tid === 'tables' && Array.isArray(m.tables) && m.tables.length) return { badge: m.tables.length };
     return {};
   }
@@ -568,7 +569,7 @@ export async function renderRun(container, { id, tab }) {
     if (pane && pane.destroy) pane.destroy();
     pane = null;
     const token = ++paneToken;
-    const builders = { progress: progressPane, summary: summaryPane, figures: figuresPane, tables: tablesPane, viewer: viewerPane, config: configPane };
+    const builders = { progress: progressPane, summary: summaryPane, analysis: analysisPane, tables: tablesPane, viewer: viewerPane, config: configPane };
     const show = (p) => {
       pane = p;
       mount(bodyEl, p.el);
@@ -714,37 +715,23 @@ export async function renderRun(container, { id, tab }) {
     return { el: card({ body: emptyState({ icon: iconName, title: isActive() ? 'No results yet' : 'No summary', text }) }) };
   }
 
-  async function figuresPane() {
-    const m = await getManifest();
-    paintTabs();
-    const figures = m && Array.isArray(m.figures) ? m.figures : [];
-    const cfg = st.run.config || {};
-    if (!figures.length) {
-      let text;
-      if (cfg.steps && cfg.steps.figures === false) {
-        text = 'Figures were not drawn because the “Draw figures” step was turned off for this run. Turn it on and run again, or draw them from the command line with bone_figures.py.';
-      } else if (isActive()) {
-        text = 'Figures are drawn at the end of the run, from its tables.';
-      } else if (st.run.status === 'succeeded') {
-        text = 'This run has no figures.';
-      } else {
-        text = 'The run stopped before any figure was drawn.';
-      }
-      return { el: card({ body: emptyState({ icon: 'image', title: 'No figures', text }) }) };
+  function analysisPane() {
+    if (isActive()) {
+      return {
+        el: card({
+          body: emptyState({
+            icon: 'flask', title: 'Available when the run has finished',
+            text: 'The analysis tools work on the results of the run: its per-bin table and the raw counts of its sections. The Progress tab shows how far it has got.',
+          }),
+        }),
+      };
     }
-    // one download for every figure; each figure's own PNG and PDF are in its viewer
-    const active = isActive();
-    const downloadAll = button({
-      label: 'Download all', icon: 'download', small: true, kind: 'ghost', disabled: active,
-      title: active ? 'Available when the run has finished' : 'All figures as PNG and PDF (.zip)',
-      onClick: () => exportZip('figures'),
+    const w = analysisWorkbench({
+      runId: id, store: st.analysisStore, binUm: binUmOf(st.run.config),
+      // a gene clicked in a table of the Analysis tab: shown on the map of the Spatial viewer tab
+      onShowGenes: (genes) => { st.viewerShow = { genes }; selectTab('viewer'); },
     });
-    const g = figureGallery({ figures, actions: downloadAll });
-    return {
-      el: h('div', { class: 'stack' },
-        isActive() ? banner('info', 'The run is still in progress; more figures may appear when it finishes.') : null, g.el),
-      destroy: g.destroy,
-    };
+    return { el: w.el, destroy: w.destroy };
   }
 
   async function tablesPane() {
@@ -775,6 +762,11 @@ export async function renderRun(container, { id, tab }) {
     if (isActive()) emptyText = 'The per-bin map is available when the run finishes (it reads the per-bin signature calls).';
     else if (st.run.status !== 'succeeded') emptyText = 'The run stopped before writing the per-bin table (per_bin_signature_calls), so there is nothing to map.';
     const v = spatialViewer({ source: runSource(id), store: st.viewerStore, binUm: binUmOf(st.run.config), emptyText });
+    if (st.viewerShow) {
+      // asked for by the Analysis tab: the first panel colored by these genes
+      v.show({ panel: 0, genes: st.viewerShow.genes });
+      st.viewerShow = null;
+    }
     return { el: v.el, destroy: v.destroy };
   }
 
@@ -856,7 +848,7 @@ export async function renderRun(container, { id, tab }) {
   async function deleteRun() {
     const ok = await confirmDialog({
       title: 'Delete this run?',
-      message: `Run ${id} and all of its results, figures and log are removed from the workspace. This cannot be undone.`,
+      message: `Run ${id} and all of its results, analyses and log are removed from the workspace. This cannot be undone.`,
       confirmLabel: 'Delete run', danger: true,
     });
     if (!ok) return;
@@ -889,6 +881,7 @@ export async function renderRun(container, { id, tab }) {
   function onFinished() {
     st.cache = {};
     st.viewerStore = {};
+    st.analysisStore = {};
     refreshHealth();
     const r = st.run;
     if (r.status === 'cancelled') {

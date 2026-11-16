@@ -132,17 +132,51 @@ def test_upload_then_detect_and_validate(hosted, tiny_demo):
     assert not root.exists()
 
 
+def test_upload_a_xenium_bundle_then_detect_and_validate(hosted, tiny_demo):
+    """[APP] Another instrument's files on a hosted server: a Xenium bundle uploaded (its count and position files),
+    found by the sample detection and read by the data check."""
+    from tools import make_platform_data as mp
+    p = new_project(hosted, "xenium")
+    pid = p["id"]
+    src = Path(tiny_demo["root"]).parent / f"xenium-upload-{pid}"
+    d = mp.load_reference(Path(tiny_demo["samples"][0]["path"]) / "square_016um")
+    mp.write_xenium(src / "XEN-1", d)
+    for f in sorted((src / "XEN-1").iterdir()):
+        assert upload(hosted, pid, f"XEN-1/{f.name}", f.read_bytes()).json()["complete"]
+    info = hosted.get(f"/api/projects/{pid}/upload").json()
+    found = hosted.post(f"/api/projects/{pid}/detect-samples", json={"data_root": info["root"]}).json()
+    assert [(c["path"], c["platform"], c["unit"]) for c in found["candidates"]] == [("XEN-1", "xenium", "cell")]
+    cfg = {**p["config"], "samples": [{"id": "XEN-1", "path": "XEN-1", "condition": "control", "platform": "xenium"}],
+           "reference_sample": "XEN-1"}
+    assert hosted.put(f"/api/projects/{pid}", json={"config": cfg}).status_code == 200
+    report = hosted.post(f"/api/projects/{pid}/validate").json()
+    assert report["ok"], report["errors"]
+    assert report["samples"][0]["n_bins"] == d["X"].shape[0] and report["samples"][0]["unit"] == "cell"
+
+
 def test_upload_refusals(tmp_path):
     app = create_app(tmp_path / "ws", worker_module=FAKE, hosted=Hosted(max_upload_mb=1))
     with TestClient(app, base_url=PUBLIC) as c:
         pid = new_project(c)["id"]
         matrix = "S1/square_016um/filtered_feature_bc_matrix.h5"
-        for rel in ("S1/square_016um/notes.txt", "S1/outs/filtered_feature_bc_matrix.h5",
+        for rel in ("S1/square_016um/notes.txt", "S1/outs/raw_feature_bc_matrix.h5",
                     ".hidden/square_016um/filtered_feature_bc_matrix.h5", "S1/square_016um/spatial/other.png",
                     "C:/square_016um/filtered_feature_bc_matrix.h5",
-                    "S1/square_016um/spatial/x/tissue_hires_image.png"):
+                    "S1/square_016um/spatial/x/tissue_hires_image.png",
+                    "S1/square_016um/x/filtered_feature_bc_matrix.h5",
+                    # the other instruments: their transcript tables and images are not read
+                    "X1/transcripts.parquet", "X1/morphology_focus/ch0000_dapi.ome.tif", "C1/Run5_tx_file.csv.gz",
+                    "M1/detected_transcripts.csv", "X1/square_016um/cells.parquet", "V1/outs/spatial/x.png"):
             r = c.put(f"/api/projects/{pid}/upload/{rel}", params={"offset": 0, "size": 3}, content=b"abc")
             assert r.status_code == 400, rel
+        # [APP] Visium outs/ and the count and position files of the other instruments are uploaded
+        for rel in ("V1/outs/filtered_feature_bc_matrix.h5", "V1/outs/spatial/tissue_positions_list.csv",
+                    "X1/cell_feature_matrix.h5", "X1/cells.parquet", "M1/cell_by_gene.csv",
+                    "M1/cell_metadata.csv", "C1/Run5_exprMat_file.csv.gz", "C1/Run5_metadata_file.csv.gz",
+                    "S1/chip.tissue.gef", "A/one.h5ad", "T/matrix.mtx.gz", "T/coordinates.csv"):
+            r = c.put(f"/api/projects/{pid}/upload/{rel}", params={"offset": 0, "size": 3}, content=b"abc")
+            assert r.status_code == 200 and r.json()["complete"], (rel, r.text)
+        assert c.delete(f"/api/projects/{pid}/upload").json()["files"] == []
         put = lambda rel, offset, size, body: c.put(f"/api/projects/{pid}/upload/{rel}",  # noqa: E731
                                                     params={"offset": offset, "size": size}, content=body)
         assert put(matrix, 0, 2 << 20, b"x").status_code == 413          # larger than the project may upload

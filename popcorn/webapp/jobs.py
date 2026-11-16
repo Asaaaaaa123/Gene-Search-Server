@@ -1,7 +1,7 @@
 """
 webapp/jobs.py
 ==============
-Job runner of Bone Spatial Studio (docs/ARCHITECTURE.md, section 6).
+Job runner of Popcorn (docs/ARCHITECTURE.md, section 6).
 
 One analysis at a time (they need a lot of memory), first in first out. A daemon thread takes the next queued run and
 starts `python -u -m webapp.worker <run_dir>` in the project root with stdout and stderr merged. Every output line is

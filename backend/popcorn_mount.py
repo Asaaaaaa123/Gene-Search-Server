@@ -1,5 +1,5 @@
 """
-Popcorn (Bone Spatial Studio, ../popcorn) served by this API at /popcorn.
+Popcorn (../popcorn) served by this API at /popcorn.
 
 The Visium HD bone-lesion application runs here as its hosted (public) variant: it reads data only from its data
 folders and the synthetic demo, keeps at most a few analyses queued, and starts each analysis in a worker subprocess

@@ -96,12 +96,25 @@ export function exploreState(cfg, key, previous = null) {
   };
 }
 
+// the quality-control thresholds of a run, set here where the bins they keep are counted: [key, label, step, min, max,
+// whole number]
+const QC_FIELDS = [
+  ['min_genes', (u) => `Genes per ${u}, more than`, 1, 0, 100000, true],
+  ['min_counts', (u) => `UMIs per ${u}, more than`, 1, 0, 10000000, false],
+  ['max_pct_mt', () => 'Mitochondrial UMIs (%), less than', 0.5, 0, 100, false],
+];
+// the platforms whose units are square bins of the analysis bin size (spatial_readers.PLATFORMS)
+const BIN_PLATFORMS = new Set(['visium_hd', 'stereo_seq']);
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
 /**
- * dataExplorer({projectId, name, state, getConfig, focus, onOpenData}) -> {el, destroy()}
+ * dataExplorer({projectId, name, state, getConfig, focus, onOpenData, defaultQc, onQcChange}) -> {el, destroy()}
  * state: exploreState(); getConfig() -> the current draft (labels and colors are read from it); focus: a section to
- * show first (a section's bin count in the Data tab); onOpenData(): switch to the Data tab.
+ * show first (a section's bin count in the Data tab); onOpenData(): switch to the Data tab. The quality-control
+ * thresholds of the draft (cfg.qc) are edited here; onQcChange() is called after a change (the caller reads the
+ * sections again with them); defaultQc: the default thresholds (Reset).
  */
-export function dataExplorer({ projectId, name = '', state: st, getConfig, focus = null, onOpenData }) {
+export function dataExplorer({ projectId, name = '', state: st, getConfig, focus = null, onOpenData, defaultQc = {}, onQcChange }) {
   let destroyed = false;
   let gen = 0; // bumped by reload() and destroy(): answers of an earlier generation are dropped
   let ctrl = new AbortController();
@@ -157,6 +170,54 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
   const tableHost = h('div', { class: 'dx-sections' });
   const qcLine = h('p', { class: 'dx-qc' });
   const notesHost = h('div');
+
+  // the thresholds of quality control: a change is written to the draft and the sections are counted again with it
+  const qcInputs = {};
+  const qcLabels = [];   // [label element, label(unit)]: the unit is known once the sections are listed
+  // what one row of the sections is: 'bin', 'spot', 'cell', or several of them ('bin/cell')
+  const unitList = () => {
+    const units = [...new Set((st.samples || []).map((s) => s.unit || 'bin'))];
+    return units.length ? units : ['bin'];
+  };
+  const unitOne = () => unitList().join('/');
+  const unitMany = () => unitList().map((u) => `${u}s`).join('/');
+  const draftQc = () => {
+    const cfg = getConfig() || {};
+    if (!cfg.qc || typeof cfg.qc !== 'object') cfg.qc = {};
+    return cfg.qc;
+  };
+  function commitQc() {
+    const qc = draftQc();
+    let changed = false;
+    for (const [key, , , min, max, whole] of QC_FIELDS) {
+      const input = qcInputs[key];
+      const v = Number(input.value);
+      const bad = input.value.trim() === '' || !Number.isFinite(v) || v < min || v > max || (whole && !Number.isInteger(v));
+      input.classList.toggle('invalid', bad);
+      input.title = bad ? `A ${whole ? 'whole ' : ''}number from ${min} to ${max}` : '';
+      if (!bad && qc[key] !== v) { qc[key] = v; changed = true; }
+    }
+    if (changed && onQcChange) onQcChange();
+  }
+  const qcForm = h('div', { class: 'dx-qc-form' },
+    h('div', { class: 'dx-qc-title' }, 'Quality control'),
+    QC_FIELDS.map(([key, label, step, min, max]) => {
+      const id = `dx-qc-${key}-${projectId}`;
+      const text = h('span', null, label(unitOne()));
+      qcLabels.push([text, label]);
+      const input = h('input', { class: 'input', id, type: 'number', step, min, max, value: draftQc()[key] ?? '', disabled: !onQcChange });
+      input.addEventListener('change', commitQc);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitQc(); } });
+      qcInputs[key] = input;
+      return h('label', { class: 'dx-qc-field', for: id }, text, input);
+    }),
+    onQcChange ? button({
+      label: 'Defaults', icon: 'undo', small: true, kind: 'ghost', title: 'Back to the default thresholds',
+      onClick: () => {
+        for (const [key] of QC_FIELDS) if (defaultQc[key] !== undefined) qcInputs[key].value = defaultQc[key];
+        commitQc();
+      },
+    }) : null);
   // a rare action: a quiet button in the card's header
   const reloadBtn = button({
     label: 'Read again', icon: 'refresh', small: true, kind: 'ghost', onClick: () => reload(),
@@ -164,9 +225,9 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
   });
   const summaryCard = card({
     title: 'Sections',
-    subtitle: 'The Space Ranger outputs as the analysis reads them, with the current settings (saved or not), before quality control and any run. Click a section to show it on the map.',
+    subtitle: 'The sections as the analysis reads them, with the current settings (saved or not), before quality control and any run. Click a section to show it on the map.',
     actions: reloadBtn,
-    body: h('div', { class: 'stack' }, tableHost, qcLine, notesHost),
+    body: h('div', { class: 'stack' }, tableHost, qcForm, qcLine, notesHost),
   });
   const mapHost = h('div', { class: 'dx-map' });
   const geneTitle = h('span', null, 'Genes');
@@ -313,14 +374,14 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
         : h('div', { class: 'dx-row-msg' }, sec.status === 'loading' ? h('span', { class: 'spinner' }) : icon('clock', { size: 14 }),
           h('span', null, sec.status === 'loading' ? 'Reading the counts…' : 'Waiting for its turn…'));
       return [
-        h('td', { class: 'num muted', title: 'Bins under tissue in the positions file' }, fmt.int(s.n_bins)),
+        h('td', { class: 'num muted', title: (s.unit || 'bin') === 'bin' && (!s.platform || s.platform === 'visium_hd') ? 'Bins under tissue in the positions file' : `${cap(s.unit || 'bin')}s of the section` }, fmt.int(s.n_bins)),
         h('td', { colSpan: 7 }, msg)];
     }
     const missing = Number(sum.n_without_position) || 0;
     return [
-      h('td', { class: 'num', title: `${fmt.int(sum.n_barcodes)} barcodes in the matrix${missing ? `, ${fmt.int(missing)} of them without a position under tissue (left out)` : ''}` }, fmt.int(sum.n_bins)),
+      h('td', { class: 'num', title: `${fmt.int(sum.n_barcodes)} ${!sum.platform || ['visium_hd', 'visium'].includes(sum.platform) ? 'barcodes in the matrix' : `${sum.unit || 'unit'}s in the counts`}${missing ? `, ${fmt.int(missing)} of them without a position (left out)` : ''}` }, fmt.int(sum.n_bins)),
       h('td', { class: 'num' }, fmt.int(sum.n_features)),
-      h('td', { class: 'num', title: `Mean ${fmt.num(sum.mean_umi, 1)} UMIs per bin` }, fmt.int(sum.total_umi)),
+      h('td', { class: 'num', title: `Mean ${fmt.num(sum.mean_umi, 1)} UMIs per ${sum.unit || 'bin'}` }, fmt.int(sum.total_umi)),
       h('td', { class: 'num' }, fmt.num(sum.median_umi, 1)),
       h('td', { class: 'num' }, fmt.num(sum.median_genes, 1)),
       h('td', { class: 'num' }, fmt.pct(sum.median_pct_mt, 2)),
@@ -360,9 +421,10 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
   function paintTable() {
     const samples = st.samples || [];
     rows = new Map();
+    for (const [text, label] of qcLabels) text.textContent = label(unitOne());   // the unit of the sections listed
     if (!samples.length) {
       mount(tableHost, emptyState({
-        icon: 'folder', title: 'No sections yet', text: 'Add the Space Ranger outputs in the Data tab, then come back here to look at them.',
+        icon: 'folder', title: 'No sections yet', text: 'Add the sections (Space Ranger outputs, or the outputs of other instruments) in the Data tab, then come back here to look at them.',
         action: onOpenData ? button({ label: 'Go to the Data tab', icon: 'folder', kind: 'primary', onClick: () => onOpenData() }) : null,
       }));
       return;
@@ -377,14 +439,14 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
     mount(tableHost, h('div', { class: 'table-wrap' }, h('table', { class: 'table compact dx-table' },
       h('thead', null, h('tr', null,
         th('Section', 'Click a section to show it on the map', false),
-        th('Bins', 'Bins under tissue with a position: the bins the analysis loads'),
-        th('Genes', 'Genes (Gene Expression features) in the matrix'),
+        th(cap(unitMany()), `${cap(unitMany())} with a position: the ${unitMany()} the analysis loads`),
+        th('Genes', 'Genes (Gene Expression features) in the matrix, control probes left out'),
         th('UMIs', 'All UMIs of the section (transcripts captured)'),
-        th('Median UMIs per bin'),
-        th('Median genes per bin', 'Median number of genes detected in a bin'),
-        th('Median % mitochondrial', 'Median share of the UMIs of a bin on mitochondrial genes (names starting with mt-)'),
-        th('Bins passing QC', 'Bins that pass the quality control of the current settings (see below)'),
-        th('µm per pixel', 'Microns per full-resolution pixel'))),
+        th(`Median UMIs per ${unitOne()}`),
+        th(`Median genes per ${unitOne()}`, `Median number of genes detected in a ${unitOne()}`),
+        th('Median % mitochondrial', `Median share of the UMIs of a ${unitOne()} on mitochondrial genes (names starting with mt-)`),
+        th(`${cap(unitMany())} passing QC`, `${cap(unitMany())} that pass the quality control of the current settings (see below)`),
+        th('µm per pixel', 'Micrometres per pixel of the positions: per full-resolution pixel of Space Ranger outputs, per unit of the coordinates of other instruments (1: micrometres)'))),
       h('tbody', null, trs))));
   }
 
@@ -394,16 +456,20 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
     const cfgQc = st.config && st.config.qc && typeof st.config.qc === 'object' ? st.config.qc : {};
     const qc = ok ? ok.summary.qc : cfgQc;
     const bin = st.binSize || (st.config && st.config.bin_size);
+    const binned = (st.samples || []).some((s) => !s.platform || BIN_PLATFORMS.has(s.platform));
     mount(qcLine,
-      bin ? `Analysis bin size ${binLabel(bin)} (square_${bin}). ` : null,
-      'Quality control (Parameters → Quality control): a bin passes with more than ', fmt.num(qc.min_genes), ' genes, more than ',
-      fmt.num(qc.min_counts), ' UMIs and less than ', fmt.num(qc.max_pct_mt), '% of its UMIs on mitochondrial genes.');
+      bin && binned ? `Analysis bin size ${binLabel(bin)} (square_${bin}). ` : null,
+      `A ${unitOne()} passes quality control with more than `, fmt.num(qc.min_genes), ' genes, more than ',
+      fmt.num(qc.min_counts), ' UMIs and less than ', fmt.num(qc.max_pct_mt), '% of its UMIs on mitochondrial genes; ',
+      `“${cap(unitMany())} passing QC” counts them, and a run keeps only those. Change the thresholds above: the table is counted again.`);
     const notes = [];
     for (const s of st.samples || []) {
       const sec = st.sections.get(s.id);
       if (!sec || !sec.summary) continue;
       const missing = Number(sec.summary.n_without_position) || 0;
-      if (missing) notes.push(`${sectionText(s.id)}: ${fmt.int(missing)} barcodes of the matrix have no position under tissue and are left out, as in the analysis.`);
+      // Space Ranger data; the readers of the other instruments say it in their own notes (below)
+      const spaceRanger = !sec.summary.platform || ['visium_hd', 'visium'].includes(sec.summary.platform);
+      if (missing && spaceRanger) notes.push(`${sectionText(s.id)}: ${fmt.int(missing)} barcodes of the matrix have no position under tissue and are left out, as in the analysis.`);
       for (const n of sec.notes || []) notes.push(`${sectionText(s.id)}: ${n}`);
     }
     mount(notesHost, notes.length ? h('ul', { class: 'dx-notes' }, notes.map((t) => h('li', null, icon('info', { size: 14 }), h('span', null, t)))) : null);
@@ -562,7 +628,9 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
         if (known) s.label = labelOf(known);
       }
     }
-    viewer = spatialViewer({ source, store: st.viewer, binUm: binUmOf(st.binSize || st.config.bin_size) });
+    // bins are drawn at the bin size; spots and cells at the spacing of their positions (estimated by the viewer)
+    const allBins = (st.samples || []).every((s) => !s.platform || BIN_PLATFORMS.has(s.platform));
+    viewer = spatialViewer({ source, store: st.viewer, binUm: allBins ? binUmOf(st.binSize || st.config.bin_size) : NaN });
     mount(mapHost, viewer.el);
     if (st.target >= panelCount()) st.target = 0;
     if (focus && readable().some((s) => s.id === focus)) viewer.show({ panel: st.target, sample: focus });
@@ -649,7 +717,7 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
       h('td', { class: 'mono dx-gene' }, show),
       h('td', { class: 'num' }, fmt.int(g.total_umi)),
       h('td', { class: 'num dx-col-bins' }, fmt.int(g.n_bins_detected)),
-      h('td', { title: `${fmt.int(g.n_bins_detected)} bins detect ${gene}` }, pctBar(g.pct_bins_detected)),
+      h('td', { title: `${fmt.int(g.n_bins_detected)} ${unitMany()} detect ${gene}` }, pctBar(g.pct_bins_detected)),
       h('td', { class: 'dx-act' }, actions));
     rowAction(tr, show, () => showGene(gene));
     geneRows.push({ gene, tr, show, toggle, actions });
@@ -723,8 +791,8 @@ export function dataExplorer({ projectId, name = '', state: st, getConfig, focus
         h('thead', null, h('tr', null,
           h('th', { class: 'dx-gene-th' }, 'Gene'), // its title follows the panel count (paintGeneRows())
           h('th', { class: 'num', title: 'UMIs of the gene in the whole section' }, 'UMIs'),
-          h('th', { class: 'num dx-col-bins', title: 'Bins with at least one UMI of the gene' }, 'Bins detecting it'),
-          h('th', { title: 'Share of the bins of the section that detect the gene' }, '% of bins'),
+          h('th', { class: 'num dx-col-bins', title: `${cap(unitMany())} with at least one UMI of the gene` }, `${cap(unitMany())} detecting it`),
+          h('th', { title: `Share of the ${unitMany()} of the section that detect the gene` }, `% of ${unitMany()}`),
           h('th', null, h('span', { class: 'sr-only' }, 'Layer')))),
         h('tbody', null, genes.map(geneRow)))),
       more ? h('div', { class: 'row' }, more) : null);

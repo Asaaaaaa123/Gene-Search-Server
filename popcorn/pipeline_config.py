@@ -337,8 +337,11 @@ _REPLACE = {"samples", "signatures", "classes", "primary", "programs", "receptor
             "growth_plate_masks"}
 
 # ============================================================================
-# PARAMETER SCHEMA (drives the "Parameters" form of the web application)
+# PARAMETER SCHEMA (every setting of a configuration with its label, type, range and help)
 # ============================================================================
+# [APP] 2026-11-13: this drove the "Parameters" form of the web application, which is gone (the application runs the
+# base run, see APP_STEPS, and asks for the settings of an analysis when a tool of the Analysis tab is used). It stays
+# as the description of a configuration file for the command line, and GET /api/defaults still returns it.
 # field types: int, float, bool, select (options), int_list, str_list, signature (one signature name),
 #              signature_list (several signature names)
 # A signature field may name the step that uses it ("uses_step": a steps key; switching that step off is the other way
@@ -563,17 +566,17 @@ STEP_LABELS = {
     "figures": "Draw figures",
 }
 
-# [APP] What each step is for (Parameters > Analysis steps), so that a lab studying other tissues or signatures can see
-# which steps are specific to the bone-lesion study (BONE_STUDY_STEPS) and point them at its own signatures or switch
-# them off.
+# [APP] What each step is for, so that a lab studying other tissues or signatures can see which steps are specific to
+# the bone-lesion study (BONE_STUDY_STEPS) and point them at its own signatures or switch them off (the command line;
+# the web application runs the steps of APP_STEPS only, see below).
 STEP_HELP = {
     "qc_figure_bins": "Genes, UMIs and mitochondrial share of every bin of the QC bin size before filtering, for the "
                       "histograms and retention curves of Supplementary Figure S1.",
     "receptor_panel": "Detection of each gene of the host receptor panel (Signatures tab; by default the "
                       "PTHrP/RANKL/OPG axis of the bone lesion) in the region of interest, raw and depth-matched "
                       "(Figure 6b). Any gene list works: replace the genes, or switch the step off. Figure 6b draws "
-                      "the genes listed under Parameters > Figures (by default the RANKL axis): choose them among the "
-                      "new panel's genes, and switch off the shading of the first two (RANKL and OPG).",
+                      "the genes of figures.receptor_genes (by default the RANKL axis): list genes of the new panel "
+                      "there, and switch off the shading of the first two (RANKL and OPG).",
     "adipocyte_panel": "The same detection table for the adipocyte genes of the Signatures tab (marrow adiposity, "
                        "Supplementary Figure S4). Replace the genes with any list of interest, or switch the step off.",
     "depth_matched": "Positivity recomputed after downsampling every section to the depth of the shallowest one (right "
@@ -614,6 +617,41 @@ PARAM_SCHEMA.append({
     "key": "steps", "title": "Analysis steps",
     "fields": [dict({"key": k, "label": lab, "type": "bool", "help": STEP_HELP[k]},
                     **({"study": "bone"} if k in BONE_STUDY_STEPS else {})) for k, lab in STEP_LABELS.items()]})
+
+# ============================================================================
+# THE BASE RUN OF THE WEB APPLICATION  [APP] 2026-11-13
+# ============================================================================
+# The web application no longer runs the analyses of one study before the user has asked a question. A run does what
+# every dataset needs: load and quality control, normalization, Leiden domains, signature scores and positivity calls,
+# the region of interest, the cell type of every bin and the per-bin table. The questions are asked afterwards, in the
+# Analysis tab of the run (webapp/analysis.py), where each former step is a tool whose settings are chosen when it is
+# used: differential expression (Figure 4h), distance and proximity (Figure 4i, the proximity tables), composition
+# (Figures 3b, 4g, 6a), expression of a gene list (Figure 6b, S4), spatially variable genes (Figure S2). The steps
+# below are the ones a run of the application may still switch (its Run tab); every other step of STEP_LABELS is off
+# in the application (app_config) and stays with the command line, which runs the configuration as it is written,
+# the manuscript analysis by default.
+APP_STEPS = {
+    "leiden": ("Leiden domains and their marker genes",
+               "Unsupervised domains of similar bins, with the marker genes of each and the screen for domains headed "
+               "by ubiquitous transcripts. A grouping for the map and the Analysis tab."),
+    "assignment": ("Cell type of every bin",
+                   "Each bin, pooled with its nearest bins, takes the highest-scoring signature that clears its "
+                   "threshold. The cell types and tissue classes of the map and of the Analysis tab come from it."),
+    "write_h5ad": ("AnnData file (.h5ad)",
+                   "The joint AnnData object (all sections, counts, scores, calls, domains) for further work in "
+                   "Python."),
+}
+APP_STEPS_OFF = tuple(k for k in STEP_LABELS if k not in APP_STEPS)
+
+
+def app_config(cfg: dict) -> dict:
+    """[APP] `cfg` as the web application runs it: every step that is now a tool of the Analysis tab, or that only the
+    manuscript needs (APP_STEPS_OFF), switched off; the steps of APP_STEPS as the configuration has them. A copy; a
+    configuration without a readable "steps" gets one."""
+    out = copy.deepcopy(cfg)
+    steps = out.get("steps") if isinstance(out.get("steps"), dict) else {}
+    out["steps"] = {**steps, **{k: False for k in APP_STEPS_OFF}}
+    return out
 
 # ============================================================================
 # HELPERS
@@ -725,6 +763,67 @@ def resolve_bin_dir(cfg: dict, sample: dict | str, bin_size: str | None = None) 
     return None
 
 
+def sample_path(cfg: dict, sample: dict | str) -> Path:
+    """[APP] The folder or file a sample entry points at (its path, relative to data_root unless absolute)."""
+    if isinstance(sample, str):
+        sample = sample_by_id(cfg, sample)
+    return _sample_base(cfg, sample)
+
+
+# [APP] 2026-11-14: the instruments whose outputs a sample may hold (spatial_readers.PLATFORMS); a sample entry may name
+# its platform ("platform"), else it is found from the files (sample_platform). Quality-control thresholds suited to
+# each: a 16 um Visium HD bin, a 55 um Visium spot, an imaged cell and a Stereo-seq bin hold very different numbers of
+# UMIs, and the gene panels of the imaging platforms have no mitochondrial genes. The Explore tab offers them.
+PLATFORM_IDS = ("visium_hd", "visium", "xenium", "merscope", "cosmx", "stereo_seq", "h5ad", "table")
+QC_PRESETS = {
+    "visium_hd": {"min_genes": 10, "min_counts": 15, "max_pct_mt": 20.0},
+    "visium": {"min_genes": 200, "min_counts": 500, "max_pct_mt": 25.0},
+    "xenium": {"min_genes": 3, "min_counts": 10, "max_pct_mt": 100.0},
+    "merscope": {"min_genes": 3, "min_counts": 10, "max_pct_mt": 100.0},
+    "cosmx": {"min_genes": 5, "min_counts": 20, "max_pct_mt": 100.0},
+    "stereo_seq": {"min_genes": 10, "min_counts": 15, "max_pct_mt": 20.0},
+    "h5ad": {"min_genes": 10, "min_counts": 15, "max_pct_mt": 20.0},
+    "table": {"min_genes": 10, "min_counts": 15, "max_pct_mt": 20.0},
+}
+_PLATFORM_CACHE: dict = {}
+
+
+def sample_platform(cfg: dict, sample: dict | str) -> str:
+    """[APP] The platform of a sample: the one its entry names, else the one its files come from
+    (spatial_readers.detect), else visium_hd (the manuscript's; its readers then say what is missing)."""
+    if isinstance(sample, str):
+        sample = sample_by_id(cfg, sample)
+    given = sample.get("platform") if isinstance(sample, dict) else None
+    if given in PLATFORM_IDS:
+        return given
+    base = _sample_base(cfg, sample)
+    try:
+        stamp = (str(base), base.stat().st_mtime_ns)
+    except OSError:
+        return "visium_hd"
+    if stamp not in _PLATFORM_CACHE:
+        import spatial_readers
+        if len(_PLATFORM_CACHE) > 256:
+            _PLATFORM_CACHE.clear()
+        _PLATFORM_CACHE[stamp] = spatial_readers.detect(base) or "visium_hd"
+    return _PLATFORM_CACHE[stamp]
+
+
+def section_dir(cfg: dict, sample: dict | str, bin_size: str | None = None) -> Path | None:
+    """[APP] The Space Ranger folder of a 10x sample that holds filtered_feature_bc_matrix.h5 and spatial/: its
+    square_<bin_size>/ folder (Visium HD) or its outs/ folder (Visium); None when there is none (or the sample is from
+    another platform)."""
+    if isinstance(sample, str):
+        sample = sample_by_id(cfg, sample)
+    platform = sample_platform(cfg, sample)
+    if platform == "visium":
+        import spatial_readers
+        return spatial_readers._visium_dir(_sample_base(cfg, sample))
+    if platform == "visium_hd":
+        return resolve_bin_dir(cfg, sample, bin_size)
+    return None
+
+
 def available_bin_sizes(cfg: dict, sample: dict | str) -> list[str]:
     """Bin sizes (e.g. ['002um', '008um', '016um']) whose square_XXXum/filtered_feature_bc_matrix.h5 exists."""
     if isinstance(sample, str):
@@ -759,45 +858,46 @@ def _signature_settings(cfg: dict, sigs: dict, err: list, warn: list) -> None:
     def on(key):
         return steps.get(key, DEFAULT_CONFIG["steps"].get(key)) is True
 
+    # [APP] 2026-11-13: the messages name the configuration keys to change. They used to point at the Parameters tab of
+    # the web application, which is gone: the application switches these steps off (app_config), so the messages are
+    # read by whoever runs a configuration from the command line.
     primary = _names(cfg.get("primary"))
-    titles = {s["key"]: s["title"] for s in PARAM_SCHEMA}
-    for sec, k, field, needs_call in (("compartments", "signature", "Signature split into compartments", True),
-                                      ("compartments", "split_by", "Split by the score of", False),
-                                      ("uncoupling", "a", "From (signature)", True),
-                                      ("uncoupling", "b", "To (signature)", True)):
+    for sec, k, needs_call in (("compartments", "signature", True), ("compartments", "split_by", False),
+                               ("uncoupling", "a", True), ("uncoupling", "b", True)):
         if not on(sec):
             continue
         n = (cfg.get(sec) or {}).get(k)
-        ways = (f"choose another signature in Parameters > {titles[sec]} > {field}, or switch off the step "
-                f"\"{STEP_LABELS[sec]}\" (Parameters > Analysis steps)")
+        ways = (f"name another signature there, or switch off the step \"{STEP_LABELS[sec]}\" "
+                f"(steps.{sec}: false)")
         if n not in sigs:
             err.append(f"{sec}.{k} = {n!r} is not a signature of this project: {ways}")
         elif needs_call and n not in primary:
-            err.append(f"{sec}.{k} = {n!r} has no positivity call: switch it on for {n} (Signatures tab), {ways}")
+            err.append(f"{sec}.{k} = {n!r} has no positivity call: add {n} to primary (its Positivity call switch "
+                       f"in the Signatures tab), {ways}")
     tumor = (cfg.get("compartments") or {}).get("tumor_conditions", [])
     samples = [s for s in cfg.get("samples") or [] if isinstance(s, dict)]
     if on("compartments") and isinstance(tumor, list) and samples \
             and not any(s.get("condition") in tumor for s in samples):
         warn.append(f"compartments.tumor_conditions ({', '.join(map(str, tumor)) or 'empty'}) lists the condition of "
                     f"no section, so Figure 4h has no tumor-associated compartment and no test: list the condition of "
-                    f"the tumor sections in Parameters > {titles['compartments']} > Tumor conditions (the Data tab "
-                    f"sets each section's condition), or switch the step off")
+                    f"the tumor sections in compartments.tumor_conditions (each sample has its condition), or switch "
+                    f"the step off")
 
     if on("proximity"):
         pairs = (cfg.get("proximity") or {}).get("pairs") or []
         if not pairs:
             warn.append(f"proximity.pairs is empty, so the step \"{STEP_LABELS['proximity']}\" writes nothing: add "
-                        f"pairs in Parameters > Proximity pairs, or switch the step off")
+                        f"pairs to proximity.pairs, or switch the step off")
         for p in pairs:
             if not isinstance(p, dict):
                 continue
             for k in ("from", "to"):
                 if p.get(k) not in sigs:
                     warn.append(f"proximity pair {p.get('from')} -> {p.get('to')}: {p.get(k)!r} is not a signature; "
-                                f"the pair will be skipped (Parameters > Proximity pairs)")
+                                f"the pair will be skipped (proximity.pairs)")
                 elif p.get("mode") == "positivity" and p.get(k) not in primary:
                     warn.append(f"proximity pair {p.get('from')} -> {p.get('to')} counts positivity calls, but "
-                                f"{p.get(k)} has none; the pair will be skipped (Parameters > Proximity pairs)")
+                                f"{p.get(k)} has none; the pair will be skipped (proximity.pairs)")
 
     fig = cfg.get("figures") if isinstance(cfg.get("figures"), dict) else {}
     if on("figures"):
@@ -806,16 +906,16 @@ def _signature_settings(cfg: dict, sigs: dict, err: list, warn: list) -> None:
             n = lm.get(k)
             if n not in sigs:
                 warn.append(f"figures.lineage_maps.{k} = {n!r} is not a signature of this project, so Figure 4a-f is "
-                            f"not drawn: choose its {which} signature in Parameters > Figures")
+                            f"not drawn: name its {which} signature in figures.lineage_maps")
             elif n not in primary:
                 warn.append(f"figures.lineage_maps.{k} = {n!r} has no positivity call, so Figure 4a-f is not drawn: "
-                            f"switch it on for {n} (Signatures tab) or choose another signature in Parameters > "
-                            f"Figures")
+                            f"add {n} to primary (its Positivity call switch in the Signatures tab) or name another "
+                            f"signature in figures.lineage_maps")
         comp = _names(fig.get("composition_signatures"))
         unknown = [n for n in comp if n not in sigs]
         if on("assignment") and len(unknown) == len(comp):
             warn.append("figures.composition_signatures lists no signature of this project, so Figure 3b is not "
-                        "drawn: choose the signatures of the composition bars in Parameters > Figures")
+                        "drawn: list the signatures of the composition bars in figures.composition_signatures")
         elif on("assignment") and unknown:
             warn.append(f"figures.composition_signatures: {', '.join(map(repr, unknown))} not a signature of this "
                         f"project; left out of Figure 3b")
@@ -825,14 +925,13 @@ def _signature_settings(cfg: dict, sigs: dict, err: list, warn: list) -> None:
             names = _names(p.get("signatures"))
             if not [n for n in names if n in sigs and n in primary]:
                 warn.append(f"positivity panel {p.get('name')!r} lists no signature with a positivity call, so it is "
-                            f"not drawn: choose its signatures, or remove it, in Parameters > Figures > Positivity "
-                            f"panels")
+                            f"not drawn: list its signatures, or remove it, in figures.positivity_panels")
         shown = [g for g in _names(fig.get("receptor_genes")) if isinstance(g, str)]
         panel = cfg.get("receptor_panel") if isinstance(cfg.get("receptor_panel"), dict) else {}
         if on("receptor_panel") and panel and not any(g in panel for g in shown):
             warn.append(f"figures.receptor_genes ({', '.join(shown) or 'empty'}) names no gene of the host receptor "
-                        f"panel, so Figure 6b is not drawn: choose its genes in Parameters > Figures > Receptor genes "
-                        f"shown in Figure 6b (the panel itself is in the Signatures tab)")
+                        f"panel, so Figure 6b is not drawn: list its genes in figures.receptor_genes (the panel itself "
+                        f"is receptor_panel)")
 
     sa = cfg.get("sensitivity_analyses") if isinstance(cfg.get("sensitivity_analyses"), dict) else {}
     sa_unc = {**DEFAULT_CONFIG["sensitivity_analyses"]["uncoupling"],
@@ -842,23 +941,23 @@ def _signature_settings(cfg: dict, sigs: dict, err: list, warn: list) -> None:
         if not any((sigs.get(n) or {}).get("class") in habitat for n in _names(cfg.get("programs")) if n in sigs):
             warn.append(f"sensitivity_analyses.uncoupling.habitat_classes ({', '.join(map(str, habitat)) or 'empty'}): "
                         f"no signature of the tissue assignment has one of these classes, so the habitat_fixed_b null "
-                        f"of the Figure 4i sensitivity analysis is not estimable: choose classes in Parameters > "
-                        f"Sensitivity analyses: Figure 4i")
+                        f"of the Figure 4i sensitivity analysis is not estimable: list classes of this project in "
+                        f"sensitivity_analyses.uncoupling.habitat_classes")
     lesion = _names({**DEFAULT_CONFIG["sensitivity_analyses"]["lesion"],
                      **(sa.get("lesion") if isinstance(sa.get("lesion"), dict) else {})}.get("genes"))
     if on("sensitivity_analyses") and lesion and not any(n in sigs for n in ("osteoclast", "osteoblast")):
         warn.append(f"sensitivity_analyses.lesion.genes ({', '.join(map(str, lesion))}) flags the A549 xenograft of "
                     f"the manuscript (human tumor RNA captured by mouse probes); in a project without the osteoclast "
                     f"and osteoblast signatures, bins that express these genes would be reported as A549 lesion in "
-                    f"the sensitivity analyses: empty the list in Parameters > Sensitivity analyses: A549 lesion flag "
-                    f"unless the tissue holds an A549 lesion")
+                    f"the sensitivity analyses: empty the list (sensitivity_analyses.lesion.genes: []) unless the "
+                    f"tissue holds an A549 lesion")
     if on("sensitivity"):
         tested = _names((cfg.get("sensitivity") or {}).get("signatures"))
         unknown = [n for n in tested if n not in sigs]
         if len(unknown) == len(tested):
             warn.append(f"the step \"{STEP_LABELS['sensitivity']}\" tests the manuscript's osteoclast and osteoblast "
                         f"gene sets, and sensitivity.signatures names no signature of this project, so it is skipped: "
-                        f"switch it off (Parameters > Analysis steps)")
+                        f"switch it off (steps.sensitivity: false)")
         elif unknown:
             warn.append(f"sensitivity.signatures: {', '.join(map(repr, unknown))} not a signature of this project; "
                         f"left out of the three-gene-set sensitivity")
@@ -898,6 +997,8 @@ def validate_config(cfg: dict) -> tuple[list[str], list[str]]:
         c = s.get("color")
         if c and not _HEX_RE.match(str(c)):
             err.append(f"sample {sid!r}: color must be #RRGGBB, got {c!r}")
+        if s.get("platform") is not None and s.get("platform") not in PLATFORM_IDS:
+            err.append(f"sample {sid!r}: platform must be one of {', '.join(PLATFORM_IDS)}, got {s.get('platform')!r}")
         mpp = s.get("microns_per_pixel")
         if mpp is not None and (isinstance(mpp, bool) or not isinstance(mpp, (int, float)) or mpp <= 0):
             err.append(f"sample {sid!r}: microns_per_pixel must be a positive number or null")
@@ -1154,5 +1255,19 @@ class Progress:
 
 
 if __name__ == "__main__":
-    # python pipeline_config.py > config.json   writes the default (manuscript) configuration
+    # python pipeline_config.py > config.json           writes the default (manuscript) configuration
+    # python pipeline_config.py --check config.json     [APP] checks a configuration for the command line (every step;
+    #                                                   the application runs the base run only, see app_config)
+    import sys
+    if len(sys.argv) == 3 and sys.argv[1] == "--check":
+        with open(sys.argv[2], encoding="utf-8") as fh:
+            found_errors, found_warnings = validate_config(merge_with_defaults(json.load(fh)))
+        for line in found_errors:
+            print(f"error: {line}")
+        for line in found_warnings:
+            print(f"warning: {line}")
+        print("ok" if not found_errors else f"{len(found_errors)} error(s): the analysis cannot start")
+        sys.exit(1 if found_errors else 0)
+    if len(sys.argv) > 1:
+        sys.exit("usage: python pipeline_config.py [--check CONFIG.json]")
     print(json.dumps(default_config(), indent=2))

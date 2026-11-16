@@ -1,7 +1,7 @@
 """
 webapp/server.py
 ================
-FastAPI application of Bone Spatial Studio (docs/ARCHITECTURE.md, section 5): the JSON API under /api/, the front end
+FastAPI application of Popcorn (docs/ARCHITECTURE.md, section 5): the JSON API under /api/, the front end
 under /static/ and its index.html at /.
 
 The server process stays light and responsive: it never imports scanpy, anndata or bone_analysis (an analysis runs in
@@ -54,7 +54,9 @@ from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import pipeline_config as pc
+import spatial_readers as sr
 from webapp import __version__
+from webapp import analysis as an
 from webapp.jobs import JobManager
 from webapp.storage import (ACTIVE_STATUSES, FINAL_STATUSES, BadRequest, NotFound, Storage, StorageError,
                             check_sample_id, json_safe, rmtree)
@@ -138,6 +140,17 @@ IMAGE_KEYS_MAX = 256
 # square_XXXum/ folder, sent in chunks of at most UPLOAD_CHUNK_MAX bytes (each request stays short behind a proxy)
 UPLOAD_MATRIX = "filtered_feature_bc_matrix.h5"
 UPLOAD_SPATIAL = (*POSITION_FILES, "scalefactors_json.json", "tissue_hires_image.png", "tissue_lowres_image.png")
+# [APP] 2026-11-14: and, outside square_XXXum/ folders, a Visium outs/ folder (its matrix and spatial/ files) and the
+# count and position files the other instruments' readers read (spatial_readers): never their transcript tables or
+# images, which are large and not read
+UPLOAD_OTHER_RE = re.compile(
+    r"^(cell_feature_matrix\.h5|cells\.(parquet|csv|csv\.gz)|experiment\.xenium"           # Xenium
+    r"|cell_by_gene\.csv(\.gz)?|cell_metadata\.csv(\.gz)?"                               # MERSCOPE
+    r"|[^/]*exprmat[^/]*\.csv(\.gz)?|[^/]*metadata_file[^/]*\.csv(\.gz)?"                 # CosMx
+    r"|[^/]+\.gef|[^/]+\.gem(\.gz)?|[^/]+\.h5ad"                                          # Stereo-seq, AnnData
+    r"|matrix\.mtx(\.gz)?|barcodes\.tsv(\.gz)?|(features|genes)\.tsv(\.gz)?"            # 10x MEX tables
+    r"|(coordinates|positions|spatial|locations|centroids|spatial_coordinates|tissue_positions|counts|expression"
+    r"|matrix|count_matrix|counts_matrix)\.(csv|tsv)(\.gz)?)$", re.IGNORECASE)
 UPLOAD_CHUNK_MAX = 64 * 1024 * 1024
 UPLOAD_MAX_PARTS = 12
 UPLOAD_PART_SUFFIX = ".part"
@@ -230,11 +243,13 @@ def platform_text() -> str:
 # ============================================================================
 
 def check_config(cfg) -> tuple[list[str], list[str]]:
-    """pipeline_config.validate_config, also for drafts too malformed for it to inspect."""
+    """pipeline_config.validate_config of the configuration as the application runs it (pc.app_config: the steps that
+    are tools of the Analysis tab are off, so the settings only they use are not checked), also for drafts too
+    malformed for it to inspect."""
     if not isinstance(cfg, dict):
         return ["the configuration must be a JSON object"], []
     try:
-        errors, warnings = pc.validate_config(cfg)
+        errors, warnings = pc.validate_config(pc.app_config(cfg))
     except Exception as exc:  # validate_config expects the shapes of the defaults; a saved draft may hold anything
         return [f"the configuration is malformed ({type(exc).__name__}: {exc})"], []
     return list(errors), list(warnings)
@@ -262,6 +277,14 @@ def config_samples(cfg: dict) -> list[dict]:
     return [s for s in samples if isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]]
 
 
+def record_platforms(cfg: dict) -> None:
+    """[APP] Write into the sample entries of a run's configuration the platform each one's files come from, so that
+    the run's snapshot says what it read (and a rerun reads the same, whatever is added to the folders later)."""
+    for sample in config_samples(cfg):
+        if sample.get("platform") not in pc.PLATFORM_IDS:
+            sample["platform"] = pc.sample_platform(cfg, sample)
+
+
 def sample_base(cfg: dict, sample: dict) -> Path:
     """The folder a sample entry points at (pipeline_config resolves square_XXXum/ below it)."""
     p = Path(str(sample.get("path") or sample["id"])).expanduser()
@@ -269,7 +292,12 @@ def sample_base(cfg: dict, sample: dict) -> Path:
 
 
 def spatial_dirs(cfg: dict, sample: dict) -> list[Path]:
-    """spatial/ folders of a sample: the analysis bin size first, then the QC bin size, then the others."""
+    """spatial/ folders of a sample: the analysis bin size first, then the QC bin size, then the others; the outs/
+    spatial/ folder of a standard Visium sample; none for the other instruments."""
+    platform = pc.sample_platform(cfg, sample)
+    if platform != "visium_hd":
+        d = pc.section_dir(cfg, sample)
+        return [d / "spatial"] if d is not None and (d / "spatial").is_dir() else []
     sizes = []
     for b in (cfg.get("bin_size"), cfg.get("qc_bin_size"), *pc.available_bin_sizes(cfg, sample)):
         if isinstance(b, str) and b not in sizes:
@@ -288,6 +316,16 @@ def hires_image(cfg: dict, sample: dict) -> Path | None:
         if (d / "tissue_hires_image.png").is_file():
             return d / "tissue_hires_image.png"
     return None
+
+
+def no_image_message(cfg: dict, sample: dict) -> str:
+    """Why a sample has no H&E image to draw on: Space Ranger's image is missing, or [APP] another instrument's output
+    holds none that the application reads (regions are then drawn in a run's Analysis tab)."""
+    platform = pc.sample_platform(cfg, sample)
+    if platform in sr.TEN_X:
+        return f"sample {sample['id']} has no spatial/tissue_hires_image.png"
+    return (f"sample {sample['id']} holds {sr.PLATFORMS[platform]['label']} data, without an H&E image here; draw its "
+            f"regions on the {sr.PLATFORMS[platform]['unit']}s in the Analysis tab of a run (Regions)")
 
 
 def positions_file(spatial: Path) -> Path | None:
@@ -313,10 +351,15 @@ def positive_number(value) -> float | None:
     return float(value)
 
 
-def microns_per_pixel(sample: dict, scalefactors: dict | None) -> float | None:
-    """The configured microns per full-resolution pixel, else the one Space Ranger recorded."""
-    return positive_number(sample.get("microns_per_pixel")) or positive_number((scalefactors or {}).get(
+def microns_per_pixel(sample: dict, scalefactors: dict | None, platform: str = "visium_hd") -> float | None:
+    """The configured microns per full-resolution pixel, else the one Space Ranger recorded; for standard Visium,
+    which records none, the 55 um of a spot over its diameter in pixels."""
+    value = positive_number(sample.get("microns_per_pixel")) or positive_number((scalefactors or {}).get(
         "microns_per_pixel"))
+    if value is None and platform == "visium":
+        diameter = positive_number((scalefactors or {}).get("spot_diameter_fullres"))
+        value = sr.VISIUM_SPOT_UM / diameter if diameter else None
+    return value
 
 
 @functools.lru_cache(maxsize=32)
@@ -383,15 +426,23 @@ def mask_frames(path: Path) -> set[str]:
 def sample_report(cfg: dict, sample: dict) -> tuple[dict, list[str], list[str], tuple[str, ...] | None]:
     """Report of one sample of POST /validate: (entry, errors, warnings, gene names or None)."""
     sid = sample["id"]
-    entry = {"id": sid, "bin_dir": None, "bin_sizes": [], "has_positions": False, "has_scalefactors": False,
-             "has_hires_image": False, "microns_per_pixel": None, "n_bins": None, "message": ""}
+    platform = pc.sample_platform(cfg, sample)
+    entry = {"id": sid, "platform": platform, "platform_label": sr.PLATFORMS[platform]["label"],
+             "unit": sr.PLATFORMS[platform]["unit"], "bin_dir": None, "bin_sizes": [], "has_positions": False,
+             "has_scalefactors": False, "has_hires_image": False, "microns_per_pixel": None, "n_bins": None,
+             "message": "", "notes": []}
     errors, warnings = [], []
+    if platform not in sr.TEN_X:
+        return other_sample_report(cfg, sample, entry)
     bin_size = cfg.get("bin_size")
-    entry["bin_sizes"] = pc.available_bin_sizes(cfg, sample)
-    bin_dir = pc.resolve_bin_dir(cfg, sample)
+    if platform == "visium_hd":
+        entry["bin_sizes"] = pc.available_bin_sizes(cfg, sample)
+    bin_dir = pc.section_dir(cfg, sample)
     if bin_dir is None:
         found = f" (bin sizes found: {', '.join(entry['bin_sizes'])})" if entry["bin_sizes"] else ""
-        entry["message"] = f"no square_{bin_size}/filtered_feature_bc_matrix.h5 in {sample_base(cfg, sample)}{found}"
+        where = f"square_{bin_size}/filtered_feature_bc_matrix.h5" if platform == "visium_hd" else \
+            "outs/filtered_feature_bc_matrix.h5 with outs/spatial/"
+        entry["message"] = f"no {where} in {sample_base(cfg, sample)}{found}"
         errors.append(f"sample {sid}: {entry['message']}")
         return entry, errors, warnings, None
     entry["bin_dir"] = str(bin_dir)
@@ -412,14 +463,14 @@ def sample_report(cfg: dict, sample: dict) -> tuple[dict, list[str], list[str], 
     if not entry["has_hires_image"]:
         notes.append("no H&E image, so no region can be drawn")
         warnings.append(f"sample {sid}: no spatial/tissue_hires_image.png; a region of interest cannot be drawn")
-    entry["microns_per_pixel"] = microns_per_pixel(sample, scalefactors)
+    entry["microns_per_pixel"] = microns_per_pixel(sample, scalefactors, platform)
     if entry["microns_per_pixel"] is None:
         problems.append("microns per pixel unknown")
         errors.append(f"sample {sid}: microns_per_pixel is not set and spatial/scalefactors_json.json does not "
                       f"record it")
     qc = cfg.get("qc_bin_size")
     steps = cfg.get("steps") if isinstance(cfg.get("steps"), dict) else {}
-    if steps.get("qc_figure_bins") and qc != bin_size and qc not in entry["bin_sizes"]:
+    if platform == "visium_hd" and steps.get("qc_figure_bins") and qc != bin_size and qc not in entry["bin_sizes"]:
         notes.append(f"no square_{qc}")
         warnings.append(f"sample {sid}: no square_{qc}/ for the QC figure; the analysis bin size is used instead")
     genes = None
@@ -432,7 +483,46 @@ def sample_report(cfg: dict, sample: dict) -> tuple[dict, list[str], list[str], 
         entry["message"] = "; ".join(problems)
     else:
         mpp = entry["microns_per_pixel"]
-        entry["message"] = "; ".join([f"{entry['n_bins']:,} bins at {bin_size}, {mpp:.4g} µm per pixel"] + notes)
+        units = f"{entry['n_bins']:,} bins at {bin_size}" if platform == "visium_hd" else \
+            f"{entry['n_bins']:,} spots (10x Visium)"
+        entry["message"] = "; ".join([f"{units}, {mpp:.4g} µm per pixel"] + notes)
+    return entry, errors, warnings, genes
+
+
+def other_sample_report(cfg: dict, sample: dict, entry: dict) -> tuple[dict, list[str], list[str], tuple | None]:
+    """[APP] 2026-11-14. The data check of a sample from another instrument than Space Ranger (spatial_readers.inspect:
+    the counts are not read). Its units have no H&E image here; regions are drawn in a run's Analysis tab."""
+    sid, platform = sample["id"], entry["platform"]
+    label = sr.PLATFORMS[platform]["label"]
+    errors, warnings = [], []
+    try:
+        bin_um = pc.bin_um(cfg.get("bin_size")) if platform == "stereo_seq" else None
+        loc = sr.locate(sample_base(cfg, sample), platform, bin_um=bin_um)
+        info = sr.inspect(loc)
+    except (sr.ReadError, ValueError) as exc:
+        entry["message"] = str(exc)
+        errors.append(f"sample {sid}: {exc}")
+        return entry, errors, warnings, None
+    unit = info["unit"]
+    override = positive_number(sample.get("microns_per_pixel"))
+    entry.update(bin_dir=str(loc.main), has_positions=True, unit=unit, n_bins=info["n_units"],
+                 microns_per_pixel=override or info["microns_per_unit"])
+    if platform == "stereo_seq" and unit == "bin":
+        entry["bin_sizes"] = [cfg.get("bin_size")]
+    parts = [f"{info['n_units']:,} {sr.unit_word(unit, info['n_units'])}" if info["n_units"] is not None
+             else f"{unit}s counted when the section is read", label]
+    if platform == "stereo_seq" and unit == "bin":
+        parts.append(f"bins of {pc.bin_um(cfg.get('bin_size')):g} µm")
+    if entry["microns_per_pixel"] is None:
+        parts.append("positions taken as micrometres unless set")
+    elif entry["microns_per_pixel"] != 1.0:
+        parts.append(f"{entry['microns_per_pixel']:.4g} µm per unit of the positions")
+    entry["message"] = "; ".join(parts)
+    entry["notes"] = ["no H&E image: draw regions in the Analysis tab of a run"]
+    genes = tuple(info["genes"]) if info["genes"] is not None else None
+    if info["n_units"] is not None and info["n_units"] > RAW_SECTION_MAX_BINS:
+        warnings.append(f"sample {sid}: {info['n_units']:,} {unit}s; the explorer and the gene maps read at most "
+                        f"{RAW_SECTION_MAX_BINS:,}")
     return entry, errors, warnings, genes
 
 
@@ -474,12 +564,16 @@ def genes_report(cfg: dict, panels: list[tuple[str, ...]]) -> tuple[dict, list[s
               and n_core < min_core):
             warnings.append(f"signature {name}: only {n_core} core genes are measured, fewer than scoring.min_core "
                             f"({min_core}); no bin can be called positive")
+    steps = cfg.get("steps") if isinstance(cfg.get("steps"), dict) else {}
     panel = cfg.get("receptor_panel") if isinstance(cfg.get("receptor_panel"), dict) else {}
     report["receptor_panel"]["missing"] = [g for g in panel if g not in present]
     report["adipocyte_genes"]["missing"] = [g for g in gene_list(cfg.get("adipocyte_genes")) if g not in present]
-    for key, label in (("receptor_panel", "host receptor panel"), ("adipocyte_genes", "adipocyte genes")):
+    # the manuscript's gene panels are reported, and warned about only while the step that uses them runs (never in a
+    # run of the application: pc.app_config)
+    for key, label, step in (("receptor_panel", "host receptor panel", "receptor_panel"),
+                             ("adipocyte_genes", "adipocyte genes", "adipocyte_panel")):
         miss = report[key]["missing"]
-        if miss:
+        if miss and steps.get(step) is True:
             warnings.append(f"{label}: {len(miss)} genes missing from the probe set ({', '.join(miss)})")
     # the Leiden screen's ubiquitous transcripts (Signatures tab) and the A549 lesion genes of the sensitivity analyses
     ubiquitous = gene_list(cfg.get("ubiquitous"))
@@ -494,7 +588,6 @@ def genes_report(cfg: dict, panels: list[tuple[str, ...]]) -> tuple[dict, list[s
     sa = cfg.get("sensitivity_analyses") if isinstance(cfg.get("sensitivity_analyses"), dict) else {}
     lesion = gene_list((sa.get("lesion") if isinstance(sa.get("lesion"), dict) else {}).get("genes"))
     report["lesion_genes"]["missing"] = miss = [g for g in lesion if g not in present]
-    steps = cfg.get("steps") if isinstance(cfg.get("steps"), dict) else {}
     if steps.get("sensitivity_analyses") is True and lesion and len(miss) == len(lesion):
         warnings.append(f"A549 lesion flag: none of its genes ({', '.join(lesion)}) is in the probe set, so the "
                         f"sensitivity analyses flag no bin as lesion")
@@ -544,8 +637,11 @@ def subfolders(path: Path, follow_links: bool = True) -> list[os.DirEntry]:
 
 
 def detect_samples(root: Path) -> list[dict]:
-    """Folders at most SCAN_MAX_DEPTH levels below `root` (root included) that contain
-    square_XXXum/filtered_feature_bc_matrix.h5."""
+    """Sections at most SCAN_MAX_DEPTH levels below `root` (root included): folders that contain
+    square_XXXum/filtered_feature_bc_matrix.h5 (Visium HD), and [APP 2026-11-14] the outputs of the other
+    instruments spatial_readers knows (a Visium outs/ folder, a Xenium bundle, a MERSCOPE region, CosMx flat files, a
+    Stereo-seq GEF or GEM, an .h5ad file, counts and coordinates tables). A recognised folder is not searched
+    further."""
     found = []
     queue = collections.deque([(root, 0)])
     visited = 0
@@ -559,34 +655,60 @@ def detect_samples(root: Path) -> list[dict]:
         bins = sorted(m.group(1) for e in children if (m := SQUARE_RE.match(e.name))
                       and os.path.isfile(os.path.join(e.path, "filtered_feature_bc_matrix.h5")))
         if bins:
-            found.append((folder, bins))
+            found.append((folder, "visium_hd", bins))
             continue
+        try:
+            others = [(p, path) for p, path in sr.candidates(folder) if p != "visium_hd"]
+        except OSError:
+            others = []
+        if others:
+            found.extend((path, p, []) for p, path in others)
+            if any(path == folder for _, path in others):
+                continue
         if depth < SCAN_MAX_DEPTH:
             queue.extend((Path(e.path), depth + 1) for e in sorted(children, key=lambda e: e.name.casefold())
                          if e.name != "spatial" and not SQUARE_RE.match(e.name))
-    candidates, used = [], collections.Counter()
-    for folder, bins in found:
+    candidates, used, taken, kinds = [], collections.Counter(), set(), collections.defaultdict(set)
+    for folder, platform, bins in found:
         try:
             rel = Path(os.path.relpath(folder, root)).as_posix()
         except ValueError:  # another drive (Windows)
             rel = str(folder)
-        name = sample_folder_name(folder)
-        sid = suggested_sample_id(name)
-        used[sid] += 1
-        if used[sid] > 1:
-            sid = f"{sid[:60]}-{used[sid]}"
-        candidates.append({"folder": name, "path": rel, "suggested_id": sid, "bin_sizes": bins})
+        name = sample_folder_name(folder) if folder.is_dir() else re.sub(r"\.(h5ad|gef|gem(\.gz)?)$", "",
+                                                                          folder.name, flags=re.IGNORECASE)
+        base = suggested_sample_id(name)
+        used[base] += 1
+        sid = base
+        if used[base] > 1 and platform not in kinds[base]:  # [APP] the same section from another instrument
+            sid = f"{base[:52]}-{platform.replace('_', '-')}"
+        if sid in taken:
+            n = used[base]
+            while (sid := f"{base[:60]}-{n}") in taken:
+                n += 1
+        taken.add(sid)
+        kinds[base].add(platform)
+        candidates.append({"folder": name, "path": rel, "suggested_id": sid, "bin_sizes": bins,
+                           "platform": platform, "unit": sr.PLATFORMS[platform]["unit"],
+                           "platform_label": sr.PLATFORMS[platform]["label"]})
     return sorted(candidates, key=lambda c: c["path"].casefold())
 
 
+DATA_FILE_RE = re.compile(r"^(experiment\.xenium|cell_feature_matrix\.h5|cell_by_gene\.csv(\.gz)?|"
+                          r".*_exprmat_file\.csv(\.gz)?|.*\.gef|.*\.gem(\.gz)?|.*\.h5ad|"
+                          r"filtered_feature_bc_matrix\.h5)$", re.IGNORECASE)
+
+
 def looks_like_spaceranger(path: str) -> bool:
-    """The folder contains outs/, binned_outputs/ or square_XXXum/."""
+    """The folder contains outs/, binned_outputs/ or square_XXXum/, or [APP] a file that another instrument's output
+    starts with (experiment.xenium, cell_by_gene.csv, *_exprMat_file.csv, *.gef, *.gem, *.h5ad, ...)."""
     try:
         with os.scandir(path) as it:
             for i, e in enumerate(it):
                 if i >= LISTING_PEEK:
                     break
                 if (e.name in ("outs", "binned_outputs") or SQUARE_RE.match(e.name)) and e.is_dir():
+                    return True
+                if DATA_FILE_RE.match(e.name) and e.is_file():
                     return True
     except OSError:
         return False
@@ -1044,9 +1166,12 @@ def make_unique(values: list[str]) -> list[str]:
     return out
 
 
-def too_many_bins(path: Path, n: int) -> DataError:
-    return DataError(f"{path} holds {n:,} bins; the explorer and the gene maps read at most "
-                     f"{RAW_SECTION_MAX_BINS:,} bins per section: choose a larger bin size, such as 008um or 016um")
+def too_many_bins(path: Path, n: int, platform: str = "visium_hd") -> DataError:
+    unit = sr.PLATFORMS.get(platform, {}).get("unit", "bin")
+    advice = ("choose a larger bin size, such as 008um or 016um" if platform in ("visium_hd", "stereo_seq") else
+              f"keep part of the slide (fewer {unit}s) in the sample's files")
+    return DataError(f"{path} holds {n:,} {sr.unit_word(unit, n)}; the explorer and the gene maps read at most "
+                     f"{RAW_SECTION_MAX_BINS:,} {unit}s per section: {advice}")
 
 
 def read_counts(path: Path, max_bins: int | None = None) -> tuple[sparse.csr_matrix, list[str], list[str]]:
@@ -1115,6 +1240,15 @@ class RawSection:
     Per-bin totals as bone_analysis.qc_metrics computes them (mitochondrial genes: names starting with mt-, any case).
     The counts are held by gene (CSC) for the gene maps. Sections of more than RAW_SECTION_MAX_BINS bins are refused."""
 
+    # [APP] 2026-11-14: also built from a section of another instrument (RawSection.of, spatial_readers): platform,
+    # unit, the reader's notes, the units' grid when they are on one, and mpp, the micrometres per unit of x_px and
+    # y_px (None for Space Ranger sections, whose micrometres per pixel come from their scale factors per request)
+    platform = "visium_hd"
+    unit = "bin"
+    notes: tuple = ()
+    grid = None
+    mpp = None
+
     def __init__(self, matrix: Path, positions: Path):
         self.key = section_key(matrix, positions)
         self.matrix_path, self.positions_path = matrix, positions
@@ -1128,11 +1262,29 @@ class RawSection:
             raise DataError(f"only {int(ok.sum()):,} of {self.n_barcodes:,} barcodes of {matrix} have a position in "
                             f"{positions}; are both files from the same run and bin size?")
         rows = np.flatnonzero(ok)
-        self.barcodes = [barcodes[i] for i in rows.tolist()]
-        self.index = pd.Index(self.barcodes)
-        self.x_px = tp["x"].to_numpy(float)[rows]
-        self.y_px = tp["y"].to_numpy(float)[rows]
         X = X[rows] if len(rows) < X.shape[0] else X
+        self._setup(X, [barcodes[i] for i in rows.tolist()], names, tp["x"].to_numpy(float)[rows],
+                    tp["y"].to_numpy(float)[rows])
+
+    @classmethod
+    def of(cls, sec, key: tuple) -> "RawSection":
+        """A section read by spatial_readers (Xenium, MERSCOPE, CosMx, Stereo-seq, .h5ad, tables): its positions are
+        in its own units (mpp micrometres each)."""
+        self = cls.__new__(cls)
+        self.key = key
+        self.matrix_path = sec.sources[0] if sec.sources else None
+        self.positions_path = sec.sources[-1] if sec.sources else None
+        self.n_barcodes = sec.n_read
+        self.platform, self.unit, self.notes, self.grid = sec.platform, sec.unit, tuple(sec.notes), sec.grid
+        self.mpp = float(sec.microns_per_unit)
+        self._setup(sec.X, list(sec.barcodes), list(sec.genes), np.asarray(sec.x, float), np.asarray(sec.y, float))
+        return self
+
+    def _setup(self, X, barcodes: list[str], names: list[str], x: np.ndarray, y: np.ndarray) -> None:
+        self.barcodes = barcodes
+        self.index = pd.Index(self.barcodes)
+        self.x_px = x
+        self.y_px = y
         self.n_bins = X.shape[0]
         self.genes = make_unique(names)
         self.total = np.asarray(X.sum(axis=1, dtype=np.int64)).ravel()
@@ -1220,6 +1372,8 @@ class RawSection:
         grid = barcode_grid(self.barcodes)
         if not n:
             return top, tied, grid is not None
+        if grid is None and self.grid is not None:  # [APP] bins of other instruments (Stereo-seq) carry their grid
+            grid = (np.asarray(self.grid[0], np.int64), np.asarray(self.grid[1], np.int64))
         pool = neighbor_matrix(*grid) if grid is not None else sparse.identity(n, dtype=np.int32, format="csr")
         X = self.X.tocsr().astype(np.int32)  # by bin; int32: the pooled sums of 9 bins do not wrap
         for start in range(0, n, TOP_GENE_BLOCK):
@@ -1337,24 +1491,81 @@ class ImageKeys:
             return self._paths.get(key)
 
 
-def section_files(cfg: dict, sample: dict) -> tuple[Path, Path]:
-    """(filtered_feature_bc_matrix.h5, tissue positions file) of a sample at the analysis bin size; NotFound when
-    either is missing."""
+class SectionSource(NamedTuple):
+    """[APP] 2026-11-14. Where the raw data of a sample is, for the data explorer and the gene maps: Space Ranger
+    files (matrix, positions, spatial: Visium HD at the analysis bin size, Visium spots), or the output of another
+    instrument as spatial_readers located it (located; override: the sample's own micrometres per unit). key
+    identifies what reading gives (the section cache)."""
+    sid: str
+    platform: str
+    key: tuple
+    matrix: Path | None = None
+    positions: Path | None = None
+    spatial: Path | None = None
+    located: object = None
+    override: float | None = None
+
+    @property
+    def ten_x(self) -> bool:
+        return self.located is None
+
+    def load(self) -> "RawSection":
+        if self.located is None:
+            return RawSection(self.matrix, self.positions)
+        try:
+            sec = sr.read(self.located, microns_per_unit=self.override, max_units=RAW_SECTION_MAX_BINS)
+        except sr.ReadError as exc:
+            raise DataError(f"sample {self.sid}: {exc}") from exc
+        return RawSection.of(sec, self.key)
+
+    def count(self) -> int | None:
+        """Units of the section, cheaply (Space Ranger: the in-tissue rows of the positions file); None when that
+        takes reading the counts."""
+        if self.located is None:
+            return len(in_tissue_xy(self.positions)[0])
+        try:
+            return sr.inspect(self.located)["n_units"]
+        except sr.ReadError as exc:
+            raise DataError(f"sample {self.sid}: {exc}") from exc
+
+
+def section_source(cfg: dict, sample: dict) -> SectionSource:
+    """The raw data of a sample at the analysis bin size; NotFound when its files are missing."""
     sid = sample["id"]
-    bin_dir = pc.resolve_bin_dir(cfg, sample)
-    if bin_dir is None:
-        raise NotFound(f"sample {sid}: no square_{cfg.get('bin_size')}/filtered_feature_bc_matrix.h5 in "
-                       f"{sample_base(cfg, sample)}")
-    positions = positions_file(bin_dir / "spatial")
-    if positions is None:
-        raise NotFound(f"sample {sid}: no tissue positions file in {bin_dir / 'spatial'}")
-    return bin_dir / "filtered_feature_bc_matrix.h5", positions
+    platform = pc.sample_platform(cfg, sample)
+    if platform in sr.TEN_X:
+        bin_dir = pc.section_dir(cfg, sample)
+        if bin_dir is None:
+            where = f"square_{cfg.get('bin_size')}/filtered_feature_bc_matrix.h5" if platform == "visium_hd" \
+                else "outs/filtered_feature_bc_matrix.h5 with outs/spatial/"
+            raise NotFound(f"sample {sid}: no {where} in {sample_base(cfg, sample)}")
+        positions = positions_file(bin_dir / "spatial")
+        if positions is None:
+            raise NotFound(f"sample {sid}: no tissue positions file in {bin_dir / 'spatial'}")
+        matrix = bin_dir / "filtered_feature_bc_matrix.h5"
+        return SectionSource(sid, platform, section_key(matrix, positions), matrix, positions, bin_dir / "spatial")
+    try:
+        bin_um = pc.bin_um(cfg.get("bin_size")) if platform == "stereo_seq" else None
+        loc = sr.locate(sample_base(cfg, sample), platform, bin_um=bin_um)
+        override = positive_number(sample.get("microns_per_pixel"))
+        return SectionSource(sid, platform, (*loc.key(), override), located=loc, override=override)
+    except (sr.ReadError, ValueError) as exc:
+        raise NotFound(f"sample {sid}: {exc}") from None
 
 
-def section_mpp(sample: dict, spatial: Path) -> float:
+def section_files(cfg: dict, sample: dict) -> tuple[Path, Path]:
+    """(filtered_feature_bc_matrix.h5, tissue positions file) of a Space Ranger sample (Visium HD at the analysis bin
+    size, or Visium); NotFound when either is missing or the sample is from another instrument."""
+    src = section_source(cfg, sample)
+    if not src.ten_x:
+        raise NotFound(f"sample {sample['id']} is not a Space Ranger section ({src.platform})")
+    return src.matrix, src.positions
+
+
+def section_mpp(sample: dict, spatial: Path, platform: str = "visium_hd") -> float:
     """Microns per full-resolution pixel of a section, as the analysis takes it (the configured value, else
-    scalefactors_json.json of the bin size)."""
-    mpp = microns_per_pixel(sample, read_scalefactors(spatial))
+    scalefactors_json.json of the bin size; for standard Visium, from the spot diameter)."""
+    mpp = microns_per_pixel(sample, read_scalefactors(spatial), platform)
     if mpp is None:
         raise DataError(f"sample {sample['id']}: microns_per_pixel is not set and "
                         f"{spatial / 'scalefactors_json.json'} does not record it; set it in the sample's settings")
@@ -1430,7 +1641,7 @@ def explore_payload(section: RawSection, sid: str, bin_size: str, mpp: float, qc
         "median_pct_mt": round(float(np.median(finite_pct)), 3) if len(finite_pct) else None,
         "n_pass_qc": n_pass, "pct_pass_qc": round(100.0 * n_pass / n, 2) if n else None, "bin_size": bin_size,
         "microns_per_pixel": mpp, "qc": qc, "matrix": str(section.matrix_path),
-        "positions": str(section.positions_path),
+        "positions": str(section.positions_path), "platform": section.platform, "unit": section.unit,
     }
     body = {
         "sample": sid, "n": n, "x": finite_list(section.x_px * mpp, 2), "y": finite_list(section.y_px * mpp, 2),
@@ -1628,6 +1839,248 @@ def gene_query(query, limit, offset=None) -> tuple[str, int, int]:
     if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
         raise HTTPException(400, "offset must be an integer of 0 or more")
     return query.strip(), limit, offset
+
+
+# ============================================================================
+# ANALYSIS TAB (the tools: webapp/analysis.py; here: a run's bins as their Context, the cards and the drawn regions)
+# ============================================================================
+ANALYSIS_WAIT = 2.0                # seconds POST /analyses waits for a quick analysis before answering "running"
+ANALYSIS_IDLE = 30.0               # seconds the worker thread waits for more work before it ends
+ANALYSIS_QUEUE_MAX = 8             # analyses waiting or running at most (HTTP 429 beyond)
+ANALYSIS_TITLE_MAX = 120
+ANALYSIS_VIEW_BYTES = 20_000       # JSON size of a card's view settings at most
+ANALYSIS_PARAMS_BYTES = 200_000    # and of its settings
+ARRAY_DIGITS = 4                   # decimals of the per-bin values of a card (GET /analyses/{aid}/values)
+MAX_REGIONS = 200
+MAX_REGION_VERTICES = 20_000       # vertices of all polygons of a run's regions at most
+MAX_REGION_NAME = 60
+MAX_TEMPLATE_CARDS = 40
+COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}\Z")
+REGION_ID_RE = re.compile(r"^g-[0-9a-f]{8}\Z")
+
+
+def positive_color(colors: dict, col: str) -> str | None:
+    """The configured color of the signature a positive_<slug> column calls (its pooled variants too)."""
+    if not col.startswith("positive_"):
+        return None
+    slug = an.POOLED_RE.sub("", col[len("positive_"):])
+    return (colors.get("assigned_signature") or {}).get(slug)
+
+
+def run_context(table: BinsTable, cfg: dict, *, expression=None, no_expression: str = "", regions=(),
+                tables=None, table_names=(), cancelled=None) -> an.Context:
+    """The bins of a run's per-bin table as the Context of the analysis tools: its sections (the order of GET
+    /bins/samples), the bins of each in the order of GET /bins, their positions in micrometres, the category and
+    yes/no columns as fields (in the configured colors), UMIs per bin, and the regions drawn on the run (stored
+    dictionaries). `ctx.rows` holds the position of every bin in the table (bins without a section are left out).
+    expression: an analysis.Expression or a function that builds it when a tool first asks for the raw counts."""
+    df = table.df
+    samples = table.samples()
+    configured = {s["id"]: s for s in config_samples(cfg)}
+    codes = np.full(len(df), -1, dtype=np.int64)
+    for i, s in enumerate(samples):
+        codes[table.groups[s["id"]]] = i
+    rows = np.flatnonzero(codes >= 0)
+
+    def column(name: str):
+        if name not in df.columns:
+            return None
+        return pd.to_numeric(df[name], errors="coerce").to_numpy(dtype=np.float64)[rows]
+
+    fields = {}
+    for col, kind in table.kinds.items():
+        if kind == "category":
+            lookup = {v: i for i, v in enumerate(table.categories[col])}
+            labels = table.labels[col]
+            field_codes = np.fromiter((lookup.get(labels[i], -1) for i in rows.tolist()), dtype=np.int64,
+                                      count=len(rows))
+            fields[col] = an.Field(col, "category", list(table.categories[col]), field_codes,
+                                   colors=dict(table.colors.get(col) or {}))
+        elif kind == "bool":
+            color = positive_color(table.colors, col)
+            fields[col] = an.Field(col, "bool", values=np.asarray(bool01(df[col]), dtype=bool)[rows],
+                                   colors={True: color} if color else {})
+    clustering = cfg.get("clustering") if isinstance(cfg.get("clustering"), dict) else {}
+    x, y = column("x_um"), column("y_um")
+    nowhere = np.full(len(rows), np.nan)
+    # [APP] what one row is: a bin (Visium HD, Stereo-seq), a spot (Visium) or a cell (Xenium, MERSCOPE, CosMx)
+    units = {sr.PLATFORMS[pc.sample_platform(cfg, configured[s["id"]])]["unit"] for s in samples
+             if s["id"] in configured}
+    ctx = an.Context(
+        samples=[{"id": s["id"], "label": s["label"], "color": configured.get(s["id"], {}).get("color"),
+                  "condition": configured.get(s["id"], {}).get("condition")} for s in samples],
+        sample_codes=codes[rows], x=nowhere if x is None else x, y=nowhere if y is None else y, fields=fields,
+        expression=expression, no_expression=no_expression,
+        regions=[an.Region(r["id"], r["name"], r["sample"], [np.asarray(p, dtype=np.float64) for p in r["polygons"]],
+                           r.get("color")) for r in regions],
+        total_umi=column("total_umi"), target_sum=positive_number(clustering.get("target_sum")) or 1e4,
+        tables=tables, table_names=list(table_names), cancelled=cancelled,
+        unit=units.pop() if len(units) == 1 else "bin")
+    ctx.rows = rows
+    return ctx
+
+
+def run_expression(table: BinsTable, ctx: an.Context, link_of) -> an.Expression:
+    """The raw counts of the bins of a run's Context: link_of(sample id) -> (RunGeneLink, RawSection), the bins of each
+    section matched to its raw data as the gene maps of the viewer match them."""
+    parts = []
+    for s in ctx.samples:
+        link, section = link_of(s["id"])
+        parts.append((np.searchsorted(ctx.rows, table.groups[s["id"]]), link.rows, section))
+    return an.Expression(ctx.n, parts)
+
+
+def context_view(ctx: an.Context, regions: list[dict], no_expression: str | None, table_list: list[dict]) -> dict:
+    """JSON of GET /runs/{rid}/analysis/context: what the forms of the Analysis tab offer."""
+    fields = []
+    for key in ctx.field_keys():
+        f = ctx.field(key)
+        if f.kind == "category":
+            counts = np.bincount(f.codes[f.codes >= 0], minlength=len(f.categories))
+            fields.append({"key": key, "label": f.label, "type": "category",
+                           "values": [{"value": v, "label": f.text(v), "n": int(n), "color": f.colors.get(v)}
+                                      for v, n in zip(f.categories, counts.tolist())]})
+        else:
+            n_true = int(f.values.sum())
+            fields.append({"key": key, "label": f.label, "type": "bool", "n_true": n_true, "n_false": ctx.n - n_true,
+                           "text": list(an.bool_text(key)), "color": f.colors.get(True)})
+    counts = np.bincount(ctx.sample_codes, minlength=len(ctx.samples)).tolist()
+    return {"unit": ctx.unit, "n": ctx.n, "target_sum": ctx.target_sum,
+            "samples": [{**s, "n": int(n)} for s, n in zip(ctx.samples, counts)],
+            "fields": fields, "regions": regions, "tools": [t.describe(ctx.unit) for t in an.TOOLS], "tables": table_list,
+            "expression": {"available": not no_expression, "reason": no_expression or ""},
+            "limits": {"genes": an.MAX_GENES, "set_genes": an.MAX_SET_GENES, "groups": an.MAX_GROUPS,
+                       "conditions": an.MAX_CONDITIONS}}
+
+
+def clean_regions(body: dict, sample_ids: list[str]) -> list[dict]:
+    """The regions of a PUT /runs/{rid}/regions: {"regions": [{"id"?, "name", "sample", "polygons": [[[x, y], ...]],
+    "color"?}]}, polygons in the micrometres of the per-bin table, each with three or more corners. A region without
+    an id gets one. 400 otherwise."""
+    given = body.get("regions")
+    if not isinstance(given, list):
+        raise HTTPException(400, "regions must be a list")
+    if len(given) > MAX_REGIONS:
+        raise HTTPException(400, f"at most {MAX_REGIONS} regions")
+    out, seen, vertices = [], set(), 0
+    for k, r in enumerate(given):
+        where = f"region {k + 1}"
+        if not isinstance(r, dict):
+            raise HTTPException(400, f"{where} must be an object")
+        name = r.get("name")
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_REGION_NAME \
+                or any(ord(ch) < 32 for ch in name):
+            raise HTTPException(400, f"{where}: name must be a text of 1 to {MAX_REGION_NAME} characters")
+        if r.get("sample") not in sample_ids:
+            raise HTTPException(400, f"{where}: sample must be a section of the run ({', '.join(sample_ids)})")
+        polygons = r.get("polygons")
+        if not isinstance(polygons, list) or not polygons:
+            raise HTTPException(400, f"{where}: polygons must be a non-empty list")
+        clean = []
+        for polygon in polygons:
+            if not isinstance(polygon, list) or len(polygon) < 3:
+                raise HTTPException(400, f"{where}: a polygon needs at least three corners")
+            ring = []
+            for point in polygon:
+                ok = (isinstance(point, (list, tuple)) and len(point) >= 2
+                      and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+                              for v in point[:2]))
+                if not ok:
+                    raise HTTPException(400, f"{where}: every corner must be [x, y] in micrometres")
+                ring.append([round(float(point[0]), 2), round(float(point[1]), 2)])
+            vertices += len(ring)
+            clean.append(ring)
+        if vertices > MAX_REGION_VERTICES:
+            raise HTTPException(400, f"the regions have more than {MAX_REGION_VERTICES:,} corners in all; simplify "
+                                     f"them")
+        rid = r.get("id")
+        if not (isinstance(rid, str) and REGION_ID_RE.match(rid)) or rid in seen:
+            rid = f"g-{secrets.token_hex(4)}"
+            while rid in seen:
+                rid = f"g-{secrets.token_hex(4)}"
+        seen.add(rid)
+        color = r.get("color")
+        out.append({"id": rid, "name": name.strip(), "sample": r["sample"], "polygons": clean,
+                    "color": color if isinstance(color, str) and COLOR_RE.match(color) else None})
+    return out
+
+
+def json_size(value) -> int:
+    return len(json.dumps(json_safe(value), ensure_ascii=False, allow_nan=False, separators=(",", ":")))
+
+
+def analysis_request(body: dict, need_tool: bool = True) -> tuple[str | None, str | None, dict | None, dict | None]:
+    """(tool, title, settings, view) of a request that creates or changes a card; 400 otherwise."""
+    tool = body.get("tool")
+    if need_tool and tool not in an.TOOLS_BY_ID:
+        raise HTTPException(400, f"tool must be one of: {', '.join(an.TOOLS_BY_ID)}")
+    title = optional_text(body, "title", ANALYSIS_TITLE_MAX)
+    params, view = optional_object(body, "params"), optional_object(body, "view")
+    if params is not None and json_size(params) > ANALYSIS_PARAMS_BYTES:
+        raise HTTPException(400, "the settings of the analysis are too large")
+    if view is not None and json_size(view) > ANALYSIS_VIEW_BYTES:
+        raise HTTPException(400, "the view settings of the analysis are too large")
+    return tool, title, params, view
+
+
+class AnalysisRunner:
+    """Runs the analyses of the Analysis tab one at a time, in the order asked, on a daemon thread that starts with
+    the first one and ends after ANALYSIS_IDLE seconds without work (one analysis at a time bounds the memory, like
+    the job queue of the runs). compute(rid, aid, cancelled) does the work and returns the error text when the
+    request itself was wrong (the card is then failed), else None; cancelled() is true once the card was deleted."""
+
+    def __init__(self, compute):
+        self.compute = compute
+        self._queue: collections.deque = collections.deque()
+        self._tasks: dict[tuple[str, str], dict] = {}
+        self._lock = threading.Lock()
+        self._wake = threading.Condition(self._lock)
+        self._thread: threading.Thread | None = None
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._tasks)
+
+    def is_active(self, rid: str, aid: str) -> bool:
+        with self._lock:
+            return (rid, aid) in self._tasks
+
+    def submit(self, rid: str, aid: str) -> dict:
+        """Queue an analysis; returns its task: {"done": Event, "cancelled": bool, "refused": str | None}."""
+        task = {"done": threading.Event(), "cancelled": False, "refused": None}
+        with self._lock:
+            self._tasks[(rid, aid)] = task
+            self._queue.append((rid, aid))
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._work, name="bss-analysis", daemon=True)
+                self._thread.start()
+            self._wake.notify()
+        return task
+
+    def cancel(self, rid: str, aid: str | None = None) -> None:
+        """Stop an analysis (every analysis of the run when aid is None) as soon as it checks."""
+        with self._lock:
+            for (r, a), task in self._tasks.items():
+                if r == rid and aid in (None, a):
+                    task["cancelled"] = True
+
+    def _work(self) -> None:
+        while True:
+            with self._lock:
+                if not self._queue and not self._wake.wait_for(lambda: bool(self._queue), timeout=ANALYSIS_IDLE):
+                    self._thread = None
+                    return
+                key = self._queue.popleft()
+                task = self._tasks[key]
+            try:
+                if not task["cancelled"]:
+                    task["refused"] = self.compute(*key, lambda: task["cancelled"])
+            except Exception:  # compute reports its own errors; this keeps the thread alive whatever happens
+                log.exception("analysis %s of run %s failed", key[1], key[0])
+            finally:
+                with self._lock:
+                    self._tasks.pop(key, None)
+                task["done"].set()
 
 
 # ============================================================================
@@ -2000,6 +2453,10 @@ def loupe_export(df: pd.DataFrame, cfg: dict, bin_size: str, out, title: str = "
         if sample is None:
             raise DataError(f"section {sid} of the per-bin table is not in the run's configuration, so its Space "
                             f"Ranger outputs cannot be found")
+        platform = pc.sample_platform(cfg, sample)
+        if platform != "visium_hd":  # [APP] Loupe Browser opens Space Ranger's Visium HD .cloupe files here
+            raise DataError(f"section {sid} holds {sr.PLATFORMS[platform]['label']} data; the Loupe Browser export "
+                            f"is for Visium HD sections (their .cloupe files): download the per-bin table instead")
         bin_dir = pc.resolve_bin_dir(cfg, sample, bin_size)
         if bin_dir is None:
             raise DataError(f"the raw data of section {sid} can no longer be found (no square_{bin_size}/"
@@ -2319,10 +2776,10 @@ def utf8_prefix(data: bytes) -> int:
 # ============================================================================
 # ACCESS TOKEN
 # ============================================================================
-_DENIED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Bone Spatial Studio</title></head>
+_DENIED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Popcorn</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:40em;margin:4em auto;line-height:1.5">
 <h1>Access token required</h1>
-<p>This Bone Spatial Studio server accepts other computers on the network, so it needs its access token. Open the
+<p>This Popcorn server accepts other computers on the network, so it needs its access token. Open the
 address printed in the terminal where the server was started; it ends with <code>?token=...</code>.</p>
 </body></html>"""
 
@@ -2470,7 +2927,7 @@ def optional_text(body: dict, key: str, max_len: int = 200, allow_empty: bool = 
 
 def create_app(workspace: Path, token: str | None = None, worker_module: str = "webapp.worker",
                hosted: Hosted | None = None) -> FastAPI:
-    """The Bone Spatial Studio application for one workspace folder. With `token`, every request must carry it (see
+    """The Popcorn application for one workspace folder. With `token`, every request must carry it (see
     TokenGate). worker_module is the module the job runner starts for a run (the tests use a fake one). The job runner
     starts and stops with the application (lifespan); an application mounted inside another one must call
     app.state.jobs.start() and .stop() itself, since a mounted application's lifespan does not run. With `hosted`, the
@@ -2504,7 +2961,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         finally:
             jobs.stop()
 
-    app = FastAPI(title="Bone Spatial Studio", version=__version__, lifespan=lifespan, default_response_class=JSONOut,
+    app = FastAPI(title="Popcorn", version=__version__, lifespan=lifespan, default_response_class=JSONOut,
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.state.storage = storage
     app.state.jobs = jobs
@@ -2700,9 +3157,10 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         tables.discard(lambda key: key[0].startswith(prefix))
         bins_cache.discard(lambda key: key[0] == rid)
         gene_links.discard(lambda key: key[0] == rid)
+        app.state.analyses.cancel(rid)  # its analyses still waiting or running (Analysis tab)
 
-    def raw_section(matrix: Path, positions: Path) -> RawSection:
-        return sections.get(section_key(matrix, positions), lambda: RawSection(matrix, positions))
+    def raw_section(src: SectionSource) -> RawSection:
+        return sections.get(src.key, src.load)
 
     def explore_config(pid: str, body: dict) -> dict:
         """Configuration of the data explorer: the unsaved edits sent with the request (body.config, as for POST
@@ -2739,11 +3197,11 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             raise NotFound(f"sample {sid!r} is not in the per-bin table of run {rid}")
         cfg, sample = run_sample(rid, sid)
         try:
-            matrix, positions = section_files(cfg, sample)
+            src = section_source(cfg, sample)
         except NotFound as exc:
-            raise DataError(f"the raw data of run {rid} can no longer be found ({exc}); gene maps need the Space "
-                            f"Ranger outputs the run analysed") from None
-        section = raw_section(matrix, positions)
+            raise DataError(f"the raw data of run {rid} can no longer be found ({exc}); gene maps need the data "
+                            f"the run analysed, where it was") from None
+        section = raw_section(src)
         link = gene_links.get((rid, sid, *table.source, *section.key),
                               lambda: RunGeneLink(section, table.barcodes(sid), sid))
         return link, section
@@ -2788,7 +3246,15 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
     @app.get("/api/defaults")
     def defaults():
-        return JSONOut({"config": default_config(), "param_schema": pc.PARAM_SCHEMA, "step_labels": pc.STEP_LABELS})
+        """The default configuration, the steps a run of the application may switch (app_steps: the base run; every
+        other step is a tool of the Analysis tab or stays with the command line) and, for whoever writes configuration
+        files, the description of every setting (param_schema) and step (step_labels)."""
+        return JSONOut({"config": default_config(), "param_schema": pc.PARAM_SCHEMA, "step_labels": pc.STEP_LABELS,
+                        "app_steps": [{"key": key, "label": label, "help": text}
+                                      for key, (label, text) in pc.APP_STEPS.items()],
+                        "platforms": [{"id": key, "label": sr.PLATFORMS[key]["label"],
+                                       "unit": sr.PLATFORMS[key]["unit"], "qc": pc.QC_PRESETS.get(key)}
+                                      for key in pc.PLATFORM_IDS]})
 
     @app.get("/api/docs/{name}")
     def docs(name: str):
@@ -2860,16 +3326,27 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
     def upload_parts(rel: str) -> list[str]:
         """The parts of an upload path: <folders>/square_XXXum/filtered_feature_bc_matrix.h5 or
-        <folders>/square_XXXum/spatial/<positions, scale factors or image>; anything else is refused."""
+        <folders>/square_XXXum/spatial/<positions, scale factors or image>; [APP] outside square_XXXum/ folders,
+        <folders>/filtered_feature_bc_matrix.h5 and <folders>/spatial/<...> (Visium), or a count or position file of
+        another instrument (UPLOAD_OTHER_RE); anything else is refused."""
         parts = rel.split("/")
         if (not rel or len(rel) > 1024 or len(parts) > UPLOAD_MAX_PARTS or any(c in rel for c in "\\:\0")
                 or any(not p or p in (".", "..") or p.startswith(".") or len(p) > 255 for p in parts)):
             raise HTTPException(400, f"invalid upload path {rel!r}")
         square = next((i for i, p in enumerate(parts) if SQUARE_RE.match(p)), None)
-        tail = parts[square + 1:] if square is not None else []
-        if not (tail == [UPLOAD_MATRIX] or (len(tail) == 2 and tail[0] == "spatial" and tail[1] in UPLOAD_SPATIAL)):
+        if square is not None:  # Visium HD: the matrix of a bin size, or its spatial/ files
+            tail = parts[square + 1:]
+            ok = tail == [UPLOAD_MATRIX] or (len(tail) == 2 and tail[0] == "spatial" and tail[1] in UPLOAD_SPATIAL)
+        else:                   # a Visium outs/ folder, or another instrument's count or position file
+            ok = (parts[-1] == UPLOAD_MATRIX or (len(parts) >= 2 and parts[-2] == "spatial"
+                                                  and parts[-1] in UPLOAD_SPATIAL)
+                  or UPLOAD_OTHER_RE.match(parts[-1]) is not None)
+        if not ok:
             raise HTTPException(400, f"{rel!r} is not a file the analysis reads: only square_<size>/{UPLOAD_MATRIX} "
-                                     f"and square_<size>/spatial/({', '.join(UPLOAD_SPATIAL)}) are uploaded")
+                                     f"and square_<size>/spatial/({', '.join(UPLOAD_SPATIAL)}) of Visium HD, the same "
+                                     f"files of a Visium outs/ folder, and the count and position files of Xenium, "
+                                     f"MERSCOPE, CosMx, Stereo-seq (.gef, .gem), AnnData (.h5ad) and count tables are "
+                                     f"uploaded")
         return parts
 
     def upload_files(root: Path) -> list[dict]:
@@ -2964,12 +3441,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         reports, panels = [], []
         for sample in config_samples(acfg):
             entry, errs, warns, genes = sample_report(acfg, sample)
+            entry["n_genes"] = len(genes) if genes is not None else None  # genes measured in this section
             reports.append(entry)
             errors += errs
             warnings += warns
             if genes is not None:
                 panels.append(genes)
-        genes, gene_warnings = genes_report(cfg, panels)
+        genes, gene_warnings = genes_report(pc.app_config(cfg), panels)  # as a run of the application uses them
         warnings += gene_warnings
         errors += roi_sources(pid, cfg)[1]
         return JSONOut({"ok": not errors, "errors": errors, "warnings": warnings, "samples": reports,
@@ -3021,7 +3499,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         cfg, sample = project_sample(pid, sid)
         image = hires_image(cfg, sample)
         if image is None:
-            raise NotFound(f"sample {sid} has no spatial/tissue_hires_image.png")
+            raise NotFound(no_image_message(cfg, sample))
         return FileResponse(image, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/projects/{pid}/samples/{sid}/image-meta")
@@ -3029,7 +3507,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         cfg, sample = project_sample(pid, sid)
         image = hires_image(cfg, sample)
         if image is None:
-            raise NotFound(f"sample {sid} has no spatial/tissue_hires_image.png")
+            raise NotFound(no_image_message(cfg, sample))
         try:
             with Image.open(image) as im:
                 width, height = im.size
@@ -3037,15 +3515,19 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             raise DataError(f"{image} cannot be read as an image ({exc})") from exc
         scalefactors = read_scalefactors(image.parent) or {}
         return JSONOut({"width": width, "height": height, "frame": "hires", "scalefactors": scalefactors,
-                        "microns_per_pixel": microns_per_pixel(sample, scalefactors)})
+                        "microns_per_pixel": microns_per_pixel(sample, scalefactors, pc.sample_platform(cfg, sample))})
 
     @app.get("/api/projects/{pid}/samples/{sid}/bins-preview")
     def bins_preview(pid: str, sid: str):
         cfg, sample = project_sample(pid, sid)
-        bin_dir = pc.resolve_bin_dir(cfg, sample)
+        bin_dir = pc.section_dir(cfg, sample)  # square_<bin_size>/ (Visium HD) or outs/ (Visium); None otherwise
         positions = positions_file(bin_dir / "spatial") if bin_dir is not None else None
         if positions is None:
-            raise NotFound(f"sample {sid} has no tissue positions for bin size {cfg.get('bin_size')}")
+            platform = pc.sample_platform(cfg, sample)
+            raise NotFound(f"sample {sid} has no tissue positions for bin size {cfg.get('bin_size')}"
+                           if platform == "visium_hd" else
+                           f"sample {sid} has no tissue positions over an H&E image "
+                           f"({sr.PLATFORMS[platform]['label']} data)")
         scalefactors = read_scalefactors(positions.parent)
         if scalefactors is None:
             image = hires_image(cfg, sample)
@@ -3068,33 +3550,45 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         for sample in config_samples(cfg):
             entry = {"id": sample["id"], "label": sample.get("label") or sample["id"],
                      "condition": sample.get("condition"), "color": sample.get("color"), "n_bins": None,
-                     "has_image": hires_image(cfg, sample) is not None, "ok": False, "message": ""}
+                     "has_image": hires_image(cfg, sample) is not None, "ok": False, "message": "",
+                     "platform": None, "unit": "bin"}
             try:
-                matrix, positions = section_files(cfg, sample)
-                entry["n_bins"] = len(in_tissue_xy(positions)[0])  # positions only: the matrix is not read
-                if entry["n_bins"] > RAW_SECTION_MAX_BINS:
-                    raise too_many_bins(matrix, entry["n_bins"])
+                src = section_source(cfg, sample)
+                entry["platform"] = src.platform
+                entry["unit"] = sr.PLATFORMS[src.platform]["unit"]
+                entry["n_bins"] = src.count()        # cheap: Space Ranger positions only, the matrix is not read
+                if entry["n_bins"] is not None and entry["n_bins"] > RAW_SECTION_MAX_BINS:
+                    raise too_many_bins(src.matrix or src.located.main, entry["n_bins"], src.platform)
             except (NotFound, DataError) as exc:
                 entry["message"] = str(exc)
             else:
                 entry["ok"] = True
-                entry["message"] = f"{entry['n_bins']:,} bins at {cfg['bin_size']}"
+                n, unit = entry["n_bins"], entry["unit"]
+                entry["message"] = (f"{n:,} bins at {cfg['bin_size']}" if src.platform == "visium_hd" else
+                                    f"{n:,} {sr.unit_word(unit, n)} ({sr.PLATFORMS[src.platform]['label']})"
+                                    if n is not None else f"{sr.PLATFORMS[src.platform]['label']}: {unit}s counted "
+                                                          f"when the section is read")
             out.append(entry)
         return JSONOut({"bin_size": cfg["bin_size"], "samples": out})
 
     @app.post("/api/projects/{pid}/explore/{sid}/bins")
     def explore_bins(pid: str, sid: str, body: dict = Depends(optional_json_body)):
         cfg, sample = explore_sample(pid, sid, body)
-        matrix, positions = section_files(cfg, sample)
-        mpp = section_mpp(sample, matrix.parent / "spatial")
-        image, image_note = section_image(cfg, sample, mpp, image_keys)  # issues the image key on every request
+        src = section_source(cfg, sample)
         qc, notes = qc_thresholds(cfg)
+        if src.ten_x:
+            mpp = section_mpp(sample, src.spatial, src.platform)
+            image, image_note = section_image(cfg, sample, mpp, image_keys)  # issues the image key on every request
+        else:  # [APP] another instrument: positions in its own units, no H&E image here
+            section = raw_section(src)
+            mpp, image = section.mpp, None
+            image_note = f"{sr.PLATFORMS[src.platform]['label']}: no H&E image is shown under the {section.unit}s"
+            notes += list(section.notes)
         notes += [image_note] if image_note else []
-        key = (sid, cfg["bin_size"], *section_key(matrix, positions), mpp, tuple(qc.items()), json.dumps(image),
-               tuple(notes))
+        key = (sid, cfg["bin_size"], *src.key, mpp, tuple(qc.items()), json.dumps(image), tuple(notes))
 
         def build() -> bytes:
-            return explore_payload(raw_section(matrix, positions), sid, cfg["bin_size"], mpp, qc, image, notes)
+            return explore_payload(raw_section(src), sid, cfg["bin_size"], mpp, qc, image, notes)
 
         return Response(explore_cache.get(key, build), media_type=JSON_MEDIA_TYPE)
 
@@ -3102,14 +3596,14 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     def explore_genes(pid: str, sid: str, body: dict = Depends(optional_json_body)):
         query, limit, offset = gene_query(body.get("query"), body.get("limit"), body.get("offset"))
         cfg, sample = explore_sample(pid, sid, body)
-        section = raw_section(*section_files(cfg, sample))
+        section = raw_section(section_source(cfg, sample))
         return JSONOut(gene_table(section, section.gene_total, section.gene_bins, section.n_bins, query, limit, offset))
 
     @app.post("/api/projects/{pid}/explore/{sid}/gene")
     def explore_gene(pid: str, sid: str, body: dict = Depends(json_body)):
         names = requested_genes(body.get("genes"))
         cfg, sample = explore_sample(pid, sid, body)
-        section = raw_section(*section_files(cfg, sample))
+        section = raw_section(section_source(cfg, sample))
         used, missing, cols = section.resolve(names)
         return JSONOut(sparse_vector(section.counts(cols), used, missing))
 
@@ -3117,7 +3611,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     def explore_bin(pid: str, sid: str, body: dict = Depends(json_body)):
         """Every gene detected in one bin (index: its position in the bin payload, the section's order)."""
         cfg, sample = explore_sample(pid, sid, body)
-        section = raw_section(*section_files(cfg, sample))
+        section = raw_section(section_source(cfg, sample))
         index = bin_index(body.get("index"), section.n_bins)
         return JSONOut(bin_genes_answer(section, index, index))
 
@@ -3125,7 +3619,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     def explore_top_genes(pid: str, sid: str, body: dict = Depends(optional_json_body)):
         """The top gene of every bin (pooled with the 8 around it; see RawSection.top_genes), section order."""
         cfg, sample = explore_sample(pid, sid, body)
-        section = raw_section(*section_files(cfg, sample))
+        section = raw_section(section_source(cfg, sample))
         return JSONOut(top_genes_answer(section))
 
     @app.get("/api/explore-images/{key}")
@@ -3169,6 +3663,11 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
                 raise HTTPException(400, f"unknown steps: {', '.join(unknown)}")
             if not all(isinstance(v, bool) for v in steps.values()):
                 raise HTTPException(400, "steps values must be true or false")
+            tools = sorted(k for k, on in steps.items() if on and k in pc.APP_STEPS_OFF)
+            if tools:
+                raise HTTPException(400, f"the application does not run these steps: {', '.join(tools)}; they are "
+                                         f"tools of the run's Analysis tab, or run from the command line "
+                                         f"(a run may switch: {', '.join(pc.APP_STEPS)})")
             if not isinstance(cfg.get("steps"), dict):
                 cfg["steps"] = {}
             cfg["steps"].update(steps)
@@ -3177,8 +3676,10 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             if not isinstance(deterministic, bool):
                 raise HTTPException(400, "deterministic must be true or false")
             cfg["deterministic"] = deterministic
+        cfg = pc.app_config(cfg)  # the base run: the study-specific steps are tools of the Analysis tab
         roi_files, problems = roi_sources(pid, cfg)
         require_runnable(cfg, problems)
+        record_platforms(cfg)
         return JSONOut(submit(pid, project.get("name", ""), label, cfg, roi_files))
 
     @app.get("/api/runs")
@@ -3213,7 +3714,8 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     @app.post("/api/runs/{rid}/rerun")
     def rerun(rid: str):
         old = jobs.get_run(rid)
-        cfg = pc.merge_with_defaults(storage.read_run_config(rid))
+        # a run made before the Analysis tab had every step on: run again, it is the base run like any other
+        cfg = pc.app_config(pc.merge_with_defaults(storage.read_run_config(rid)))
         run_dir = storage.run_dir(rid)
         roi = cfg.get("roi") if isinstance(cfg.get("roi"), dict) else {}
         masks = roi.get("masks") if isinstance(roi.get("masks"), dict) else {}
@@ -3361,9 +3863,10 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         image = hires_image(cfg, entry)
         if image is None:
             raise NotFound(f"sample {sample} of run {rid} has no H&E image (spatial/tissue_hires_image.png)")
-        bin_dir = pc.resolve_bin_dir(cfg, entry)
+        bin_dir = pc.section_dir(cfg, entry)
         try:  # the microns per pixel of the per-bin table's x_um, y_um
-            mpp = section_mpp(entry, bin_dir / "spatial" if bin_dir is not None else image.parent)
+            mpp = section_mpp(entry, bin_dir / "spatial" if bin_dir is not None else image.parent,
+                              pc.sample_platform(cfg, entry))
         except DataError as exc:
             raise NotFound(str(exc)) from None
         info, note = section_image(cfg, entry, mpp, image_keys)
@@ -3470,6 +3973,297 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         name = f"{rid}_{'results' if part == 'all' else part}.zip"
         return FileResponse(tmp, media_type="application/zip", filename=name,
                             headers={"Cache-Control": "no-store"}, background=BackgroundTask(remove_quietly, tmp))
+
+    # ---- analysis tab (webapp/analysis.py) ----------------------------------------------------------------------
+    def result_tables(rid: str) -> list[dict]:
+        """The result tables of a run a chart can be drawn from: [{"file", "title"}]."""
+        results = storage.results_dir(rid)
+        titles = {e.get("file"): e.get("title") for e in read_manifest_entries(results / "manifest.json", "files")}
+        return [{"file": rel, "title": titles.get(rel) or rel.rsplit("/", 1)[-1]}
+                for rel in scan_results(results) if is_table_file(rel)]
+
+    def result_table(rid: str, rel: str) -> pd.DataFrame:
+        path = results_file(rid, rel)
+        try:
+            return tables.get(file_key(path), lambda: Table(read_table(path))).df
+        except (OSError, ValueError) as exc:
+            raise an.ToolError(f"{rel} cannot be read as a table ({exc})") from None
+
+    def no_expression(rid: str, table: BinsTable) -> str | None:
+        """Why the raw counts of a run cannot be read (its files are looked for, not read), or None."""
+        for s in table.samples():
+            try:
+                section_source(*run_sample(rid, s["id"]))
+            except (StorageError, DataError, HTTPException) as exc:
+                return (f"The raw data of section {s['id']} can no longer be found "
+                        f"({getattr(exc, 'detail', None) or exc}). The tools that read gene counts need the data the "
+                        f"run analysed, where it was.")
+        return None
+
+    def analysis_ctx(rid: str, cancelled=None) -> an.Context:
+        """The Context of a run for the analysis tools; the raw counts are read when a tool first asks for them."""
+        table = bins_table(rid)
+        box = {}
+
+        def expression() -> an.Expression:
+            try:
+                return run_expression(table, box["ctx"], lambda sid: run_gene_link(rid, sid))
+            except (StorageError, DataError, HTTPException) as exc:
+                raise an.ToolError(str(getattr(exc, "detail", None) or exc)) from None
+
+        box["ctx"] = run_context(table, run_config(rid), expression=expression, regions=storage.read_regions(rid),
+                                 tables=lambda rel: result_table(rid, rel),
+                                 table_names=[t["file"] for t in result_tables(rid)], cancelled=cancelled)
+        return box["ctx"]
+
+    def regions_view(ctx: an.Context, regions: list[dict]) -> list[dict]:
+        """The stored regions with the number of bins inside each."""
+        ids = [s["id"] for s in ctx.samples]
+        out = []
+        for r in regions:
+            n = 0
+            if r["sample"] in ids:
+                here = ctx.sample_codes == ids.index(r["sample"])
+                inside = np.zeros(int(here.sum()), dtype=bool)
+                for polygon in r["polygons"]:
+                    inside |= an.points_in_polygon(ctx.x[here], ctx.y[here], polygon)
+                n = int(inside.sum())
+            out.append({**r, "n": n})
+        return out
+
+    analysis_guard = threading.RLock()  # a card and its task change together
+
+    def compute_analysis(rid: str, aid: str, cancelled) -> str | None:
+        """Run the tool of a card and store its result; returns the reason when the request cannot be computed."""
+        started = time.monotonic()
+        try:
+            card = storage.get_analysis(rid, aid)
+        except StorageError:
+            return None  # deleted before it started
+        refused, outcome = None, {"status": "done", "error": None}
+        try:
+            result, arrays = an.run_tool(card.get("tool"), analysis_ctx(rid, cancelled), card.get("params") or {})
+            storage.save_analysis_result(rid, aid, result, arrays)
+        except an.Cancelled:
+            return None
+        except (an.ToolError, DataError, StorageError) as exc:
+            refused = str(exc)
+            outcome = {"status": "failed", "error": refused}
+        except MemoryError:
+            outcome = {"status": "failed", "error": "The analysis ran out of memory. Narrow its scope: fewer "
+                                                    "sections, or only the bins of a region."}
+        except Exception as exc:  # a defect of a tool must not leave the card running for ever
+            log.exception("analysis %s (%s) of run %s failed", aid, card.get("tool"), rid)
+            outcome = {"status": "failed", "error": f"internal error: {type(exc).__name__}: {exc}"}
+        with analysis_guard:
+            try:  # the card as it is now: its title or view may have changed while the tool ran
+                latest = storage.get_analysis(rid, aid)
+                latest.update(outcome, seconds=round(time.monotonic() - started, 2))
+                storage.save_analysis(rid, latest)
+            except StorageError:
+                pass  # deleted meanwhile
+        return refused
+
+    runner = AnalysisRunner(compute_analysis)
+    app.state.analyses = runner
+
+    def settled(rid: str, card: dict) -> dict:
+        """The card; one left "running" by a server that stopped is failed, with the reason."""
+        with analysis_guard:
+            if card.get("status") == "running" and not runner.is_active(rid, card["id"]):
+                try:
+                    latest = storage.get_analysis(rid, card["id"])
+                    if latest.get("status") == "running":
+                        latest.update(status="failed", error="The server stopped while this analysis ran. Run it "
+                                                             "again.")
+                        storage.save_analysis(rid, latest)
+                    card = {**latest, **({"result": card["result"]} if "result" in card else {})}
+                except StorageError:
+                    pass
+        return card
+
+    def require_analysable(rid: str) -> None:
+        require_run(rid)
+        status = jobs.get_run(rid).get("status")
+        if jobs.is_busy(rid) or status in ACTIVE_STATUSES:
+            raise HTTPException(409, f"run {rid} is {status}; analyse it when it has finished")
+        if len(runner) >= ANALYSIS_QUEUE_MAX:
+            raise HTTPException(429, f"{len(runner)} analyses are already waiting on this server; wait until one "
+                                     f"has finished")
+
+    def start_analysis(rid: str, tool: str, title: str | None, params: dict | None, view: dict | None) -> tuple:
+        with analysis_guard:
+            card = storage.create_analysis(rid, tool, title or an.TOOLS_BY_ID[tool].title, params or {}, view)
+            return card, runner.submit(rid, card["id"])
+
+    @app.get("/api/runs/{rid}/analysis/context")
+    def analysis_context(rid: str):
+        """What the forms of the Analysis tab offer: sections, fields and their values, regions, tools, tables."""
+        require_run(rid)
+        ctx = analysis_ctx(rid)
+        return JSONOut(context_view(ctx, regions_view(ctx, storage.read_regions(rid)),
+                                    no_expression(rid, bins_table(rid)), result_tables(rid)))
+
+    @app.get("/api/runs/{rid}/analyses")
+    def list_analyses(rid: str):
+        require_run(rid)
+        return JSONOut([settled(rid, card) for card in storage.list_analyses(rid)])
+
+    @app.post("/api/runs/{rid}/analyses")
+    def create_analysis(rid: str, body: dict = Depends(json_body)):
+        """A new card: {"tool", "params", "title"?, "view"?}. Answers the finished card when the tool is quick, the
+        running one otherwise (GET it again); 422 with the reason, and no card, when the settings cannot be computed
+        and the tool says so within ANALYSIS_WAIT seconds."""
+        require_analysable(rid)
+        tool, title, params, view = analysis_request(body)
+        bins_table(rid)  # 404 when the run has no per-bin table
+        card, task = start_analysis(rid, tool, title, params, view)
+        if task["done"].wait(ANALYSIS_WAIT) and task["refused"]:
+            with contextlib.suppress(StorageError):
+                storage.delete_analysis(rid, card["id"])
+            raise HTTPException(422, task["refused"])
+        return JSONOut(settled(rid, storage.get_analysis(rid, card["id"], result=True)))
+
+    @app.get("/api/runs/{rid}/analyses/{aid}")
+    def get_analysis(rid: str, aid: str):
+        require_run(rid)
+        return JSONOut(settled(rid, storage.get_analysis(rid, aid, result=True)))
+
+    @app.put("/api/runs/{rid}/analyses/{aid}")
+    def update_analysis(rid: str, aid: str, body: dict = Depends(json_body)):
+        """Rename a card or keep how it is shown: {"title"?, "view"?}."""
+        require_run(rid)
+        _, title, _, view = analysis_request(body, need_tool=False)
+        if title is not None and not title:
+            raise HTTPException(400, "title must not be empty")
+        with analysis_guard:
+            card = storage.get_analysis(rid, aid)
+            if title is not None:
+                card["title"] = title
+            if view is not None:
+                card["view"] = view
+            return JSONOut(storage.save_analysis(rid, card))
+
+    @app.post("/api/runs/{rid}/analyses/{aid}/rerun")
+    def rerun_analysis(rid: str, aid: str, body: dict = Depends(optional_json_body)):
+        """Compute a card again, with new settings when given: {"params"?, "title"?, "view"?}. Refused settings (422)
+        leave the card as it was."""
+        require_analysable(rid)
+        _, title, params, view = analysis_request(body, need_tool=False)
+        with analysis_guard:
+            previous = storage.get_analysis(rid, aid)
+            if runner.is_active(rid, aid):
+                raise HTTPException(409, "this analysis is still running")
+            if previous.get("tool") not in an.TOOLS_BY_ID:
+                raise HTTPException(409, f"the tool {previous.get('tool')!r} of this analysis no longer exists")
+            card = dict(previous)
+            if params is not None:
+                card["params"] = params
+            if title:
+                card["title"] = title
+            if view is not None:
+                card["view"] = view
+            card.update(status="running", error=None)
+            storage.save_analysis(rid, card)
+            task = runner.submit(rid, aid)
+        if task["done"].wait(ANALYSIS_WAIT) and task["refused"]:
+            with analysis_guard, contextlib.suppress(StorageError):
+                storage.save_analysis(rid, previous)
+            raise HTTPException(422, task["refused"])
+        return JSONOut(settled(rid, storage.get_analysis(rid, aid, result=True)))
+
+    @app.delete("/api/runs/{rid}/analyses/{aid}")
+    def delete_analysis(rid: str, aid: str):
+        require_run(rid)
+        with analysis_guard:
+            runner.cancel(rid, aid)
+            storage.delete_analysis(rid, aid)
+        return JSONOut({"ok": True})
+
+    @app.get("/api/runs/{rid}/analyses/{aid}/table.csv")
+    def analysis_table(rid: str, aid: str):
+        """The table of a card as CSV."""
+        require_run(rid)
+        card = storage.get_analysis(rid, aid, result=True)
+        if card.get("result") is None:
+            raise NotFound(f"analysis {aid} has no result yet")
+        try:
+            text = an.result_csv(card["result"])
+        except an.ToolError as exc:
+            raise NotFound(str(exc)) from None
+        name = f"{safe_file_part(card.get('title') or aid)}.csv"
+        return Response(text.encode("utf-8"), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+    @app.get("/api/runs/{rid}/analyses/{aid}/values")
+    def analysis_values(rid: str, aid: str, name: str):
+        """Per-bin values of a card (a score on the map): the bins of one section in the order of GET /bins, null
+        where a bin has none."""
+        require_run(rid)
+        values = np.asarray(storage.analysis_array(rid, aid, name), dtype=np.float64)
+        return JSONOut({"name": name, "n": int(len(values)), "values": finite_list(values, ARRAY_DIGITS)})
+
+    @app.get("/api/runs/{rid}/regions")
+    def get_regions(rid: str):
+        require_run(rid)
+        return JSONOut({"regions": regions_view(analysis_ctx(rid), storage.read_regions(rid))})
+
+    @app.put("/api/runs/{rid}/regions")
+    def put_regions(rid: str, body: dict = Depends(json_body)):
+        """Replace the regions drawn on a run: {"regions": [{"id"?, "name", "sample", "polygons", "color"?}]}."""
+        require_run(rid)
+        regions = clean_regions(body, [s["id"] for s in bins_table(rid).samples()])
+        storage.write_regions(rid, regions)
+        return JSONOut({"regions": regions_view(analysis_ctx(rid), regions)})
+
+    def template_view(t: dict) -> dict:
+        cards = [c for c in t.get("cards") or [] if isinstance(c, dict)]
+        return {"id": t.get("id"), "name": t.get("name") or "", "created": t.get("created"),
+                "cards": [{"tool": c.get("tool"), "title": c.get("title") or ""} for c in cards]}
+
+    @app.get("/api/analysis/templates")
+    def list_templates():
+        return JSONOut([template_view(t) for t in storage.list_templates()])
+
+    @app.post("/api/analysis/templates")
+    def create_template(body: dict = Depends(json_body)):
+        """Keep a set of analyses to apply to other runs: {"name", "cards": [{"tool", "title", "params", "view"}]}."""
+        name = optional_text(body, "name", ANALYSIS_TITLE_MAX, allow_empty=False)
+        if not name:
+            raise HTTPException(400, "name must be a non-empty string")
+        given = body.get("cards")
+        if not isinstance(given, list) or not given or not all(isinstance(c, dict) for c in given):
+            raise HTTPException(400, "cards must be a non-empty list of analyses")
+        if len(given) > MAX_TEMPLATE_CARDS:
+            raise HTTPException(400, f"a template holds at most {MAX_TEMPLATE_CARDS} analyses")
+        cards = []
+        for c in given:
+            tool, title, params, view = analysis_request(c)
+            cards.append({"tool": tool, "title": title or an.TOOLS_BY_ID[tool].title, "params": params or {},
+                          "view": view or {}})
+        return JSONOut(template_view(storage.create_template(name, cards)))
+
+    @app.delete("/api/analysis/templates/{tid}")
+    def delete_template(tid: str):
+        storage.delete_template(tid)
+        return JSONOut({"ok": True})
+
+    @app.post("/api/runs/{rid}/templates/{tid}/apply")
+    def apply_template(rid: str, tid: str):
+        """Start every analysis of a template on a run; answers the new cards (running). A card whose settings do not
+        fit this run (a cell type it lacks, a gene not in its data) fails with the reason, the others still run."""
+        require_analysable(rid)
+        bins_table(rid)
+        template = storage.get_template(tid)
+        wanted = [c for c in template.get("cards") or [] if isinstance(c, dict) and c.get("tool") in an.TOOLS_BY_ID]
+        if not wanted:
+            raise HTTPException(409, f"template {tid} holds no analysis of a tool this version has")
+        if len(runner) + len(wanted) > ANALYSIS_QUEUE_MAX + MAX_TEMPLATE_CARDS:
+            raise HTTPException(429, "too many analyses are waiting on this server; wait until some have finished")
+        # the cards list newest first: started in reverse, the template's first analysis ends up on top
+        cards = [start_analysis(rid, c["tool"], c.get("title"), c.get("params"), c.get("view"))[0]
+                 for c in reversed(wanted)]
+        return JSONOut(cards[::-1])
 
     # ---- demo --------------------------------------------------------------------------------------------------
     @app.post("/api/demo")

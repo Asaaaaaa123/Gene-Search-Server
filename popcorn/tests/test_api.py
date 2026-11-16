@@ -1,7 +1,7 @@
 """
 tests/test_api.py
 =================
-HTTP API of Bone Spatial Studio (docs/ARCHITECTURE.md, sections 4-6) against temporary workspaces, with
+HTTP API of Popcorn (docs/ARCHITECTURE.md, sections 4-6) against temporary workspaces, with
 tests/fake_worker.py standing in for the analysis worker (no scanpy needed). The data endpoints use the tiny synthetic
 dataset of the tiny_demo fixture (tests/conftest.py).
 """
@@ -144,7 +144,7 @@ def test_defaults_and_docs(client):
                                                           "markdown": (ROOT / rel).read_text(encoding="utf-8")}
         else:
             assert r.status_code == 404
-    assert client.get("/api/docs/architecture").json()["markdown"].startswith("# Bone Spatial Studio")
+    assert client.get("/api/docs/architecture").json()["markdown"].startswith("# Popcorn")
     r = client.get("/api/docs/secrets")
     assert r.status_code == 404 and "readme" in r.json()["detail"]
 
@@ -312,9 +312,9 @@ def test_detect_samples(client, tiny_demo, tmp_path):
     assert Path(r["data_root"]) == Path(tiny_demo["root"])
     assert r["candidates"] == [
         {"folder": "DEMO_CTRL-1", "path": "DEMO_CTRL-1/outs/binned_outputs", "suggested_id": "DEMO_CTRL-1",
-         "bin_sizes": ["008um", "016um"]},
+         "bin_sizes": ["008um", "016um"], "platform": "visium_hd", "unit": "bin", "platform_label": "10x Visium HD"},
         {"folder": "DEMO_TUM-1", "path": "DEMO_TUM-1/outs/binned_outputs", "suggested_id": "DEMO_TUM-1",
-         "bin_sizes": ["008um", "016um"]}]
+         "bin_sizes": ["008um", "016um"], "platform": "visium_hd", "unit": "bin", "platform_label": "10x Visium HD"}]
 
     runs = tmp_path / "sr"
     for d in ("SR007144_LL-2-1/outs/binned_outputs/square_002um", "SR007144_LL-2-1/outs/binned_outputs/square_016um",
@@ -324,9 +324,9 @@ def test_detect_samples(client, tiny_demo, tmp_path):
     (runs / "empty/square_016um").mkdir(parents=True)  # no matrix
     r = client.post(f"/api/projects/{p['id']}/detect-samples", json={"data_root": str(runs)}).json()
     assert r["candidates"] == [
-        {"folder": "flat", "path": "flat", "suggested_id": "flat", "bin_sizes": ["008um"]},
+        {"folder": "flat", "path": "flat", "suggested_id": "flat", "bin_sizes": ["008um"], "platform": "visium_hd", "unit": "bin", "platform_label": "10x Visium HD"},
         {"folder": "SR007144_LL-2-1", "path": "SR007144_LL-2-1/outs/binned_outputs", "suggested_id": "LL-2-1",
-         "bin_sizes": ["002um", "016um"]}]
+         "bin_sizes": ["002um", "016um"], "platform": "visium_hd", "unit": "bin", "platform_label": "10x Visium HD"}]
     r = client.post(f"/api/projects/{p['id']}/detect-samples", json={"data_root": str(runs / "nowhere")})
     assert r.status_code == 400
     assert client.post("/api/projects/p-00000000/detect-samples").status_code == 404
@@ -342,7 +342,7 @@ def test_validate(client, tiny_demo):
         n_bins, n_genes = int(f["matrix/shape"][1]), int(f["matrix/shape"][0])
     scalefactors = json.loads((bin_dir / "spatial" / "scalefactors_json.json").read_text(encoding="utf-8"))
     assert ctrl["id"] == "CTRL-1" and Path(ctrl["bin_dir"]) == bin_dir
-    assert ctrl["bin_sizes"] == ["008um", "016um"] and ctrl["n_bins"] == n_bins
+    assert ctrl["bin_sizes"] == ["008um", "016um"] and ctrl["n_bins"] == n_bins and ctrl["n_genes"] == n_genes
     assert ctrl["has_positions"] and ctrl["has_scalefactors"] and ctrl["has_hires_image"]
     assert ctrl["microns_per_pixel"] == scalefactors["microns_per_pixel"]
     assert f"{n_bins:,} bins at 016um" in ctrl["message"]

@@ -1,4 +1,4 @@
-// core.js — shared helpers for every view of Bone Spatial Studio:
+// core.js — shared helpers for every view of Popcorn:
 // API client, DOM builder, icons, toasts, dialogs, small components, formatting, polling and the hash router.
 
 // ------------------------------------------------------------------------------------------------ API client

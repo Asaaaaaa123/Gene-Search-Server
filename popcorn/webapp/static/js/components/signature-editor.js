@@ -1,6 +1,8 @@
-// signature-editor.js — the Signatures tab: the gene signatures of Table 1 and how they are used (positivity calls =
-// cfg.primary, tissue assignment = cfg.programs), tissue classes, host receptor panel, adipocyte genes and ubiquitous
-// transcripts. Gene chips are colored with the last data-check report. Edits change the draft config in place.
+// signature-editor.js — the Signatures tab: the gene signatures and how they are used (positivity calls =
+// cfg.primary, tissue assignment = cfg.programs), tissue classes and ubiquitous transcripts. Gene chips are colored
+// with the last data-check report. Edits change the draft config in place. The host receptor panel and the adipocyte
+// genes of the manuscript are no longer edited here: a run of the application does not use them (any gene list is
+// looked at in the Analysis tab of a run); they stay in the configuration for the command line.
 import { h, mount, icon, card, button, menuButton, switchToggle, confirmDialog, promptDialog, toast, clone, emptyState } from '../core.js';
 import { chipInput, chipSelect, signatureOptions, optionLabel, iconButton, uniqueList } from './chips.js';
 
@@ -61,45 +63,16 @@ export function renameSignature(cfg, from, to) {
 }
 
 /**
- * Settings that name `name` in a single-signature field (deleteSignature leaves them; the Parameters tab changes
- * them): [{where, step}], where = the field in the Parameters tab, step = the steps key of the step that needs it
- * (null for the Figure 4a–f maps, which have no step of their own).
+ * What deleting `name` changes in what a run of the application does: sentences for the delete dialog. (The settings
+ * of the manuscript's own steps that name the signature are left alone: the application does not run those steps.)
  */
-export function signatureUsage(cfg, name) {
-  const out = [];
-  const c = cfg.compartments || {};
-  const u = cfg.uncoupling || {};
-  const lm = (cfg.figures && cfg.figures.lineage_maps) || {};
-  const cp = 'Osteoclast compartments (Figure 4h)';
-  const un = 'Distance to nearest partner (Figure 4i)';
-  if (c.signature === name) out.push({ where: `${cp} › Signature split into compartments`, step: 'compartments' });
-  if (c.split_by === name) out.push({ where: `${cp} › Split by the score of`, step: 'compartments' });
-  if (u.a === name) out.push({ where: `${un} › From (signature)`, step: 'uncoupling' });
-  if (u.b === name) out.push({ where: `${un} › To (signature)`, step: 'uncoupling' });
-  if (lm.a === name) out.push({ where: 'Figures › Figure 4a–f: first signature', step: null });
-  if (lm.b === name) out.push({ where: 'Figures › Figure 4a–f: second signature', step: null });
-  return out;
-}
-
-/** What deleting `name` empties or drops in the lists that deleteSignature edits: sentences for the delete dialog. */
 export function deletionEffects(cfg, name) {
   const notes = [];
   const only = (list) => isList(list) && list.length > 0 && list.every((x) => x === name);
-  const fig = cfg.figures || {};
-  if (only(fig.composition_signatures)) {
-    notes.push('It is the only signature of the composition bars: Figure 3b is not drawn until others are chosen (Parameters › Figures).');
-  }
-  for (const p of isList(fig.positivity_panels) ? fig.positivity_panels : []) {
-    if (p && only(p.signatures)) notes.push(`It is the only signature of the positivity panel ${p.name}: the panel is not drawn until others are chosen (Parameters › Figures).`);
-  }
-  const pairs = (cfg.proximity && isList(cfg.proximity.pairs) ? cfg.proximity.pairs : []).filter((p) => p && (p.from === name || p.to === name));
-  if (pairs.length) notes.push(`Proximity pair${pairs.length === 1 ? '' : 's'} removed: ${pairs.map((p) => `${p.from} → ${p.to}`).join(', ')}.`);
   if (only(cfg.roi && cfg.roi.exclude)) {
     notes.push('It is the only signature that excludes bins from the region of interest: the whole section (or the drawn region) becomes the region of interest.');
   }
-  if (cfg.steps && cfg.steps.sensitivity === true && only(cfg.sensitivity && cfg.sensitivity.signatures)) {
-    notes.push('The three-gene-set sensitivity has nothing left to test: switch it off (Parameters › Analysis steps).');
-  }
+  if (only(cfg.primary)) notes.push('It is the only signature with a positivity call: a run needs at least one.');
   return notes;
 }
 
@@ -145,8 +118,6 @@ export function geneCoverage(report) {
     (v && v.present || []).forEach((g) => present.add(g));
     (v && v.missing || []).forEach((g) => missing.add(g));
   }
-  ((genes.receptor_panel || {}).missing || []).forEach((g) => missing.add(g));
-  ((genes.adipocyte_genes || {}).missing || []).forEach((g) => missing.add(g));
   ((genes.ubiquitous || {}).missing || []).forEach((g) => missing.add(g));
   return { known: true, present, missing };
 }
@@ -182,7 +153,6 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
   let editorChips = [];
   let paintCoreNote = () => {};
   let flagSwitches = { primary: null, programs: null };
-  let panelInputs = [];
 
   // ---------------------------------------------------------------- list
   const filter = h('input', { class: 'input sig-filter', type: 'search', placeholder: 'Filter', 'aria-label': 'Filter signatures', autocomplete: 'off' });
@@ -436,14 +406,14 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       h('div', { class: 'form-grid sig-grid' },
         h('div', { class: 'field' }, h('label', { for: keyId }, 'Key name'), keyInput, keyErr,
           h('div', { class: 'help' }, 'Used in the configuration and in column names; renaming updates every reference.')),
-        text('Label', 'label', { help: 'Drawn in the figures.', after: () => { paintHead(); paintList(); } }),
-        text('Table label', 'table_label', { help: 'Written to Table 1.' }),
+        text('Label', 'label', { help: 'Shown on the maps and in the charts.', after: () => { paintHead(); paintList(); } }),
+        text('Table label', 'table_label', { help: 'Written to the table of signatures (Table 1).' }),
         h('div', { class: 'field' }, h('label', { for: classId }, 'Tissue class'), classSel,
-          h('div', { class: 'help' }, 'Class drawn in Figure 3 for bins assigned to this signature.')),
+          h('div', { class: 'help' }, 'The class of the bins assigned to this signature: a coarser grouping of the cell types.')),
         h('div', { class: 'field' }, h('label', { for: colorId }, 'Color'), h('div', { class: 'row' }, color, hexText))),
       h('div', { class: 'sig-flags' },
-        h('div', null, pSwitch, h('div', { class: 'help' }, 'Bins are called positive or negative for it; listed in primary. The positivity figures show the signatures of their panels (Parameters › Figures).')),
-        h('div', null, aSwitch, h('div', { class: 'help' }, 'It competes in the deterministic tissue assignment (Figure 3); listed in programs. Figure 3b shows the signatures chosen under Parameters › Figures.'))),
+        h('div', null, pSwitch, h('div', { class: 'help' }, 'Every bin is called positive or negative for it (listed in primary): a yes/no field of the map and of the Analysis tab.')),
+        h('div', null, aSwitch, h('div', { class: 'help' }, 'It competes in the tissue assignment, which gives every bin one cell type (listed in programs).'))),
       extended.el, core.el, coreNote, canonical.el,
       h('div', { class: 'field' }, h('label', { for: competes.el.querySelector('select').id }, 'Competes with'), competes.el,
         h('div', { class: 'help' }, 'A bin that scores higher on one of these signatures is not called positive for this one.')),
@@ -452,23 +422,13 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
 
   async function removeSignature(name) {
     const s = sigs()[name] || {};
-    const uses = signatureUsage(cfg, name);
     const effects = deletionEffects(cfg, name);
-    const steps = cfg.steps && typeof cfg.steps === 'object' ? cfg.steps : {};
-    const stepOn = (u) => !!u.step && steps[u.step] === true;
-    const after = [];
-    if (uses.some(stepOn)) after.push('The analysis cannot start until another signature is chosen there, or the step is switched off (Parameters › Analysis steps).');
-    if (uses.some((u) => !u.step)) after.push('Figure 4a–f is not drawn until another signature is chosen there.');
     const ok = await confirmDialog({
       title: `Delete the signature “${s.label || name}”?`,
       message: h('div', null,
-        h('p', null, 'It is also removed from the positivity calls, the tissue assignment, the competitor lists, the '
-          + 'region-of-interest exclusions, the proximity pairs, the sensitivity sets and the figure lists.'),
+        h('p', null, 'It is also removed from the positivity calls, the tissue assignment, the competitor lists and '
+          + 'the region-of-interest exclusions.'),
         effects.length ? h('ul', null, effects.map((t) => h('li', null, t))) : null,
-        uses.length ? [
-          h('p', null, h('strong', null, 'Still selected in the Parameters tab:')),
-          h('ul', null, uses.map((u) => h('li', null, u.where, u.step && !stepOn(u) ? ' (step switched off)' : ''))),
-          after.length ? h('p', null, after.join(' ')) : null] : null,
         h('p', { class: 'muted' }, 'Discard (in the bar at the bottom of the page) restores the saved configuration.')),
       confirmLabel: 'Delete signature', danger: true,
     });
@@ -565,7 +525,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     };
     mount(orderBody,
       col('primary', 'Positivity calls', 'Signatures with a positive / negative call per bin (primary), in table and figure order.'),
-      col('programs', 'Tissue assignment', 'Signatures competing for each bin in the deterministic assignment of Figure 3 (programs); ties go to the first.'));
+      col('programs', 'Tissue assignment', 'Signatures competing for each bin in the tissue assignment, which gives every bin its cell type (programs); ties go to the first.'));
     if (!focus) return;
     const column = orderBody.querySelector(`.order-col[data-key="${focus.key}"]`);
     if (!column) return;
@@ -625,7 +585,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
             const users = Object.entries(sigs()).filter(([, s]) => s && s.class === c.name).map(([n, s]) => s.label || n);
             if (users.length && !await confirmDialog({
               title: `Remove the class “${c.name}”?`,
-              message: `${users.join(', ')} ${users.length === 1 ? 'uses' : 'use'} this class. They stay in the tissue assignment but are not drawn in Figure 3, like class “removed”.`,
+              message: `${users.join(', ')} ${users.length === 1 ? 'uses' : 'use'} this class. They stay in the tissue assignment and count as class “removed”.`,
               confirmLabel: 'Remove class', danger: true,
             })) return;
             classes.splice(i, 1);
@@ -646,7 +606,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
         paintEditor();
       },
     });
-    mount(classesBody, classes.length ? h('ol', { class: 'cls-list' }, rows) : h('p', { class: 'muted' }, 'No tissue classes: Figure 3 draws nothing.'), h('div', { class: 'row' }, add));
+    mount(classesBody, classes.length ? h('ol', { class: 'cls-list' }, rows) : h('p', { class: 'muted' }, 'No tissue classes: every assigned bin counts as “removed”.'), h('div', { class: 'row' }, add));
     if (focus) {
       const row = classesBody.querySelectorAll('.cls-row')[focus.index];
       const target = row && (row.querySelector(`${focus.dir}:not(:disabled)`) || row.querySelector('.cls-name'));
@@ -654,70 +614,20 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     }
   }
 
-  // ---------------------------------------------------------------- host receptor panel
-  const panelBody = h('div', { class: 'stack' });
-
-  function markPanel() {
-    const seen = new Set();
-    for (const { input, r } of panelInputs) {
-      const g = r.gene.trim();
-      const dup = g && seen.has(g);
-      seen.add(g);
-      const missing = g && cov.missing.has(g);
-      input.classList.toggle('invalid', !!dup);
-      input.classList.toggle('gene-missing', !dup && !!missing);
-      input.title = dup ? 'Listed twice: only the first entry is kept' : missing ? 'Not in the probe set of these sections' : '';
-    }
-  }
-
-  // The rows are kept here (not only in cfg.receptor_panel) so that a row whose gene is still empty survives edits.
-  let panelRows = [];
-
-  function writePanel() {
-    const out = {};
-    for (const r of panelRows) {
-      const g = r.gene.trim();
-      if (g && !has(out, g)) out[g] = r.role;
-    }
-    cfg.receptor_panel = out;
-    emit();
-    markPanel();
-  }
-
-  function paintPanel(focusLast) {
-    panelInputs = [];
-    const items = panelRows.map((r, i) => {
-      const input = h('input', { class: 'input mono', value: r.gene, placeholder: 'Gene', 'aria-label': `Receptor panel row ${i + 1}: gene`, spellcheck: false, autocomplete: 'off' });
-      const role = h('input', { class: 'input', value: r.role, placeholder: 'Role', 'aria-label': `Receptor panel row ${i + 1}: role` });
-      input.addEventListener('input', () => { r.gene = input.value; writePanel(); });
-      role.addEventListener('input', () => { r.role = role.value; writePanel(); });
-      panelInputs.push({ input, r });
-      return h('div', { class: 'panel-row has-row-actions' }, input, role,
-        h('span', { class: 'row-actions' },
-          iconButton('trash', `Remove ${r.gene || `row ${i + 1}`} from the receptor panel`, () => { panelRows.splice(i, 1); writePanel(); paintPanel(); })));
-    });
-    const add = button({ label: 'Add gene', icon: 'plus', small: true, onClick: () => { panelRows.push({ gene: '', role: '' }); paintPanel(true); } });
-    mount(panelBody, items.length ? h('div', { class: 'panel-rows' }, items) : h('p', { class: 'muted' }, 'The receptor panel is empty.'), h('div', { class: 'row' }, add));
-    markPanel();
-    if (focusLast && panelInputs.length) panelInputs[panelInputs.length - 1].input.focus();
-  }
-
-  // ---------------------------------------------------------------- simple gene lists
-  const geneList = (key, label) => chipInput({
-    values: isList(cfg[key]) ? cfg[key] : [], label, placeholder: 'Type a gene and press Enter, or paste a list',
-    classify: geneState, describe: geneTip, onChange: (v) => { cfg[key] = v; emit(); },
+  // ---------------------------------------------------------------- ubiquitous transcripts
+  const ubiquitous = chipInput({
+    values: isList(cfg.ubiquitous) ? cfg.ubiquitous : [], label: 'Ubiquitous transcripts',
+    placeholder: 'Type a gene and press Enter, or paste a list',
+    classify: geneState, describe: geneTip, onChange: (v) => { cfg.ubiquitous = v; emit(); },
   });
-  const adipocyte = geneList('adipocyte_genes', 'Adipocyte genes');
-  const ubiquitous = geneList('ubiquitous', 'Ubiquitous transcripts');
 
   // Start over from the gene sets of the manuscript (Table 1): in the menu of the Signatures card (and in the empty
   // state), with the confirmation dialog, rather than as a red button of its own.
   async function resetToDefaults() {
     const ok = await confirmDialog({
       title: 'Reset the gene sets?',
-      message: 'Signatures, tissue classes, positivity calls, tissue assignment, host receptor panel, adipocyte genes and '
-        + 'ubiquitous transcripts return to the manuscript defaults. Other parameters are kept; settings that name '
-        + 'signatures that no longer exist are reported by the validation.',
+      message: 'Signatures, tissue classes, positivity calls, tissue assignment and ubiquitous transcripts return to '
+        + 'the gene sets of the manuscript (mouse bone and marrow). The other settings are kept.',
       confirmLabel: 'Reset gene sets', danger: true,
     });
     if (!ok) return;
@@ -734,7 +644,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       title: 'Gene set actions', small: true,
       items: [{
         label: 'Reset gene sets to manuscript defaults', icon: 'undo', danger: true, onClick: resetToDefaults,
-        hint: 'Signatures, tissue classes, calling order, receptor panel and gene lists (Table 1)',
+        hint: 'Signatures, tissue classes, calling order and ubiquitous transcripts (mouse bone and marrow)',
       }],
     }),
   ];
@@ -744,11 +654,6 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     paintEditor();
     paintOrder();
     paintClasses();
-    const panel = cfg.receptor_panel;
-    panelRows = Object.entries(panel && typeof panel === 'object' && !isList(panel) ? panel : {})
-      .map(([gene, role]) => ({ gene, role: String(role ?? '') }));
-    paintPanel();
-    adipocyte.set(isList(cfg.adipocyte_genes) ? cfg.adipocyte_genes : []);
     ubiquitous.set(isList(cfg.ubiquitous) ? cfg.ubiquitous : []);
   }
 
@@ -758,10 +663,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       h('section', { class: 'card sig-main' }, editorBody)),
     card({ title: 'Calling order', subtitle: 'Order of the positivity calls and of the tissue assignment (P and A in the list).', body: orderBody }),
     h('div', { class: 'grid-2' },
-      card({ title: 'Tissue classes', subtitle: 'Classes drawn in Figure 3a, in legend order. A signature whose class is not listed is assigned but not drawn.', body: classesBody }),
-      card({ title: 'Host receptor panel', subtitle: 'Figure 6b: gene and role. Genes missing from the probe set are outlined.', body: panelBody })),
-    h('div', { class: 'grid-2' },
-      card({ title: 'Adipocyte genes', subtitle: 'Supplementary Figure S4.', body: adipocyte.el }),
+      card({ title: 'Tissue classes', subtitle: 'Coarser groups of the cell types, in legend order. A signature whose class is not listed is assigned but counts as removed.', body: classesBody }),
       card({ title: 'Ubiquitous transcripts', subtitle: 'Transcripts abundant in essentially every cell; a Leiden domain headed by them has no interpretable identity.', body: ubiquitous.el })));
 
   paintAll();
@@ -771,11 +673,9 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     setReport(r) {
       cov = geneCoverage(r);
       editorChips.forEach((ci) => ci.refresh());
-      adipocyte.refresh();
       ubiquitous.refresh();
       paintCoreNote();
       paintList();
-      markPanel();
     },
   };
 }

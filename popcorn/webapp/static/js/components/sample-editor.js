@@ -1,5 +1,6 @@
-// sample-editor.js — the Data tab's sample table, the dialog that turns detected Space Ranger folders into samples,
-// and the panel that shows the data-check report (POST /api/projects/{pid}/validate).
+// sample-editor.js — the Data tab's sample table, the dialog that turns detected sections (Space Ranger outputs and
+// the outputs of other instruments) into samples, and the panel that shows the data-check report
+// (POST /api/projects/{pid}/validate).
 import { h, mount, icon, button, menuButton, modal, banner, fmt, api } from '../core.js';
 import { openFolderPicker } from './folder-picker.js';
 
@@ -53,6 +54,16 @@ export function binLabel(bin) {
   return m ? `${Number(m[1])} µm` : String(bin);
 }
 
+/** Short names of the instruments (spatial_readers.PLATFORMS; GET /api/defaults lists them with their units). */
+export const PLATFORM_NAMES = {
+  visium_hd: 'Visium HD', visium: 'Visium', xenium: 'Xenium', merscope: 'MERSCOPE', cosmx: 'CosMx',
+  stereo_seq: 'Stereo-seq', h5ad: 'AnnData', table: 'Tables',
+};
+export const platformName = (p) => PLATFORM_NAMES[p] || String(p || 'Visium HD');
+/** 'bin' -> 'bins' unless n is 1 */
+export const unitWord = (unit, n) => (n === 1 ? (unit || 'bin') : `${unit || 'bin'}s`);
+const TEN_X = new Set(['visium_hd', 'visium']);
+
 export function isAbsolutePath(p) { return /^([A-Za-z]:[\\/]|[\\/]|~)/.test(String(p ?? '')); }
 
 export function joinPath(a, b) {
@@ -81,7 +92,8 @@ const normPath = (p) => String(p ?? '').replace(/\\/g, '/').replace(/\/+$/, '').
 const candidatePath = (c) => c.path || c.folder || '';
 
 /**
- * Add detected candidates ({folder, path, suggested_id}) to cfg.samples (or replace them). A folder that a sample
+ * Add detected candidates ({folder, path, suggested_id, platform}) to cfg.samples (or replace them). A sample of another
+ * instrument than Visium HD names its platform (the default needs no entry). A folder that a sample
  * reads already is not added again: it is one section, and a second sample of it would count it twice. A folder that
  * a known sample describes (with `replace` the current samples, and `templates`, e.g. the default samples; matched by
  * folder, then by id) keeps that sample's id, label, condition and color. The others get unique ids, conditions guessed
@@ -121,8 +133,11 @@ export function applyDetectedSamples(cfg, candidates, { replace = false, templat
     const taken = new Set(colors.filter(Boolean).map((x) => String(x).toLowerCase()));
     const color = tpl && HEX_RE.test(String(tpl.color)) && !taken.has(String(tpl.color).toLowerCase()) ? tpl.color : nextColor(colors);
     colors.push(color);
-    added.push({ ...(tpl || {}), id, label, condition, color, path: candidatePath(c),
-      microns_per_pixel: tpl && tpl.microns_per_pixel != null ? tpl.microns_per_pixel : null });
+    const entry = { ...(tpl || {}), id, label, condition, color, path: candidatePath(c),
+      microns_per_pixel: tpl && tpl.microns_per_pixel != null ? tpl.microns_per_pixel : null };
+    if (c.platform && c.platform !== 'visium_hd') entry.platform = c.platform;
+    else if (c.platform) delete entry.platform;
+    added.push(entry);
   }
   cfg.samples = [...base, ...added];
   const ref = cfg.samples.find((s) => s.id === cfg.reference_sample);
@@ -160,8 +175,8 @@ export function sampleEditor({ cfg, report = null, onChange, onExplore } = {}) {
       h('thead', null, h('tr', null,
         h('th', { title: 'Reference sample: fold changes and ratios are every other sample over this one' }, 'Ref.'),
         h('th', null, 'Id'), h('th', null, 'Label'), h('th', null, 'Condition'), h('th', null, 'Color'),
-        h('th', null, 'Folder (relative to the data root)'),
-        h('th', { title: 'Microns per full-resolution pixel. Empty: read from spatial/scalefactors_json.json' }, 'µm / px'),
+        h('th', null, 'Folder or file (relative to the data root)'),
+        h('th', { title: 'Micrometres per pixel of the positions: per full-resolution pixel of Space Ranger outputs, per unit of the coordinates of other instruments. Empty: read from the data (spatial/scalefactors_json.json; Xenium, MERSCOPE and .h5ad positions are micrometres, CosMx pixels 0.12028 µm)' }, 'µm / px'),
         h('th', null, 'Data'), h('th', { class: 'col-actions' }, h('span', { class: 'sr-only' }, 'Actions')))),
       tbody)),
     h('div', { class: 'sample-foot' }, addBtn,
@@ -192,8 +207,11 @@ export function sampleEditor({ cfg, report = null, onChange, onExplore } = {}) {
       return;
     }
     const found = !!rep.bin_dir;
-    const detail = rep.message || (found ? rep.bin_dir : 'Not found');
-    const text = found ? (rep.n_bins !== null && rep.n_bins !== undefined ? `${fmt.int(rep.n_bins)} bins` : 'Found') : 'Not found';
+    const other = rep.platform && rep.platform !== 'visium_hd';
+    const detail = `${other ? `${rep.platform_label || platformName(rep.platform)}\n` : ''}${rep.message || (found ? rep.bin_dir : 'Not found')}`;
+    const counted = rep.n_bins !== null && rep.n_bins !== undefined;
+    const text = found ? `${counted ? `${fmt.int(rep.n_bins)} ${unitWord(rep.unit, rep.n_bins)}` : 'Found'}${other ? ` · ${platformName(rep.platform)}` : ''}`
+      : 'Not found';
     if (found && onExplore) {
       // the status of a section that was found is the way into the Explore tab (no separate button per row)
       mount(r.status, h('button', {
@@ -212,7 +230,7 @@ export function sampleEditor({ cfg, report = null, onChange, onExplore } = {}) {
     const picked = await openFolderPicker({
       title: `Folder of sample ${s.id || ''}`.trim(),
       start: isAbsolutePath(cur) ? cur : joinPath(root, cur),
-      note: 'Choose the sample folder, its outs/ or outs/binned_outputs/ folder, or one square_XXXum/ folder.',
+      note: 'Choose the sample folder: a Space Ranger output (the sample folder, outs/, outs/binned_outputs/ or one square_XXXum/ folder), a Xenium output bundle, a MERSCOPE region, a folder of CosMx flat files, or the folder of a Stereo-seq .gef/.gem file, of an .h5ad file or of count tables. A file can also be typed as the path.',
     });
     if (!picked) return;
     let value = picked;
@@ -372,9 +390,12 @@ export function chooseDetectedSamples({ result, cfg, suggestReplace = false }) {
       modal({
         title: 'No samples found',
         body: h('div', null,
-          h('p', null, 'No Space Ranger output was found under ', h('code', null, root), '.'),
-          h('p', { class: 'muted' }, 'The search looks in this folder and up to four levels of subfolders for '
-            + 'square_XXXum/filtered_feature_bc_matrix.h5. Check the data root, or add the samples by hand.')),
+          h('p', null, 'No section was found under ', h('code', null, root), '.'),
+          h('p', { class: 'muted' }, 'The search looks in this folder and up to four levels of subfolders for the outputs '
+            + 'of Space Ranger (Visium HD square_XXXum/ folders, Visium outs/), Xenium (cell_feature_matrix.h5 and '
+            + 'cells.parquet), MERSCOPE (cell_by_gene.csv and cell_metadata.csv), CosMx (*_exprMat_file.csv and '
+            + '*_metadata_file.csv), Stereo-seq (.gef, .gem), AnnData (.h5ad) and count tables (matrix.mtx or counts.csv '
+            + 'with coordinates.csv). Check the data root, or add the samples by hand.')),
         actions: [{ label: 'Close', kind: 'primary' }],
         onClose: () => finish(null),
       });
@@ -394,7 +415,10 @@ export function chooseDetectedSamples({ result, cfg, suggestReplace = false }) {
         h('td', null, h('label', { for: id, class: 'detect-folder' }, c.folder || c.path), badge),
         h('td', { class: 'mono small' }, c.path),
         h('td', { class: 'mono' }, owner ? owner.id : sanitizeId(c.suggested_id || c.folder)),
-        h('td', null, h('div', { class: 'pill-list' }, (c.bin_sizes || []).map((b) => h('span', { class: 'chip no-x' }, b)))));
+        h('td', { title: c.platform_label || '' }, platformName(c.platform)),
+        h('td', null, (c.bin_sizes || []).length
+          ? h('div', { class: 'pill-list' }, c.bin_sizes.map((b) => h('span', { class: 'chip no-x' }, b)))
+          : h('span', { class: 'muted' }, unitWord(c.unit))));
       return { c, box, tr, owner, badge };
     });
     const all = h('input', { type: 'checkbox', 'aria-label': 'Select every folder' });
@@ -423,10 +447,11 @@ export function chooseDetectedSamples({ result, cfg, suggestReplace = false }) {
       title: 'Detected samples', size: 'wide',
       onClose: () => finish(null),
       body: h('div', { class: 'stack detect' },
-        h('p', null, `${candidates.length} Space Ranger output${candidates.length === 1 ? '' : 's'} found under `, h('code', null, root), '.'),
+        h('p', null, `${candidates.length} section${candidates.length === 1 ? '' : 's'} found under `, h('code', null, root), '.'),
         h('div', { class: 'table-wrap' }, h('table', { class: 'table compact' },
           h('thead', null, h('tr', null, h('th', { class: 'center' }, all), h('th', null, 'Folder'), h('th', null, 'Path'),
-            h('th', null, 'Sample id'), h('th', null, 'Bin sizes'))),
+            h('th', null, 'Sample id'), h('th', null, 'Instrument'),
+            h('th', { title: 'The bin sizes of Visium HD; otherwise what one row of the data is' }, 'Bin sizes / units'))),
           h('tbody', null, rows.map((r) => r.tr)))),
         current.length ? h('label', { class: 'check' }, replaceBox,
           `Replace the current sample${current.length === 1 ? '' : 's'} (${current.map((s) => s.id).join(', ')})`) : null,
@@ -480,7 +505,7 @@ export function reportPanel({ report, cfg, checking = false, stale = false, erro
     parts.push(h('div', { class: 'report-explore' }, icon('eye', { size: 16 }),
       h('span', null, h('strong', null, 'Read the data before any run. '), 'The ',
         h('button', { type: 'button', class: 'linklike', title: 'Open the Explore tab', onClick: () => onExplore() }, 'Explore tab'),
-        ' shows each section: bins, genes, UMIs and quality control, maps of them and of any gene on the H&E image, and the genes ranked by UMIs. The bin count of a section in the table above opens that section there.')));
+        ' shows each section: its bins, spots or cells, genes, UMIs and quality control, maps of them and of any gene (on the H&E image when the section has one), and the genes ranked by UMIs. The unit count of a section in the table below opens that section there.')));
   }
 
   const errors = report.errors || [];
@@ -489,27 +514,55 @@ export function reportPanel({ report, cfg, checking = false, stale = false, erro
   if (warnings.length) parts.push(listBanner('warning', `${warnings.length} warning${warnings.length === 1 ? '' : 's'}`, warnings));
 
   const samples = report.samples || [];
+  // the settings of each section (condition, color, reference) come from the configuration: the data check reports
+  // what was read, the configuration what each section is
+  const cfgSamples = cfg && Array.isArray(cfg.samples) ? cfg.samples : [];
+  const conditionWord = { control: 'Control', tumor: 'Tumor', other: 'Other' };
   parts.push(h('h4', { class: 'report-h' }, 'Sections'));
+  const heads = [['Sample', ''], ['Condition', ''], ['Instrument', ''], ['Found', ''], ['Bin sizes', ''],
+    ['Units', 'num', 'Bins, spots or cells in the section (at the analysis bin size); opens the section in the Explore tab'],
+    ['Genes', 'num', 'Genes measured in the section (the probe set or panel)'],
+    ['µm / px', 'num', 'Micrometres per pixel of the positions'], ['Positions', ''], ['Scale factors', ''], ['H&E image', '']];
   parts.push(samples.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'table compact report-table' },
-    h('thead', null, h('tr', null, ['Sample', 'Found', 'Bin folder', 'Bin sizes', 'Bins', 'µm / px', 'Positions', 'Scale factors', 'H&E image']
-      .map((t) => h('th', { class: t === 'Bins' || t === 'µm / px' ? 'num' : '' }, t)))),
-    h('tbody', null, samples.map((s) => h('tr', { class: s.bin_dir ? '' : 'row-bad' },
-      h('td', { class: 'mono' }, s.id),
-      h('td', { title: s.message || '' }, yesNo(!!s.bin_dir, 'found', 'not found'), s.message && !s.bin_dir ? h('div', { class: 'small muted' }, s.message) : null),
-      h('td', { class: 'mono small path-cell', title: s.bin_dir || '' }, s.bin_dir || '—'),
-      h('td', null, h('div', { class: 'pill-list' }, (s.bin_sizes || []).map((b) => h('span', {
-        class: `chip no-x ${cfg && b === cfg.bin_size ? 'ok' : ''}`.trim(), title: cfg && b === cfg.bin_size ? 'analysis bin size' : '',
-      }, b)))),
-      h('td', { class: 'num' }, fmt.int(s.n_bins)),
-      h('td', { class: 'num' }, fmt.num(s.microns_per_pixel, 4)),
-      h('td', null, yesNo(!!s.has_positions)),
-      h('td', null, yesNo(!!s.has_scalefactors)),
-      h('td', null, yesNo(!!s.has_hires_image))))))) : h('p', { class: 'muted' }, 'No sections in the report.'));
+    h('thead', null, h('tr', null, heads.map(([t, cls, title]) => h('th', { class: cls, title: title || '' }, t)))),
+    h('tbody', null, samples.map((s) => {
+      // the image and the scale factors are parts of Space Ranger outputs only: not applicable to the others
+      const tenX = !s.platform || TEN_X.has(s.platform);
+      const na = () => h('span', { class: 'faint', title: `Not part of ${s.platform_label || platformName(s.platform)} data read here` }, '—');
+      const conf = cfgSamples.find((x) => x && x.id === s.id) || {};
+      const isRef = cfg && cfg.reference_sample === s.id;
+      const counted = s.n_bins !== null && s.n_bins !== undefined;
+      const unitsText = counted ? `${fmt.int(s.n_bins)} ${unitWord(s.unit, s.n_bins)}` : '—';
+      const units = counted && s.bin_dir && onExplore
+        ? h('button', { type: 'button', class: 'linklike sample-explore', title: 'Explore this section', 'aria-label': `${unitsText}: explore section ${s.id}`,
+          onClick: () => onExplore(s.id) }, unitsText, icon('chevron-right', { size: 12, cls: 'sample-explore-go' }))
+        : unitsText;
+      return h('tr', { class: s.bin_dir ? '' : 'row-bad' },
+        h('td', { class: 'mono', title: s.bin_dir || conf.path || '' }, s.id,
+          isRef ? h('span', { class: 'badge report-ref', title: 'Reference section: fold changes and ratios are every other section over this one' }, 'reference') : null,
+          conf.label && conf.label !== s.id ? h('div', { class: 'small muted report-label' }, conf.label) : null),
+        h('td', null, conf.condition
+          ? h('span', { class: 'report-cond' }, conf.color ? h('span', { class: 'swatch', style: { background: conf.color } }) : null, conditionWord[conf.condition] || conf.condition)
+          : h('span', { class: 'faint' }, '—')),
+        h('td', { title: s.platform_label || '' }, platformName(s.platform)),
+        h('td', { title: s.message || '' }, yesNo(!!s.bin_dir, 'found', 'not found'), s.message && !s.bin_dir ? h('div', { class: 'small muted' }, s.message) : null),
+        h('td', null, (s.bin_sizes || []).length ? h('div', { class: 'pill-list' }, s.bin_sizes.map((b) => h('span', {
+          class: `chip no-x ${cfg && b === cfg.bin_size ? 'ok' : ''}`.trim(), title: cfg && b === cfg.bin_size ? 'analysis bin size' : '',
+        }, b))) : h('span', { class: 'faint', title: 'Only Visium HD (and Stereo-seq) sections have bin sizes' }, '—')),
+        h('td', { class: 'num' }, units),
+        h('td', { class: 'num' }, s.n_genes === null || s.n_genes === undefined ? '—' : fmt.int(s.n_genes)),
+        h('td', { class: 'num' }, fmt.num(s.microns_per_pixel, 4)),
+        h('td', null, yesNo(!!s.has_positions)),
+        h('td', null, tenX ? yesNo(!!s.has_scalefactors) : na()),
+        h('td', null, tenX ? yesNo(!!s.has_hires_image) : na()));
+    })))) : h('p', { class: 'muted' }, 'No sections in the report.'));
+  const notes = [...new Set(samples.flatMap((s) => (s.platform && !TEN_X.has(s.platform) ? s.notes || [] : [])))];
+  if (notes.length) parts.push(h('ul', { class: 'muted small report-notes' }, notes.map((t) => h('li', null, t))));
 
   const genes = report.genes || {};
   parts.push(h('h4', { class: 'report-h' }, 'Gene coverage'));
   if (genes.n_features === null || genes.n_features === undefined) {
-    parts.push(h('p', { class: 'muted' }, 'Gene names are not available: no readable filtered_feature_bc_matrix.h5 was found.'));
+    parts.push(h('p', { class: 'muted' }, 'Gene names are not available: no readable count matrix was found.'));
   } else {
     parts.push(h('p', null, `${fmt.int(genes.n_features)} genes in the probe set.`));
     const minCore = cfg && cfg.scoring ? Number(cfg.scoring.min_core) : NaN;

@@ -1,14 +1,27 @@
 // upload-panel.js — the Data tab's "Upload data" card on a hosted server (an online installation, whose folders are
-// not the user's). The user chooses the Space Ranger output folder of one or more sections; the browser uploads only
-// the files the analysis reads (square_<size>/filtered_feature_bc_matrix.h5 and the positions, scale factors and
-// images of square_<size>/spatial/, for the analysis and QC bin sizes) to the project's upload folder, its data root,
-// in chunks (PUT /api/projects/<id>/upload/<path>?offset=&size=), so that no request outlasts a proxy's timeout.
+// not the user's). The user chooses the output folder of one or more sections; the browser uploads only the files the
+// analysis reads (Visium HD: square_<size>/filtered_feature_bc_matrix.h5 and the positions, scale factors and images
+// of square_<size>/spatial/, for the analysis and QC bin sizes; Visium: the same files of outs/; the other
+// instruments: their count and position files, never their transcript tables or images) to the project's upload
+// folder, its data root, in chunks (PUT /api/projects/<id>/upload/<path>?offset=&size=), so that no request outlasts a
+// proxy's timeout. The server refuses any other file (webapp/server.py upload_parts, UPLOAD_OTHER_RE).
 import { h, mount, button, api, apiUrl, banner, confirmDialog, fmt, state } from '../core.js';
 
 const MATRIX = 'filtered_feature_bc_matrix.h5';
 const SPATIAL = new Set(['tissue_positions.parquet', 'tissue_positions.csv', 'tissue_positions_list.csv',
   'scalefactors_json.json', 'tissue_hires_image.png', 'tissue_lowres_image.png']);
 const SQUARE = /^square_(\d{3}um)$/;
+// the count and position files of the other instruments (as webapp/server.py UPLOAD_OTHER_RE)
+const OTHER = new RegExp('^(cell_feature_matrix\\.h5|cells\\.(parquet|csv|csv\\.gz)|experiment\\.xenium'
+  + '|cell_by_gene\\.csv(\\.gz)?|cell_metadata\\.csv(\\.gz)?'
+  + '|[^/]*exprmat[^/]*\\.csv(\\.gz)?|[^/]*metadata_file[^/]*\\.csv(\\.gz)?'
+  + '|[^/]+\\.gef|[^/]+\\.gem(\\.gz)?|[^/]+\\.h5ad'
+  + '|matrix\\.mtx(\\.gz)?|barcodes\\.tsv(\\.gz)?|(features|genes)\\.tsv(\\.gz)?'
+  + '|(coordinates|positions|spatial|locations|centroids|spatial_coordinates|tissue_positions|counts|expression'
+  + '|matrix|count_matrix|counts_matrix)\\.(csv|tsv)(\\.gz)?)$', 'i');
+// folders of a 10x matrix in another layout (Space Ranger's MEX folders, Xenium's cell_feature_matrix/): the .h5 is read
+const MEX_DIRS = new Set(['filtered_feature_bc_matrix', 'raw_feature_bc_matrix', 'cell_feature_matrix']);
+const FILE_SAMPLE = /\.(h5ad|gef|gem|gem\.gz)$/i;
 const CHUNK = 16 * 1024 * 1024; // bytes per request (the server takes up to 64 MB)
 const ATTEMPTS = 3;             // tries per chunk when the connection drops
 
@@ -17,28 +30,73 @@ const enc = encodeURIComponent;
 /**
  * The files of a folder selection that the analysis reads for the bin sizes `bins`: [{file, path}], path relative to
  * the folder above the chosen one (webkitRelativePath), so that the sample folder keeps its name on the server.
+ * Visium HD: the matrix and spatial/ files of the square_<size>/ folders of `bins`. Visium: a matrix outside them (in
+ * outs/), with its spatial/ files; not one above square_ folders. Other instruments: their count and position files
+ * (OTHER), without the copies the readers do not read (a 10x MEX folder next to its .h5, cells.csv.gz next to
+ * cells.parquet, the raw GEF next to the tissue one).
  */
 export function neededFiles(files, bins) {
-  const out = [];
+  const all = [];
   for (const file of files) {
     const path = file.webkitRelativePath || file.name;
     const parts = path.split('/');
+    if (!file.size || parts.some((p) => !p || p.startsWith('.'))) continue;
+    all.push({ file, path, parts, name: parts[parts.length - 1], dir: parts.slice(0, -1).join('/') });
+  }
+  const dirOf = (f) => f.dir;
+  const names = new Map();   // folder -> names of the files in it (lower case)
+  for (const f of all) {
+    if (!names.has(dirOf(f))) names.set(dirOf(f), new Set());
+    names.get(dirOf(f)).add(f.name.toLowerCase());
+  }
+  const has = (dir, name) => (names.get(dir) || new Set()).has(name);
+  // folders above Visium HD square_ folders: a matrix there is not a Visium section
+  const hdAbove = new Set();
+  for (const f of all) {
+    const i = f.parts.findIndex((p) => SQUARE.test(p));
+    for (let k = 1; k <= i; k += 1) hdAbove.add(f.parts.slice(0, k).join('/'));
+  }
+  const visium = (dir) => has(dir, MATRIX.toLowerCase()) && !hdAbove.has(dir);
+  const out = [];
+  for (const f of all) {
+    const { file, path, parts, name } = f;
     const i = parts.findIndex((p) => SQUARE.test(p));
-    if (i < 0 || !bins.includes(parts[i].match(SQUARE)[1]) || !file.size) continue;
-    if (parts.some((p) => !p || p.startsWith('.'))) continue;
-    const tail = parts.slice(i + 1);
-    if ((tail.length === 1 && tail[0] === MATRIX) || (tail.length === 2 && tail[0] === 'spatial' && SPATIAL.has(tail[1]))) {
-      out.push({ file, path });
+    if (i >= 0) {
+      if (!bins.includes(parts[i].match(SQUARE)[1])) continue;
+      const tail = parts.slice(i + 1);
+      if ((tail.length === 1 && tail[0] === MATRIX) || (tail.length === 2 && tail[0] === 'spatial' && SPATIAL.has(tail[1]))) {
+        out.push({ file, path });
+      }
+      continue;
     }
+    if (name === MATRIX) {
+      if (visium(f.dir)) out.push({ file, path });
+      continue;
+    }
+    if (parts.length >= 2 && parts[parts.length - 2] === 'spatial' && SPATIAL.has(name)) {
+      if (visium(parts.slice(0, -2).join('/'))) out.push({ file, path });   // with its matrix only
+      continue;
+    }
+    if (!OTHER.test(name)) continue;
+    const lower = name.toLowerCase();
+    const folder = parts.length >= 2 ? parts[parts.length - 2] : '';
+    if (MEX_DIRS.has(folder) && /^(matrix\.mtx|barcodes\.tsv|features\.tsv|genes\.tsv)(\.gz)?$/.test(lower)) continue;
+    if (/^cells\.csv(\.gz)?$/.test(lower) && has(f.dir, 'cells.parquet')) continue;
+    if (lower.endsWith('.raw.gef') && [...(names.get(f.dir) || [])].some((n) => n.endsWith('.tissue.gef'))) continue;
+    out.push({ file, path });
   }
   return out;
 }
 
-/** The folder of a sample in an upload path: everything above square_<size>/ (or the upload folder itself). */
+/** The sample of an upload path: the folder above square_<size>/ (Visium HD), the file itself (an .h5ad, .gef or
+ * .gem file), else the folder that holds it (above spatial/ for a Visium spatial file). */
 function sampleFolder(path) {
   const parts = path.split('/');
   const i = parts.findIndex((p) => SQUARE.test(p));
-  return i > 0 ? parts.slice(0, i).join('/') : '(upload folder)';
+  if (i >= 0) return i > 0 ? parts.slice(0, i).join('/') : '(upload folder)';
+  if (FILE_SAMPLE.test(parts[parts.length - 1])) return path;
+  const up = parts.length >= 2 && parts[parts.length - 2] === 'spatial' ? 2 : 1;
+  return parts.length > up ? parts.slice(0, -up).join('/') : '(upload folder)';
 }
 
 async function putChunk(url, body, signal) {
@@ -78,7 +136,7 @@ async function uploadFile(projectId, { file, path }, onBytes, signal) {
  */
 export function uploadPanel({ projectId, getBins, onUploaded }) {
   const input = h('input', { type: 'file', webkitdirectory: true, multiple: true, hidden: true });
-  const choose = button({ label: 'Upload a Space Ranger folder…', icon: 'upload', kind: 'primary', onClick: () => input.click() });
+  const choose = button({ label: 'Upload a data folder…', icon: 'upload', kind: 'primary', onClick: () => input.click() });
   const status = h('div');
   const stored = h('div');
   let info = null;
@@ -127,9 +185,9 @@ export function uploadPanel({ projectId, getBins, onUploaded }) {
     });
     mount(stored, h('div', { class: 'stack' },
       h('div', { class: 'table-wrap' }, h('table', { class: 'table compact' },
-        h('thead', null, h('tr', null, h('th', null, 'Uploaded folder'), h('th', null, 'Bin sizes'), h('th', null, 'Files'), h('th', null, 'Size'))),
+        h('thead', null, h('tr', null, h('th', null, 'Uploaded folder or file'), h('th', null, 'Bin sizes'), h('th', null, 'Files'), h('th', null, 'Size'))),
         h('tbody', null, [...folders].map(([name, e]) => h('tr', null,
-          h('td', { class: 'mono' }, name), h('td', null, [...e.bins].sort().join(', ')), h('td', null, String(e.files)), h('td', null, fmt.bytes(e.bytes))))))),
+          h('td', { class: 'mono' }, name), h('td', null, e.bins.size ? [...e.bins].sort().join(', ') : '—'), h('td', null, String(e.files)), h('td', null, fmt.bytes(e.bytes))))))),
       h('div', { class: 'row' }, h('span', { class: 'muted small' }, `${fmt.bytes(info.bytes)} of ${fmt.bytes(info.max_bytes)} used.`), samples, remove)));
   }
 
@@ -137,7 +195,7 @@ export function uploadPanel({ projectId, getBins, onUploaded }) {
     const bins = getBins();
     const picked = neededFiles(files, bins);
     if (!picked.length) {
-      mount(status, banner('warning', `No Space Ranger outputs for ${bins.join(' and ')} in this folder. Choose the folder of a section (or its outs/ or outs/binned_outputs/ folder): it holds square_${bins[0]}/${MATRIX}.`));
+      mount(status, banner('warning', `No data the analysis reads in this folder (for Visium HD: no square_${bins.join(' or square_')} folder). Choose the folder of a section: a Space Ranger output (or its outs/ or outs/binned_outputs/ folder), a Xenium output bundle, a MERSCOPE region, a folder of CosMx flat files, or a folder holding Stereo-seq .gef/.gem files, .h5ad files or count tables.`));
       return;
     }
     const total = picked.reduce((n, f) => n + f.file.size, 0);
@@ -185,8 +243,8 @@ export function uploadPanel({ projectId, getBins, onUploaded }) {
   const minutes = hosted.max_run_minutes ? ` and stops an analysis after ${hosted.max_run_minutes} minutes` : '';
   const el = h('div', { class: 'stack' },
     h('p', { class: 'muted small' },
-      'Choose the Space Ranger output folder of a section (or a folder holding several). Only the files the analysis reads are uploaded: ',
-      h('span', { class: 'mono' }, MATRIX), ' and the spatial positions, scale factors and H&E images of the analysis and quality-control bin sizes below. ',
+      'Choose the output folder of a section (or a folder holding several): Space Ranger (Visium HD, Visium), Xenium, MERSCOPE, CosMx, Stereo-seq, .h5ad files or count tables. Only the files the analysis reads are uploaded: for Visium HD ',
+      h('span', { class: 'mono' }, MATRIX), ' and the spatial positions, scale factors and H&E images of the analysis and quality-control bin sizes below; for the other instruments their count and position files, without transcript tables or images. ',
       `The server has limited memory${minutes}, so large sections are better analysed on your own computer.`),
     h('div', { class: 'row' }, choose),
     status, stored, input);

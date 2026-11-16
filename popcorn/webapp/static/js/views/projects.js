@@ -32,7 +32,7 @@ export async function renderProjects(container) {
   mount(container, h('div', { class: 'page' },
     h('div', { class: 'page-header' },
       h('div', { class: 'titles' }, h('h1', null, 'Projects'),
-        h('div', { class: 'subtitle' }, 'A project holds the sections, gene signatures, parameters and drawn regions of one analysis.')),
+        h('div', { class: 'subtitle' }, 'A project holds the sections, gene signatures, quality-control thresholds and drawn regions of one analysis.')),
       headerActions),
     body));
 
@@ -137,7 +137,7 @@ export async function renderProjects(container) {
     return h('div', { class: 'stack-lg' },
       emptyState({
         icon: 'folder', title: 'No projects yet',
-        text: 'Bone Spatial Studio runs the bone-lesion analysis of Visium HD sections. Create a project for your own data, or try the demo with two small synthetic sections.',
+        text: 'Popcorn runs the bone-lesion analysis of Visium HD sections. Create a project for your own data, or try the demo with two small synthetic sections.',
         action: h('div', { class: 'row', style: 'justify-content:center' }, actions()),
       }),
       h('div', { class: 'grid-3 intro-steps' }, STEPS.map((s, i) => h('div', { class: 'card intro-step' },

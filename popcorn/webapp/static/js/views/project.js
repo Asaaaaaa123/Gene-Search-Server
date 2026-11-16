@@ -1,14 +1,15 @@
 // project.js — the project editor. A working copy (draft) per project id lives in this module, so switching tabs or
 // leaving and coming back never loses edits; Save writes it (PUT), Discard drops it. Tabs: data | explore |
-// parameters | signatures | roi | run.
+// signatures | roi | run. There is no Parameters tab any more: a run does what every dataset needs (the base run; its
+// few switches are in the Run tab, the quality-control thresholds in the Explore tab) and the questions are asked,
+// each with its own settings, in the Analysis tab of the finished run.
 import {
   h, api, mount, icon, button, card, field, tabs, switchToggle, loading, emptyState, errorPanel, banner, toast,
   confirmDialog, fmt, clone, navigate, setPathSilently, resolveRoute, statusBadge, poll, state, refreshHealth,
 } from '../core.js';
 import { openFolderPicker } from '../components/folder-picker.js';
 import { uploadPanel } from '../components/upload-panel.js';
-import { sampleEditor, chooseDetectedSamples, applyDetectedSamples, reportPanel, binLabel } from '../components/sample-editor.js';
-import { paramForm } from '../components/param-form.js';
+import { chooseDetectedSamples, applyDetectedSamples, reportPanel, binLabel, platformName, unitWord } from '../components/sample-editor.js';
 import { signatureEditor, geneCoverage } from '../components/signature-editor.js';
 import { roiEditor } from '../components/roi-editor.js';
 import { dataExplorer, exploreState } from '../components/data-explorer.js';
@@ -16,12 +17,15 @@ import { dataExplorer, exploreState } from '../components/data-explorer.js';
 const TABS = [
   { id: 'data', label: 'Data', icon: 'folder' },
   { id: 'explore', label: 'Explore', icon: 'eye' },
-  { id: 'parameters', label: 'Parameters', icon: 'sliders' },
   { id: 'signatures', label: 'Signatures', icon: 'dna' },
   { id: 'roi', label: 'Region of interest', icon: 'polygon' },
   { id: 'run', label: 'Run', icon: 'play' },
 ];
-const SLOW_STEPS = ['moran', 'sensitivity', 'stability'];
+// addresses kept from before: the quality-control thresholds of the former Parameters tab are in the Explore tab
+const TAB_ALIASES = { parameters: 'explore' };
+// what every run does, whatever its switches (the base run; pipeline_config.APP_STEPS lists the steps it may switch)
+const ALWAYS_STEPS = ['Load the sections and quality control', 'Normalization', 'Gene-set scores and positivity calls',
+  'Region of interest', 'Per-bin table and summary'];
 const DEFAULT_BINS = ['002um', '008um', '016um'];
 const VALIDATE_DELAY_MS = 800;
 const DRAFT_CHECK_DELAY_MS = 300;   // the configuration check of the unsaved settings (no data access, fast)
@@ -32,7 +36,6 @@ let defaultsPromise = null;
 let guardInstalled = false;
 
 const enc = encodeURIComponent;
-const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const uniq = (list) => [...new Set(list)];
 
@@ -70,7 +73,7 @@ function adopt(d, project) {
 function newDraft(project) {
   const d = {
     id: project.id, rois: new Set(), report: null, reportKey: null, reportAt: null, reportError: null, checking: false,
-    saving: false, ui: { signature: null, runLabel: '', runSteps: {}, runDeterministic: null, exploreFocus: null }, roi: {},
+    saving: false, ui: { signature: null, runLabel: '', exploreFocus: null }, roi: {},
     explore: null,
   };
   adopt(d, project);
@@ -129,7 +132,8 @@ function exploreKey(cfg) {
 // ------------------------------------------------------------------------------------------------ view
 export async function renderProject(container, { id, tab }) {
   installGuard();
-  const active = TABS.some((t) => t.id === tab) ? tab : 'data';
+  const wanted = TAB_ALIASES[tab] || tab;
+  const active = TABS.some((t) => t.id === wanted) ? wanted : 'data';
   if (active !== tab) setPathSilently(`/projects/${enc(id)}/${active}`);
   mount(container, h('div', { class: 'page' }, loading('Loading the project…')));
 
@@ -574,7 +578,7 @@ function projectView(container, d, defaults, initialTab) {
       try { tabApi.destroy(); } catch (e) { console.error(e); }
     }
     tabApi = {};
-    const renderers = { data: dataTab, explore: exploreTab, parameters: parametersTab, signatures: signaturesTab, roi: roiTab, run: runTab };
+    const renderers = { data: dataTab, explore: exploreTab, signatures: signaturesTab, roi: roiTab, run: runTab };
     try {
       tabApi = renderers[current](body) || {};
       if (tabApi.start) tabApi.start();
@@ -592,7 +596,7 @@ function projectView(container, d, defaults, initialTab) {
     const browse = button({
       label: 'Browse…', icon: 'folder',
       onClick: async () => {
-        const picked = await openFolderPicker({ title: 'Data root', start: cfg.data_root || '.', note: 'The folder that contains the sample folders (Space Ranger outputs).' });
+        const picked = await openFolderPicker({ title: 'Data root', start: cfg.data_root || '.', note: 'The folder that contains the sample folders (Space Ranger outputs, or the outputs of other instruments).' });
         if (!picked) return;
         cfg.data_root = picked;
         if (alive) rootInput.value = picked;
@@ -612,13 +616,15 @@ function projectView(container, d, defaults, initialTab) {
     const qcSel = h('select', { class: 'select', id: qcId });
     binSel.addEventListener('change', () => { cfg.bin_size = binSel.value; changed({ data: true }); });
     qcSel.addEventListener('change', () => { cfg.qc_bin_size = qcSel.value; changed({ data: true }); });
-    const editor = sampleEditor({ cfg, report: d.report, onChange: () => changed({ data: true }), onExplore: openExplore });
     const reportBox = h('div');
     const recheck = button({ label: 'Check again', icon: 'refresh', small: true, kind: 'ghost', onClick: () => { validateNow(true); } });
     recheck.title = 'Check the data again with the settings above';
 
     function fillBins() {
-      const found = ((d.report && d.report.samples) || []).filter((s) => s.bin_dir && Array.isArray(s.bin_sizes));
+      // the bin sizes of the Visium HD sections (the other instruments' sections have one size of unit, or are binned
+      // at any size: Stereo-seq)
+      const found = ((d.report && d.report.samples) || []).filter((s) => s.bin_dir && Array.isArray(s.bin_sizes)
+        && (!s.platform || s.platform === 'visium_hd'));
       const union = uniq(found.flatMap((s) => s.bin_sizes)).sort();
       const options = union.length ? union : DEFAULT_BINS;
       for (const [sel, key] of [[binSel, 'bin_size'], [qcSel, 'qc_bin_size']]) {
@@ -639,11 +645,10 @@ function projectView(container, d, defaults, initialTab) {
     function paintReport() {
       mount(reportBox, reportPanel({
         report: d.report, cfg, checking: d.checking, stale: reportStale(), error: d.reportError, checkedAt: d.reportAt,
-        onExplore: () => openExplore(null),
+        onExplore: (sid) => openExplore(sid || null),
       }));
       recheck.disabled = d.checking;
       fillBins();
-      editor.setReport(d.report);
     }
 
     function suggestReplace() {
@@ -654,21 +659,20 @@ function projectView(container, d, defaults, initialTab) {
     }
 
     // The detection request may outlive this tab (tab switch, or a save that re-rendered it): apply the choice to the
-    // current draft and repaint whichever sample table is on screen.
+    // current draft; the data check that follows the change repaints the Data tab.
     async function chooseSamples(res) {
       const choice = await chooseDetectedSamples({ result: res, cfg: d.config, suggestReplace: suggestReplace() });
       if (!choice) return;
       // the default samples describe the manuscript's sections (LL-2-1 control, RL-1-5 tumor-bearing): their folders
       // keep those settings instead of guessed ones
       const added = applyDetectedSamples(d.config, choice.candidates, { replace: choice.replace, templates: defCfg.samples });
-      if (alive && tabApi === tabHandle) editor.render();
-      else if (alive && current === 'data') renderBody();
+      const preset = applyQcPreset(d.config);
       changed({ data: true });
-      toast(`${plural(added.length, 'sample')} added. Check their labels and conditions.`, 'success');
+      toast(`${plural(added.length, 'sample')} added.${preset ? ` ${preset}` : ''}`, 'success', preset ? { timeout: 8000 } : undefined);
     }
 
     const binFields = h('div', { class: 'form-grid' },
-      field({ label: 'Analysis bin size', forId: binId, control: binSel, help: 'The square_<size> folder that is analysed.' }),
+      field({ label: 'Analysis bin size', forId: binId, control: binSel, help: 'The square_<size> folder of Visium HD sections that is analysed, and the bins a Stereo-seq chip is summed into. Spots and cells are analysed as they are.' }),
       field({ label: 'Quality-control bin size', forId: qcId, control: qcSel, help: 'Per-bin QC of Supplementary Figure S1.' }));
     // a hosted server: the data is uploaded to the project's upload folder, its data root, instead of chosen on disk
     const upload = state.health && state.health.hosted ? uploadPanel({
@@ -695,14 +699,59 @@ function projectView(container, d, defaults, initialTab) {
             label: 'Data root', forId: rootInput.id, control: h('div', { class: 'input-group' }, rootInput, browse),
             help: 'The folder that holds the sample folders; relative sample folders are resolved against it. A relative data root is resolved against the folder the server was started in.',
           }),
-          h('div', { class: 'row' }, detect, h('span', { class: 'muted small' }, 'Finds the Space Ranger outputs under the data root (up to four levels deep) and adds them as samples.')),
+          h('div', { class: 'row' }, detect, h('span', { class: 'muted small' }, 'Finds the sections under the data root (up to four levels deep) and adds them as samples: Space Ranger outputs (Visium HD, Visium), Xenium, MERSCOPE, CosMx, Stereo-seq, .h5ad files and count tables.')),
           binFields),
       }),
-      card({ title: 'Samples', subtitle: 'One row per Visium HD section, in figure order.', body: editor.el, flush: true }),
       card({ title: 'Data check', subtitle: 'Sample folders, bin sizes, images and gene coverage, checked with the settings above (saved or not).', actions: recheck, body: reportBox })));
     paintReport();
     const tabHandle = { onReport: paintReport, start: () => { if (!d.checking) validateNow(false); } };
     return tabHandle;
+  }
+
+  /**
+   * Quality-control thresholds suited to the instrument (GET /api/defaults platforms[].qc: a Visium HD bin, a Visium
+   * spot and an imaged cell hold very different numbers of UMIs, and imaging panels have no mitochondrial genes), set
+   * when every section comes from one instrument and the thresholds are still a default (the configuration's, or
+   * another instrument's). Returns what changed, for the toast, or ''.
+   */
+  function qcPresets() {
+    const list = Array.isArray(defaults.platforms) ? defaults.platforms : [];
+    return Object.fromEntries(list.filter((x) => x && x.qc).map((x) => [x.id, x]));
+  }
+
+  /** The preset of the instrument every section comes from, else null. */
+  function qcPresetOf(cfg) {
+    const platforms = uniq((Array.isArray(cfg.samples) ? cfg.samples : []).map((x) => x.platform || 'visium_hd'));
+    return platforms.length === 1 ? qcPresets()[platforms[0]] || null : null;
+  }
+
+  /** The thresholds the Explore tab's Defaults button sets: the instrument's, else the configuration's. */
+  function defaultQcOf(cfg) {
+    const preset = qcPresetOf(cfg);
+    return preset ? { ...(defCfg.qc || {}), ...preset.qc } : (defCfg.qc || {});
+  }
+
+  function applyQcPreset(cfg) {
+    const keys = ['min_genes', 'min_counts', 'max_pct_mt'];
+    const presets = qcPresets();
+    const target = qcPresetOf(cfg);
+    if (!target) return '';
+    if (!cfg.qc || typeof cfg.qc !== 'object') cfg.qc = {};
+    const qc = cfg.qc;
+    const same = (a, b) => keys.every((k) => Number(a[k]) === Number(b[k]));
+    const known = [defCfg.qc || {}, ...Object.values(presets).map((x) => x.qc)];
+    if (same(qc, target.qc) || !known.some((q) => same(qc, q))) return '';   // already set, or set by hand: kept
+    keys.forEach((k) => { qc[k] = target.qc[k]; });
+    return `Quality control set for ${platformName(target.id)} ${unitWord(target.unit)}: more than ${fmt.num(qc.min_genes)} genes and ${fmt.num(qc.min_counts)} UMIs${Number(qc.max_pct_mt) < 100 ? `, less than ${fmt.num(qc.max_pct_mt)}% mitochondrial` : ''} (Explore tab).`;
+  }
+
+  /** In the run plan: what the sections of other instruments are analysed as (from the data check). */
+  function unitsNote() {
+    const reported = (d.report && d.report.samples) || [];
+    const other = reported.filter((x) => x.platform && !['visium_hd', 'stereo_seq'].includes(x.platform) && x.bin_dir);
+    if (!other.length) return null;
+    const kinds = uniq(other.map((x) => `${platformName(x.platform)} ${unitWord(x.unit)}`));
+    return h('span', { class: 'muted' }, ` (Visium HD and Stereo-seq sections; ${kinds.join(', ')} are analysed as they are)`);
   }
 
   // ---- Explore
@@ -720,19 +769,13 @@ function projectView(container, d, defaults, initialTab) {
     const explorer = dataExplorer({
       projectId: d.id, name: d.name.trim() || d.id, state: d.explore, getConfig: () => d.config, focus,
       onOpenData: () => switchTab('data'),
+      // the quality-control thresholds are set here, where the bins they keep are counted: changed, the tab reads
+      // the sections again with them
+      defaultQc: defaultQcOf(d.config),
+      onQcChange: () => { changed(); if (alive && current === 'explore') renderBody(); },
     });
     mount(host, explorer.el);
     return { destroy: explorer.destroy };
-  }
-
-  // ---- Parameters
-  function parametersTab(host) {
-    const form = paramForm({
-      cfg: d.config, defaults: defCfg, schema: defaults.param_schema || [], stepLabels: defaults.step_labels || {},
-      onChange: () => changed(),
-    });
-    mount(host, form.el);
-    return {};
   }
 
   // ---- Signatures
@@ -779,14 +822,14 @@ function projectView(container, d, defaults, initialTab) {
   function runTab(host) {
     let destroyed = false;
     const cfg = d.config;
-    const stepLabels = defaults.step_labels || {};
-    // what each step is for, and which are specific to the bone-lesion study: the "steps" section of PARAM_SCHEMA
-    const stepSpec = (defaults.param_schema || []).find((sec) => sec.key === 'steps');
-    const stepAbout = new Map(((stepSpec && stepSpec.fields) || []).map((f) => [f.key, f]));
+    // the steps a run may switch (GET /api/defaults app_steps: pipeline_config.APP_STEPS); they are settings of the
+    // project like any other, saved with it. Every other step of the pipeline is a tool of a run's Analysis tab.
+    const appSteps = Array.isArray(defaults.app_steps) ? defaults.app_steps : [];
     const ui = d.ui;
-    const steps = () => (cfg.steps && typeof cfg.steps === 'object' ? cfg.steps : {});
-    const stepOn = (k) => (has(ui.runSteps, k) ? ui.runSteps[k] : steps()[k] === true);
-    const deterministic = () => (typeof ui.runDeterministic === 'boolean' ? ui.runDeterministic : cfg.deterministic === true);
+    const steps = () => {
+      if (!cfg.steps || typeof cfg.steps !== 'object') cfg.steps = {};
+      return cfg.steps;
+    };
     const statusBox = h('div', { class: 'stack' });
     const errorBox = h('div');
     const runsBox = h('div', null, loading('Loading runs…'));
@@ -853,60 +896,38 @@ function projectView(container, d, defaults, initialTab) {
       if (!starting) startBtn.disabled = missing.length > 0 || (errs.length > 0 && !d.dirty);
     }
 
-    function stepRow(k) {
-      const label = stepLabels[k] || k;
-      const about = stepAbout.get(k) || {};
-      const bone = about.study === 'bone' ? h('span', { class: 'badge', title: 'Specific to the bone-lesion study of the manuscript (Parameters › Analysis steps)' }, 'bone study') : null;
-      if (!SLOW_STEPS.includes(k)) {
-        const on = steps()[k] === true;
-        return h('li', { class: on ? 'plan-step' : 'plan-step off', title: about.help || null },
-          icon(on ? 'check' : 'x', { size: 14 }), h('span', null, label), bone);
-      }
-      const note = h('span', { class: 'muted small' });
-      const paintNote = () => {
-        note.textContent = has(ui.runSteps, k) ? ` (this run only; project setting: ${steps()[k] === true ? 'on' : 'off'})` : '';
-      };
-      paintNote();
-      return h('li', { class: 'plan-step slow', title: about.help || null }, switchToggle({
-        checked: stepOn(k), label,
-        onChange: (v) => {
-          if (v === (steps()[k] === true)) delete ui.runSteps[k]; else ui.runSteps[k] = v;
-          paintNote();
-        },
-      }), bone, note);
-    }
-
     function planCard() {
       const samples = Array.isArray(cfg.samples) ? cfg.samples : [];
-      const keys = uniq([...Object.keys(stepLabels), ...Object.keys(steps())]);
-      const detNote = h('span', { class: 'muted small' });
-      const paintDet = () => {
-        detNote.textContent = typeof ui.runDeterministic === 'boolean' ? ` (this run only; project setting: ${cfg.deterministic === true ? 'on' : 'off'})` : '';
-      };
-      paintDet();
       const roi = cfg.roi || {};
+      const qc = cfg.qc || {};
+      const optional = (s) => h('li', { class: 'plan-step slow' },
+        switchToggle({ checked: steps()[s.key] !== false, label: s.label, onChange: (v) => { steps()[s.key] = v; changed(); } }),
+        h('div', { class: 'plan-help muted small' }, s.help || ''));
       return card({
-        title: 'What will run',
-        subtitle: 'The saved settings, with the switches below applied to this run only.',
+        title: 'What a run does',
+        subtitle: 'What every dataset needs. The questions are asked afterwards, in the Analysis tab of the run.',
         body: h('div', { class: 'stack' },
           h('dl', { class: 'kv' },
             h('dt', null, 'Sections'), h('dd', null, samples.length ? h('ul', { class: 'plan-samples' }, samples.map((s) => h('li', null,
               h('span', { class: 'swatch', style: { background: /^#[0-9A-Fa-f]{6}$/.test(String(s.color)) ? s.color : 'transparent' } }),
               h('span', null, s.label || s.id), h('span', { class: 'mono small muted' }, s.id), h('span', { class: 'muted small' }, s.condition || ''),
               s.id === cfg.reference_sample ? h('span', { class: 'badge' }, 'reference') : null))) : h('span', { class: 'muted' }, 'none')),
-            h('dt', null, 'Bin size'), h('dd', null, `${binLabel(cfg.bin_size)} (QC figure: ${binLabel(cfg.qc_bin_size)})`),
+            h('dt', null, 'Bin size'), h('dd', null, binLabel(cfg.bin_size), unitsNote()),
+            h('dt', null, 'Quality control'), h('dd', null,
+              `more than ${fmt.num(qc.min_genes)} genes, more than ${fmt.num(qc.min_counts)} UMIs, less than ${fmt.num(qc.max_pct_mt)}% mitochondrial `,
+              h('button', { type: 'button', class: 'linklike', onClick: () => switchTab('explore') }, '(Explore tab)')),
             h('dt', null, 'Drawn regions'), h('dd', null, roi.use_drawn
               ? (samples.length ? samples.map((s) => `${s.id}: ${d.rois.has(s.id) ? 'saved region' : 'none (not restricted)'}`).join(' · ') : '—')
               : 'not used')),
-          h('h4', null, 'Steps'),
-          h('ul', { class: 'plan-steps' }, keys.map(stepRow)),
+          h('h4', null, 'Always'),
+          h('ul', { class: 'plan-steps' }, ALWAYS_STEPS.map((label) => h('li', { class: 'plan-step' }, icon('check', { size: 14 }), h('span', null, label)))),
+          appSteps.length ? h('h4', null, 'Optional') : null,
+          appSteps.length ? h('ul', { class: 'plan-steps' }, appSteps.map(optional)) : null,
           h('div', { class: 'plan-det' }, switchToggle({
-            checked: deterministic(), label: 'Deterministic (single-threaded, reproducible; slower)',
-            onChange: (v) => {
-              ui.runDeterministic = v === (cfg.deterministic === true) ? null : v;
-              paintDet();
-            },
-          }), detNote)),
+            checked: cfg.deterministic !== false, label: 'Deterministic (single-threaded, reproducible; slower)',
+            onChange: (v) => { cfg.deterministic = v; changed(); },
+          })),
+          h('p', { class: 'muted small plan-note' }, 'Differences between groups, distances, composition, spatially variable genes and the other analyses are no longer steps of the run: each is a tool of the Analysis tab, with its own settings, used when you want it.')),
       });
     }
 
@@ -943,14 +964,10 @@ function projectView(container, d, defaults, initialTab) {
         });
         if (!ok) return;
       }
-      const runSteps = Object.fromEntries(SLOW_STEPS.map((k) => [k, stepOn(k)]));
       try {
-        const run = await api(`/api/projects/${enc(d.id)}/runs`, {
-          method: 'POST', body: { label: (ui.runLabel || '').trim(), steps: runSteps, deterministic: deterministic() },
-        });
+        // the saved settings decide what runs (the switches of this tab are part of them)
+        const run = await api(`/api/projects/${enc(d.id)}/runs`, { method: 'POST', body: { label: (ui.runLabel || '').trim() } });
         ui.runLabel = '';
-        ui.runSteps = {};
-        ui.runDeterministic = null;
         toast('Analysis queued', 'success', { timeout: 2500 });
         navigate(`/runs/${enc(run.id)}`);
       } catch (e) {
