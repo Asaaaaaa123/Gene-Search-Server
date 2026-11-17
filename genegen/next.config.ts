@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
 
   productionBrowserSourceMaps: false,
 
+  // The Docker build (Dockerfile, SKIP_TYPECHECK=1) skips "Checking validity of types": on the 4GB Coolify VPS it
+  // was killed for lack of memory (silent exit 255). Check the types before pushing: npx tsc --noEmit.
+  typescript: { ignoreBuildErrors: process.env.SKIP_TYPECHECK === "1" },
+
   // Proxy /api/* → FastAPI in dev and production (browser uses same-origin; no CORS).
   async rewrites() {
     return [

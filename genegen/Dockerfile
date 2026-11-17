@@ -22,6 +22,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # 3GB heap leaves headroom for Coolify/OS; 4GB often triggers host OOM (exit 255, no Next error).
 ENV NODE_OPTIONS=--max-old-space-size=3072
 ENV GENERATE_SOURCEMAP=false
+# The type check after compiling was killed for lack of memory (exit 255); types are checked before pushing.
+ENV SKIP_TYPECHECK=1
 ENV NEXT_PRIVATE_WORKER=false
 
 # Merge build args with coolify-deploy.env (Coolify often only passes API URL at build time)
