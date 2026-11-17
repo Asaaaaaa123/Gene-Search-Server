@@ -56,7 +56,7 @@ export function Hero() {
             </Button>
             <Button variant="outline" size="lg" asChild className="h-12 w-full">
               <a href={siteConfig.links.popcorn} className="flex w-full items-center justify-center">
-                Popcorn
+                Popcorn Genetic
               </a>
             </Button>
           </div>

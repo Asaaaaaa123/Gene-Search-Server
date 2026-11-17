@@ -208,7 +208,7 @@ DEFAULT_CONFIG = {
     # "non_growth_plate_control" and not tested). de_sections: all = growth-plate bins of every section against the
     # tumor-associated bins; tumor = both compartments from tumor sections only (the same test on the manuscript data:
     # every growth-plate bin is tumor-bearing). The chondrocyte score is zero-inflated: its 90th percentile is 0, so the
-    # growth-plate rule is in effect "at least one UMI of a chondrocyte gene" (Figure4h_compartment_summary.csv).
+    # growth-plate rule is in effect "at least one UMI of a chondrocyte gene" (osteoclast_compartment_summary.csv).
     "compartments": {"signature": "osteoclast", "split_by": "chondrocyte", "percentile": 90.0,
                      "tumor_conditions": ["tumor"], "de_sections": "all"},
     "uncoupling": {"a": "osteoblast", "b": "osteoclast", "calls": "pooled_dm", "n_perm": 199, "min_pos": 10},
@@ -452,7 +452,7 @@ PARAM_SCHEMA = [
          "step": 0.5, "help": "Positive bins whose split score is above this percentile of all bins form the "
                               "growth-plate compartment. A zero-inflated score can make the percentile 0, and the rule "
                               "then means 'any UMI of a split-signature gene' (manuscript data: the 90th percentile of "
-                              "the chondrocyte score is 0; Figure4h_compartment_summary.csv gives the value used)."},
+                              "the chondrocyte score is 0; osteoclast_compartment_summary.csv gives the value used)."},
         {"key": "de_sections", "label": "Sections in the compartment test", "type": "select",
          "options": ["all", "tumor"], "help": "all: growth-plate bins of every section against tumor-associated "
          "bins; tumor: both compartments from tumor sections only (no between-section depth difference). On the "
@@ -514,7 +514,7 @@ PARAM_SCHEMA = [
         {"key": "call_sets", "label": "Call sets", "type": "str_list", "help": "pooled_dm, pooled, native."},
         {"key": "habitat_classes", "label": "Tissue classes of the habitat null", "type": "str_list",
          "help": "habitat_fixed_b draws the 'from' bins among the bins assigned to a signature of these tissue "
-                 "classes (Signatures tab); bone lineage in the manuscript."},
+                 "classes (Cell Settings tab); bone lineage in the manuscript."},
     ]},
     {"key": "sensitivity_analyses.proximity", "title": "Sensitivity analyses: proximity tables", "fields": [
         {"key": "n_strata", "label": "Depth strata of the matched baseline", "type": "int", "min": 2, "max": 100},
@@ -548,19 +548,19 @@ PARAM_SCHEMA = [
 ]
 
 STEP_LABELS = {
-    "qc_figure_bins": "Per-bin QC for Supplementary Figure S1",
-    "receptor_panel": "Host receptor panel (Figure 6b)",
-    "adipocyte_panel": "Adipocyte genes (Supplementary Figure S4)",
-    "depth_matched": "Depth-matched positivity (Figures 4g, 6a)",
-    "leiden": "Leiden domain markers and screen (Supplementary Figure S5)",
-    "compartments": "Osteoclast compartments (Figure 4h)",
-    "assignment": "Deterministic tissue assignment (Figure 3)",
-    "stability": "Leiden seed stability (Methods)",
-    "uncoupling": "Distance to nearest partner (Figure 4i)",
+    "qc_figure_bins": "Per-bin quality control at the QC bin size",
+    "receptor_panel": "Host receptor panel (bone study)",
+    "adipocyte_panel": "Adipocyte genes",
+    "depth_matched": "Positivity rates after depth matching",
+    "leiden": "Leiden domain markers and screen",
+    "compartments": "Osteoclast compartments (bone study)",
+    "assignment": "Cell type of every bin (deterministic assignment)",
+    "stability": "Leiden stability across seeds",
+    "uncoupling": "Distance to the nearest partner cell type",
     "proximity": "Proximity tables (within 50 um)",
-    "moran": "Moran's I (Supplementary Figure S2, slow)",
-    "sensitivity": "Three-gene-set sensitivity (Methods)",
-    "sensitivity_analyses": "Sensitivity analyses (second review)",
+    "moran": "Spatially variable genes (Moran's I, slow)",
+    "sensitivity": "Three-gene-set sensitivity (bone study)",
+    "sensitivity_analyses": "Sensitivity analyses (bone study)",
     "project_fine_bins": "Project labels onto the QC bin size",
     "write_h5ad": "Write the joint AnnData object",
     "figures": "Draw figures",
@@ -572,12 +572,12 @@ STEP_LABELS = {
 STEP_HELP = {
     "qc_figure_bins": "Genes, UMIs and mitochondrial share of every bin of the QC bin size before filtering, for the "
                       "histograms and retention curves of Supplementary Figure S1.",
-    "receptor_panel": "Detection of each gene of the host receptor panel (Signatures tab; by default the "
+    "receptor_panel": "Detection of each gene of the host receptor panel (Cell Settings tab; by default the "
                       "PTHrP/RANKL/OPG axis of the bone lesion) in the region of interest, raw and depth-matched "
                       "(Figure 6b). Any gene list works: replace the genes, or switch the step off. Figure 6b draws "
                       "the genes of figures.receptor_genes (by default the RANKL axis): list genes of the new panel "
                       "there, and switch off the shading of the first two (RANKL and OPG).",
-    "adipocyte_panel": "The same detection table for the adipocyte genes of the Signatures tab (marrow adiposity, "
+    "adipocyte_panel": "The same detection table for the adipocyte genes of the Cell Settings tab (marrow adiposity, "
                        "Supplementary Figure S4). Replace the genes with any list of interest, or switch the step off.",
     "depth_matched": "Positivity recomputed after downsampling every section to the depth of the shallowest one (right "
                      "panels of the positivity figures).",
@@ -873,7 +873,7 @@ def _signature_settings(cfg: dict, sigs: dict, err: list, warn: list) -> None:
             err.append(f"{sec}.{k} = {n!r} is not a signature of this project: {ways}")
         elif needs_call and n not in primary:
             err.append(f"{sec}.{k} = {n!r} has no positivity call: add {n} to primary (its Positivity call switch "
-                       f"in the Signatures tab), {ways}")
+                       f"in the Cell Settings tab), {ways}")
     tumor = (cfg.get("compartments") or {}).get("tumor_conditions", [])
     samples = [s for s in cfg.get("samples") or [] if isinstance(s, dict)]
     if on("compartments") and isinstance(tumor, list) and samples \
@@ -909,7 +909,7 @@ def _signature_settings(cfg: dict, sigs: dict, err: list, warn: list) -> None:
                             f"not drawn: name its {which} signature in figures.lineage_maps")
             elif n not in primary:
                 warn.append(f"figures.lineage_maps.{k} = {n!r} has no positivity call, so Figure 4a-f is not drawn: "
-                            f"add {n} to primary (its Positivity call switch in the Signatures tab) or name another "
+                            f"add {n} to primary (its Positivity call switch in the Cell Settings tab) or name another "
                             f"signature in figures.lineage_maps")
         comp = _names(fig.get("composition_signatures"))
         unknown = [n for n in comp if n not in sigs]

@@ -9,7 +9,7 @@ const projectPath = (id) => `/projects/${encodeURIComponent(id)}/data`;
 
 const STEPS = [
   { icon: 'sliders', title: 'Configure', text: 'Point the project at the Space Ranger outputs of your Visium HD sections, adjust the gene signatures and parameters, and draw a region of interest on the H&E image.' },
-  { icon: 'play', title: 'Run', text: 'The bone-lesion analysis runs in the background, one at a time, with live progress and a full log.' },
+  { icon: 'play', title: 'Run', text: 'The analysis runs in the background, one at a time, with live progress and a full log.' },
   { icon: 'chart', title: 'Explore', text: 'Browse the figures, the tables and the per-bin spatial maps of every run, and download them.' },
 ];
 
@@ -42,7 +42,9 @@ export async function renderProjects(container) {
       validate: (v) => (v ? '' : 'The project needs a name'),
     });
     if (!name) return;
-    const p = await api('/api/projects', { method: 'POST', body: { name } });
+    // a new project starts without samples: they are added on its Data tab (Detect samples). The defaults' samples (the
+    // manuscript's LL-2-1 and RL-1-5) stay the templates that detected folders of those sections take their settings from
+    const p = await api('/api/projects', { method: 'POST', body: { name, config: { samples: [], reference_sample: '' } } });
     navigate(projectPath(p.id));
   }
 
@@ -137,7 +139,7 @@ export async function renderProjects(container) {
     return h('div', { class: 'stack-lg' },
       emptyState({
         icon: 'folder', title: 'No projects yet',
-        text: 'Popcorn runs the bone-lesion analysis of Visium HD sections. Create a project for your own data, or try the demo with two small synthetic sections.',
+        text: 'Popcorn Genetic analyses spatial transcriptomics sections of any tissue: it detects the tissue and its cell types from the data. Create a project for your own data, or try the demo with two small synthetic sections.',
         action: h('div', { class: 'row', style: 'justify-content:center' }, actions()),
       }),
       h('div', { class: 'grid-3 intro-steps' }, STEPS.map((s, i) => h('div', { class: 'card intro-step' },

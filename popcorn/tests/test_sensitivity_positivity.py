@@ -225,7 +225,7 @@ def test_manuscript_rule_reproduces_the_calls(tiny_joint, positivity_run):
     # native manuscript rows = the manuscript table (Figures 4g, 6a, left)
     t = positivity_run["outs"][P.POSITIVITY_CSV].df
     mine = t[(t["depth"] == "native") & t["manuscript"]].set_index(["signature", "sample"])
-    ref = pd.read_csv(tiny_joint["out"] / "Figure4g_6a_positivity_native_depth_roi.csv").set_index(["signature",
+    ref = pd.read_csv(tiny_joint["out"] / "positivity_native_depth.csv").set_index(["signature",
                                                                                                     "sample"])
     assert len(mine) == len(ref)
     assert np.array_equal(mine.loc[ref.index, "n_positive"].to_numpy(), ref["n_positive"].to_numpy())
@@ -243,7 +243,7 @@ def test_configured_depth_matching_reproduces_the_manuscript_table(tiny_joint, p
     scheme = cfg["scoring"]["depth_matching"]
     t = positivity_run["outs"][P.POSITIVITY_CSV].df
     mine = t[(t["depth"] == scheme) & t["manuscript"]].set_index(["signature", "sample"])
-    ref = pd.read_csv(tiny_joint["out"] / "Figure4g_6a_positivity_depth_matched.csv").set_index(["signature",
+    ref = pd.read_csv(tiny_joint["out"] / "positivity_depth_matched.csv").set_index(["signature",
                                                                                                   "sample"])
     assert len(mine) == len(ref)
     assert np.allclose(mine.loc[ref.index, "n_positive"], ref["n_positive_mean"], atol=0.006)

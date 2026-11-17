@@ -1,7 +1,7 @@
 """
 tests/test_other_signatures.py
 ==============================
-A lab that does not study osteoclasts and osteoblasts: the bone signatures deleted in the Signatures tab (S1), or
+A lab that does not study osteoclasts and osteoblasts: the bone signatures deleted in the Cell Settings tab (S1), or
 every signature replaced by other ones (S2), then the settings changed as the configuration check says (S3: the
 bone-specific steps switched off, or pointed at the new signatures). Validation must name every setting that still
 names a deleted signature and the ways out; a run must finish without a crash or a failed figure, skipping what has
@@ -158,9 +158,9 @@ def test_s1_names_each_setting_and_both_ways_out():
     errors, warns = pc.validate_config(s1(pc.default_config()))
     assert len(errors) == 3, errors
     for prefix, key, step in (
-            ("compartments.signature = 'osteoclast'", "compartments", "Osteoclast compartments (Figure 4h)"),
-            ("uncoupling.a = 'osteoblast'", "uncoupling", "Distance to nearest partner (Figure 4i)"),
-            ("uncoupling.b = 'osteoclast'", "uncoupling", "Distance to nearest partner (Figure 4i)")):
+            ("compartments.signature = 'osteoclast'", "compartments", "Osteoclast compartments (bone study)"),
+            ("uncoupling.a = 'osteoblast'", "uncoupling", "Distance to the nearest partner cell type"),
+            ("uncoupling.b = 'osteoclast'", "uncoupling", "Distance to the nearest partner cell type")):
         e = starting_with(errors, prefix)
         assert "is not a signature of this project" in e and "name another signature there" in e
         assert f'switch off the step "{step}" (steps.{key}: false)' in e
@@ -183,7 +183,7 @@ def test_s1_names_each_setting_and_both_ways_out():
     assert pc.validate_config(other)[0] == []
     other["uncoupling"]["a"] = "skeletal_muscle"
     e = starting_with(pc.validate_config(other)[0], "uncoupling.a = 'skeletal_muscle'")
-    assert "has no positivity call" in e and "Signatures tab" in e and "switch off the step" in e
+    assert "has no positivity call" in e and "Cell Settings tab" in e and "switch off the step" in e
 
 
 def test_s2_reports_every_setting_left_on_the_bone_signatures():
@@ -240,7 +240,7 @@ def test_a_receptor_panel_of_other_genes_needs_the_figure_genes_too():
     cfg["figures"]["receptor_genes"] = []
     cfg["steps"]["receptor_panel"] = False                     # no Figure 6b anyway
     assert pc.validate_config(cfg) == ([], [])
-    assert "Distance to nearest partner (Figure 4i)" in pc.STEP_LABELS.values()   # one name for the step
+    assert "Distance to the nearest partner cell type" in pc.STEP_LABELS.values()   # one name for the step
 
 
 def test_other_compartments_are_not_called_growth_plate():
@@ -452,13 +452,14 @@ def test_s1_run_finishes_and_skips_with_reasons(s1_run):
     errors, warns = s1_run["validation"]
     assert errors == [] and any(w.startswith("figures.lineage_maps.a") for w in warns)
     _no_failure(s1_run)
-    assert _skip_reason(s1_run, "Osteoclast compartments") == "disabled in the configuration"
-    assert _skip_reason(s1_run, "Distance to nearest partner") == "disabled in the configuration"
+    # steps switched off are not part of the run: neither planned nor reported
+    assert not any(label.startswith(("Osteoclast compartments", "Distance to the nearest partner"))
+                   for label in list(s1_run["skipped"]) + s1_run.get("steps", []))
     assert "no proximity pairs" in _skip_reason(s1_run, "Proximity tables")
     assert "sensitivity.signatures names no signature" in _skip_reason(s1_run, "Gene-set sensitivity")
     assert "figures.lineage_maps.a = 'osteoclast' is not a signature" in _skip_reason(s1_run, "Draw Figures 4a-f")
     assert _skip_reason(s1_run, "Draw Sensitivity — Figure 4i") == \
-        "step disabled: Distance to nearest partner (Figure 4i)"
+        "step disabled: Distance to the nearest partner cell type"
     assert _skip_reason(s1_run, "Draw Sensitivity — Figure 4h").startswith("step disabled: Osteoclast compartments")
     assert "no proximity pairs" in _skip_reason(s1_run, "Draw Sensitivity — proximity")
     names = {f["name"] for f in s1_run["figures"]}
@@ -466,8 +467,8 @@ def test_s1_run_finishes_and_skips_with_reasons(s1_run):
             "Figure6b_receptor_panel", "FigureS5_leiden_domain_heatmap",
             "Sensitivity_positivity_folds"} <= names
     out = s1_run["out"]
-    assert not (out / "Figure4h_osteoclast_compartment_DE.csv").exists()
-    assert not (out / "sensitivity_Figure4i_null_models.csv").exists()
+    assert not (out / "osteoclast_compartment_DE.csv").exists()
+    assert not (out / "sensitivity_nearest_partner_null_models.csv").exists()
     assert (out / "sensitivity_positivity_folds.csv").is_file()
     pb = pd.read_csv(out / "per_bin_signature_calls_16um.csv.gz", nrows=5)
     assert "positive_osteocyte" in pb.columns and "positive_osteoclast" not in pb.columns
@@ -490,17 +491,17 @@ def test_s3_run_draws_every_figure_for_the_new_signatures(s3_run):
     if reason is not None and "has no rows" in reason:                           # the test was not estimable
         assert "Figure 4h was not estimable, so there is no gene to draw" in reason
     out = s3_run["out"]
-    for name in ("Figure4g_6a_positivity_native_depth_roi.csv", "Figure3b_program_composition_depth_matched.csv",
-                 "Figure4h_compartment_summary.csv", "Figure4i_observed_to_null_summary.csv",
+    for name in ("positivity_native_depth.csv", "cell_type_composition_depth_matched.csv",
+                 "osteoclast_compartment_summary.csv", "nearest_partner_observed_to_null_summary.csv",
                  "fibro_to_endo_proximity.csv", "myeloid_to_neutro_proximity.csv", "sensitivity_proximity.csv",
-                 "sensitivity_Figure4i_null_models.csv", "sensitivity_Figure4h_variants.csv"):
+                 "sensitivity_nearest_partner_null_models.csv", "sensitivity_compartments_variants.csv"):
         assert (out / name).is_file(), name
-    native = pd.read_csv(out / "Figure4g_6a_positivity_native_depth_roi.csv")
+    native = pd.read_csv(out / "positivity_native_depth.csv")
     assert set(native["signature"]) == set(NONBONE)
     pb = pd.read_csv(out / "per_bin_signature_calls_16um.csv.gz")
     assert {f"positive_{n}" for n in NONBONE} <= set(pb.columns)
     assert set(pb["tissue_class"]) <= {c["name"] for c in CLASSES} | {"unassigned"}
-    nulls = pd.read_csv(out / "sensitivity_Figure4i_null_models.csv")
+    nulls = pd.read_csv(out / "sensitivity_nearest_partner_null_models.csv")
     hab = nulls[nulls["null_model"] == "habitat_fixed_b"]
     assert len(hab) and (hab["n_habitat_extra"].fillna(0) > 0).any()           # the 'vascular' habitat exists
     names = {f["name"] for f in s3_run["figures"]}

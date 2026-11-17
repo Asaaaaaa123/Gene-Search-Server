@@ -89,20 +89,20 @@ UNASSIGNED_GRAY, OUTSIDE_GRAY, INSIDE_GRAY, NOT_SIGNIFICANT_GRAY = "#e3e3e3", "#
 _FALLBACK_COLORS = ("#4C72B0", "#C44E52", "#55A868", "#8172B3", "#CCB974", "#64B5CD", "#DD8452", "#937860", "#8C8C8C")
 
 # [APP] inputs (bone_analysis.py outputs, ARCHITECTURE.md section 3) and fixed figure names
-NATIVE_CSV = "Figure4g_6a_positivity_native_depth_roi.csv"
-DEPTH_MATCHED_CSV = "Figure4g_6a_positivity_depth_matched.csv"
-COMPOSITION_CSV = "Figure3b_program_composition_depth_matched.csv"
-DE_CSV = "Figure4h_osteoclast_compartment_DE.csv"
-COMPARTMENT_SUMMARY_CSV = "Figure4h_compartment_summary.csv"
-DISTANCE_CSV = "Figure4i_distance_distributions_observed_and_null.csv"
-DISTANCE_SUMMARY_CSV = "Figure4i_observed_to_null_summary.csv"
-SENSITIVITY_4I_CSV = "sensitivity_Figure4i_summary.csv"        # bone_sensitivity/uncoupling.py
+NATIVE_CSV = "positivity_native_depth.csv"
+DEPTH_MATCHED_CSV = "positivity_depth_matched.csv"
+COMPOSITION_CSV = "cell_type_composition_depth_matched.csv"
+DE_CSV = "osteoclast_compartment_DE.csv"
+COMPARTMENT_SUMMARY_CSV = "osteoclast_compartment_summary.csv"
+DISTANCE_CSV = "nearest_partner_distances_observed_and_null.csv"
+DISTANCE_SUMMARY_CSV = "nearest_partner_observed_to_null_summary.csv"
+SENSITIVITY_4I_CSV = "sensitivity_nearest_partner_summary.csv"        # bone_sensitivity/uncoupling.py
 SENSITIVITY_4I_FIG = "Sensitivity_Figure4i_null_models"        # bone_sensitivity/uncoupling_figures.py
-RECEPTOR_CSV = "Figure6b_receptor_panel_depth_matched.csv"
-ADIPOCYTE_CSV = "FigureS4_adipocyte_genes_depth_matched.csv"
-MORAN_CSV = "FigureS2_spatially_variable_genes_morans_I.csv"
-DOMAIN_CSV = "FigureS5_domain_by_signature_zscores.csv"
-UNRESOLVED_CSV = "FigureS5_unresolved_bins.csv"
+RECEPTOR_CSV = "receptor_panel_depth_matched.csv"
+ADIPOCYTE_CSV = "adipocyte_genes_depth_matched.csv"
+MORAN_CSV = "spatially_variable_genes_morans_I.csv"
+DOMAIN_CSV = "leiden_domain_by_cell_type_zscores.csv"
+UNRESOLVED_CSV = "leiden_unresolved_bins.csv"
 FIG3B, FIG4AF, FIG4H, FIG4I = ("Figure3b_composition_denoise", "Figure4a-f_bone_lineage_maps",
                                "Figure4h_osteoclast_compartment_DE", "Figure4i_osteoblast_osteoclast_distance")
 FIG6B, FIGS1, FIGS2, FIGS4, FIGS5 = ("Figure6b_receptor_panel", "FigureS1_quality_control",
@@ -948,7 +948,7 @@ def positivity_panel(t1, t2, cfg, out, name, sigs, summary=None):
 # ============================================================================
 
 def _compartment_text(summary, cfg, S, P):
-    """[FIX] Figure 4h caption sentences from Figure4h_compartment_summary.csv: the effective growth-plate rule, the
+    """[FIX] Figure 4h caption sentences from osteoclast_compartment_summary.csv: the effective growth-plate rule, the
     bins tested per compartment and section, those outside the region of interest, and the depth difference.
     Returns (rule, details, number of sections with tested bins); ("", "", None) without a usable table.
     [APP] Compartment names from pipeline_config.compartment_names (the manuscript's for its osteoclast / chondrocyte
@@ -1026,7 +1026,7 @@ def figure4h(t4, cfg, out, top_n=DE_TOP_N, summary=None):
     (growth-plate, left); adjusted P values fall back to raw P values when the table has none.
     [FIX] The caption gives the effective growth-plate rule (the percentile of a zero-inflated score is 0: at least one
     UMI of a split_by gene), the bins tested per compartment and section, those outside the region of interest and the
-    depth difference between the compartments (summary: Figure4h_compartment_summary.csv, optional), and says that the
+    depth difference between the compartments (summary: osteoclast_compartment_summary.csv, optional), and says that the
     P values are bin-level and descriptive. Genes of the split_by signature, which define the growth-plate compartment
     and are higher there by construction, are marked with a dagger. It said 'growth-plate bins from every section';
     on the SR007144 data every growth-plate bin is in the tumor-bearing section.
@@ -1099,7 +1099,7 @@ def figure4i(dist, summ, cfg, out, sensitivity=False):
     [FIX] a section reported 'not estimable' has no observed distances and the x limit became NaN (ValueError); all
     distances 0 gave identical limits. Such a section now gets a panel that states the reason.
     [APP] one panel per configured sample; the two signatures from cfg['uncoupling']; observed/null ratios and the
-    ratio of ratios vs the reference sample in the caption (summ: Figure4i_observed_to_null_summary.csv, may be
+    ratio of ratios vs the reference sample in the caption (summ: nearest_partner_observed_to_null_summary.csv, may be
     empty).
     [FIX] The caption states the null model (both sets placed independently and uniformly at random over the region
     of interest, so clumped calls alone give a ratio above 1), that the null interval covers random placement only and
@@ -1311,7 +1311,7 @@ def figureS1(qc, sweep, cfg, out, bin_size=None, analysis_sweep=None, summary=No
     criterion used; dashed: 100 genes).
     [FIX] it re-read the raw Space Ranger 8 um matrices (bone_analysis.read_visium_hd) and, after writing the PDF,
     imported pymupdf (not a declared dependency) to render the PNG; the ImportError also stopped Supplementary Figures
-    S2, S4 and S5. It now draws from the per-bin QC table of bone_analysis.py (FigureS1_qc_per_bin_<bin>.csv.gz) and
+    S2, S4 and S5. It now draws from the per-bin QC table of bone_analysis.py (qc_per_bin_<bin>.csv.gz) and
     matplotlib writes both files.
     [APP] bin size of the table (default cfg['qc_bin_size']; an optional bin_size column gives it per sample, for
     sections without bins of the QC size), samples and the criterion line from the configuration; bins other than
@@ -1460,7 +1460,7 @@ def figureS2(cons, cfg, out, top_n=None):
 def figureS5(M, cfg, out, unresolved=None):
     """[RUN] Mean signature score per Leiden domain, z-scored across domains (color limits -2 to 2).
     [APP] cells without a value (a signature constant across domains) are light gray; the height grows with the
-    number of domains; the unresolved share (FigureS5_unresolved_bins.csv) goes to the caption.
+    number of domains; the unresolved share (leiden_unresolved_bins.csv) goes to the caption.
     [FIX] The caption adds the unresolved share of every section (and within the region of interest) when the table
     has per-section rows; the pooled share (row "all", or the single row of older tables) hid that it differs between
     sections (SR007144: 18.3% control, 42.3% tumor-bearing)."""
@@ -1725,8 +1725,8 @@ def _prep_s1(ctx):
     q_size, b_size = cfg["qc_bin_size"], cfg["bin_size"]
     cols = ["sample", "n_genes_by_counts", "total_counts", "pct_counts_mt", "bin_size"]
     size = q_size
-    name = f"FigureS1_qc_per_bin_{_bin_tag(q_size)}.csv.gz"
-    fallback = f"FigureS1_qc_per_bin_{_bin_tag(b_size)}.csv.gz"
+    name = f"qc_per_bin_{_bin_tag(q_size)}.csv.gz"
+    fallback = f"qc_per_bin_{_bin_tag(b_size)}.csv.gz"
     if not (ctx.results / name).is_file() and (ctx.results / fallback).is_file():
         name, size = fallback, b_size                                   # analysis-bin fallback
     ctx.load(name, cols[:2], step="qc_figure_bins", nrows=1)

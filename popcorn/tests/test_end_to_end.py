@@ -16,34 +16,34 @@ pytestmark = pytest.mark.slow
 COLUMNS = {
     "qc_threshold_sweep_16um.csv": ["sample", "min_genes", "n_retained", "pct_retained", "median_genes"],
     "qc_threshold_sweep_8um.csv": ["sample", "min_genes", "n_retained", "pct_retained", "median_genes", "bin_size"],
-    "FigureS1_qc_per_bin_8um.csv.gz": ["sample", "bin_size", "n_genes_by_counts", "total_counts", "pct_counts_mt"],
-    "Figure6b_receptor_panel_depth_matched.csv": ["gene", "role", "sample", "roi", "mean_raw", "pct_detected_raw",
+    "qc_per_bin_8um.csv.gz": ["sample", "bin_size", "n_genes_by_counts", "total_counts", "pct_counts_mt"],
+    "receptor_panel_depth_matched.csv": ["gene", "role", "sample", "roi", "mean_raw", "pct_detected_raw",
                                                   "mean_dm", "pct_detected_dm", "n_positive_dm", "n_bins", "ci_lo_dm",
                                                   "ci_hi_dm", "median_umi_per_bin", "fold_dm"],
-    "Figure4g_6a_positivity_native_depth_roi.csv": ["signature", "sample", "roi", "n_positive", "n_bins",
+    "positivity_native_depth.csv": ["signature", "sample", "roi", "n_positive", "n_bins",
                                                     "pct_positive", "ci_lo", "ci_hi", "mean_score",
                                                     "fold_vs_reference", "fold_tumor_over_control"],
-    "Figure4g_6a_positivity_depth_matched.csv": ["signature", "sample", "pct_positive_mean", "pct_positive_sd",
+    "positivity_depth_matched.csv": ["signature", "sample", "pct_positive_mean", "pct_positive_sd",
                                                  "n_positive_mean", "n_bins", "mean_score", "ci_lo", "ci_hi"],
     "leiden_domain_screen.csv": ["domain", "n_bins", "ubiquitous_fraction", "median_genes_per_umi", "top_markers",
                                  "de_uninterpretable"],
-    "Figure4h_osteoclast_compartment_DE.csv": ["group", "names", "scores", "pvals", "pvals_adj", "log2fc_mean_cp10k",
+    "osteoclast_compartment_DE.csv": ["group", "names", "scores", "pvals", "pvals_adj", "log2fc_mean_cp10k",
                                                "pct_group", "pct_rest", "selection_gene"],
-    "Figure4h_compartment_summary.csv": ["sample", "threshold", "threshold_is_zero", "pct_bins_above_threshold",
+    "osteoclast_compartment_summary.csv": ["sample", "threshold", "threshold_is_zero", "pct_bins_above_threshold",
                                          "n_growth_plate", "n_tumor_associated", "n_non_growth_plate_control",
                                          "n_growth_plate_outside_roi", "n_tumor_associated_outside_roi",
                                          "median_umi_growth_plate", "median_umi_tumor_associated"],
-    "Figure3a_program_composition_native.csv": ["sample", "program", "n_bins", "pct_of_all_bins",
+    "cell_type_composition_native.csv": ["sample", "program", "n_bins", "pct_of_all_bins",
                                                 "pct_of_assigned_bins", "sample_ambiguous_pct"],
     "leiden_seed_stability_adjusted_rand_index.csv": ["seed_a", "seed_b", "n_clusters_a", "n_clusters_b", "ARI"],
-    "FigureS5_unresolved_bins.csv": ["sample", "unresolved_bins", "all_bins", "percent", "unresolved_bins_roi",
+    "leiden_unresolved_bins.csv": ["sample", "unresolved_bins", "all_bins", "percent", "unresolved_bins_roi",
                                      "all_bins_roi", "percent_roi"],
-    "Figure4i_observed_to_null_summary.csv": ba.UNCOUPLING_COLUMNS,
-    "Figure4i_distance_distributions_observed_and_null.csv": ["sample", "source", "distance_um", "count"],
+    "nearest_partner_observed_to_null_summary.csv": ba.UNCOUPLING_COLUMNS,
+    "nearest_partner_distances_observed_and_null.csv": ["sample", "source", "distance_um", "count"],
     "fibroblast_to_osteoblast_proximity.csv": ["section", "fibroblast_assigned_bins", "osteoblast_assigned_bins",
                                                "region_of_interest_bins", "percent_fibroblast_within_50um_of_osteoblast",
                                                "percent_all_bins_within_50um_of_osteoblast"],
-    "Table1_gene_signatures.csv": ["signature", "canonical_markers", "signature_genes",
+    "gene_signatures.csv": ["signature", "canonical_markers", "signature_genes",
                                    "genes_counted_toward_two_gene_rule", "excluded_genes"],
 }
 
@@ -83,10 +83,10 @@ def test_every_documented_table_exists_with_its_columns(run):
         assert list(df.columns) == cols, name
         assert len(df), name
     for name in ("config.json", "summary.json", "manifest.json", "joint_16um.h5ad", "labels_8um_projected.csv",
-                 "morans_I_per_section.csv", "FigureS2_spatially_variable_genes_morans_I.csv",
-                 "FigureS4_adipocyte_genes_depth_matched.csv", "leiden_domain_markers.csv",
-                 "macrophage_to_osteoclast_proximity.csv", "Figure3b_program_composition_depth_matched.csv",
-                 "FigureS5_domain_by_signature_zscores.csv"):
+                 "morans_I_per_section.csv", "spatially_variable_genes_morans_I.csv",
+                 "adipocyte_genes_depth_matched.csv", "leiden_domain_markers.csv",
+                 "macrophage_to_osteoclast_proximity.csv", "cell_type_composition_depth_matched.csv",
+                 "leiden_domain_by_cell_type_zscores.csv"):
         assert (run["out"] / name).is_file(), name
 
 

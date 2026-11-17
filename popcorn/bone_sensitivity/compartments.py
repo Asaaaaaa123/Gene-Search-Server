@@ -13,7 +13,7 @@ This module writes
   regions      an anatomical proxy of the growth plate: 8-connected regions of split_by-positive bins (pooled calls) on
                the array grid with at least min_region_bins bins, and the positive bins within anatomical_distance_um;
   variants, de, top_genes   the test under each variant:
-    manuscript        the bins and test of Figure 4h (reproduces Figure4h_osteoclast_compartment_DE.csv)
+    manuscript        the bins and test of Figure 4h (reproduces osteoclast_compartment_DE.csv)
     roi_only          both groups restricted to the marrow region of interest
     depth_adjusted    the deeper group downsampled bin by bin to the other group's UMI distribution (rank-quantile
                       targets), n_depth_reps replicates, re-log-normalized
@@ -43,11 +43,11 @@ VARIANTS = ("manuscript", "roi_only", "depth_adjusted", "block_pseudobulk", "ana
 ALPHA = 0.05
 TOP_N_DE = 50                      # genes per variant and group kept in the DE table (plus manuscript-significant ones)
 FIGURE_TOP_N = 8                   # genes per compartment drawn in Figure 4h (bone_figures.DE_TOP_N)
-DIAG_CSV = "sensitivity_Figure4h_diagnostics.csv"
-REGIONS_CSV = "sensitivity_Figure4h_regions.csv"
-VARIANTS_CSV = "sensitivity_Figure4h_variants.csv"
-DE_CSV = "sensitivity_Figure4h_de.csv"
-TOP_CSV = "sensitivity_Figure4h_top_genes.csv"
+DIAG_CSV = "sensitivity_compartments_diagnostics.csv"
+REGIONS_CSV = "sensitivity_compartments_regions.csv"
+VARIANTS_CSV = "sensitivity_compartments_variants.csv"
+DE_CSV = "sensitivity_compartments_de.csv"
+TOP_CSV = "sensitivity_compartments_top_genes.csv"
 DIAG_COLUMNS = ["sample", "threshold", "threshold_is_zero", "pct_bins_above_threshold", "n_bins_with_split_gene_umi",
                 "n_growth_plate", "n_tumor_associated", "n_non_growth_plate_control", "n_growth_plate_outside_roi",
                 "n_tumor_associated_outside_roi", "median_umi_growth_plate", "median_umi_tumor_associated",
@@ -341,7 +341,7 @@ def block_pseudobulk(counts, sections, xy_um, labels, block_um, var_names, targe
 # ---- tables ----------------------------------------------------------------------------------------------------------
 
 def diagnostics(sections, smp, thr, above, is_zero, score, comp, roi, umi, split_umi, core_umi):
-    """sensitivity_Figure4h_diagnostics.csv: one row per section and one 'all'."""
+    """sensitivity_compartments_diagnostics.csv: one row per section and one 'all'."""
     rows = []
     for s in list(sections) + ["all"]:
         m = np.ones(len(smp), dtype=bool) if s == "all" else smp == s
@@ -521,7 +521,7 @@ def run(a, cfg, progress=None):
     lab_m = np.where(in_sections, _labels(gp_m, comp == GROUPS[1]), "")
     bins_variant("manuscript", lab_m, f"{GPn} = {rule}; {TA} = the other {S}-positive bins of "
                                       f"{tumor_txt} sections; {where}; Wilcoxon rank-sum over bins on the "
-                                      f"log-normalized expression (Figure4h_osteoclast_compartment_DE.csv)")
+                                      f"log-normalized expression (osteoclast_compartment_DE.csv)")
     if roi is None:
         rows.append(_row("roi_only", "not estimable", "bins", note="no in_marrow_roi column"))
     else:

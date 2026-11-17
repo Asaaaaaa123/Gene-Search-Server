@@ -1,6 +1,6 @@
-# Popcorn — architecture and contracts
+# Popcorn Genetic — architecture and contracts
 
-Popcorn turns the manuscript pipeline (`bone_analysis.py`, `bone_figures.py`) into a local web
+Popcorn Genetic turns the manuscript pipeline (`bone_analysis.py`, `bone_figures.py`) into a local web
 application: choose the sections (of any instrument `spatial_readers.py` reads, section 9) and gene signatures in the
 browser, draw a region of interest on the H&E image, run the base analysis in the background with live progress, then
 make the analyses you want with the tools of a run's Analysis tab (section 8) and browse the tables and per-bin maps.
@@ -155,7 +155,7 @@ of the configuration (unknown names are left out), Figure 4a–f when a `figures
 has no call, a positivity panel that names no signature, Figure 6b when `figures.receptor_genes` names no gene of
 `receptor_panel`. A sensitivity figure whose analysis step was switched off says so; the proximity, uncoupling and
 positivity sensitivity figures are skipped when their main table has no rows, the Figure 4h one when
-`sensitivity_Figure4h_top_genes.csv` has none (the Figure 4h test was not estimable: no gene to draw). A positivity
+`sensitivity_compartments_top_genes.csv` has none (the Figure 4h test was not estimable: no gene to draw). A positivity
 panel leaves out a signature that could not be scored (mean_score NaN in every section with bins: fewer than two of its
 genes in the data) and names it in the caption; a panel of such signatures only is skipped. Figure 4h and its
 sensitivity figure name the compartments with `pc.compartment_names` (growth plate / tumor-associated only for the
@@ -195,25 +195,25 @@ cfg["steps"]["figures"] else []))`, then `ba.run_analysis_from_config(cfg, <run_
 | `manifest.json` | `{"files": [{"file", "kind": "table"|"object"|"data", "title", "description", "rows": int|null}]}` — one entry per file written (including itself is not needed) |
 | `qc_threshold_sweep_{B}.csv` | sample, min_genes, n_retained, pct_retained, median_genes (analysis bins, before filtering) |
 | `qc_threshold_sweep_{Q}.csv` | same at the QC bin size (Supplementary Figure S1, right panel), plus bin_size |
-| `FigureS1_qc_per_bin_{Q}.csv.gz` | sample, bin_size, n_genes_by_counts, total_counts, pct_counts_mt — every bin of the QC bin size before filtering (S1 histograms). A section without square_{qc_bin_size} falls back to the analysis bin size (bin_size says which), with a warning |
-| `Figure6b_receptor_panel_depth_matched.csv` | gene, role, sample, roi, mean_raw, pct_detected_raw, mean_dm, pct_detected_dm, n_positive_dm, n_bins, ci_lo_dm, ci_hi_dm, median_umi_per_bin, fold_dm |
-| `FigureS4_adipocyte_genes_depth_matched.csv` | same columns |
-| `Figure4g_6a_positivity_native_depth_roi.csv` | signature, sample, roi, n_positive, n_bins, pct_positive, ci_lo, ci_hi, mean_score, fold_vs_reference; plus fold_tumor_over_control (same value on every row of a signature) when there are exactly two samples. Both folds are ratios of the exact rates n_positive / n_bins (fold_vs_reference rounded to 4 decimals, fold_tumor_over_control to 2), not of the rounded pct_positive |
-| `Figure4g_6a_positivity_depth_matched.csv` | signature, sample, pct_positive_mean, pct_positive_sd, n_positive_mean, n_bins, mean_score, ci_lo, ci_hi. pct_positive_sd = SD over the downsampling replicates only; ci_lo, ci_hi = Wilson 95% interval (percent) of round(n_positive_mean) of n_bins |
+| `qc_per_bin_{Q}.csv.gz` | sample, bin_size, n_genes_by_counts, total_counts, pct_counts_mt — every bin of the QC bin size before filtering (S1 histograms). A section without square_{qc_bin_size} falls back to the analysis bin size (bin_size says which), with a warning |
+| `receptor_panel_depth_matched.csv` | gene, role, sample, roi, mean_raw, pct_detected_raw, mean_dm, pct_detected_dm, n_positive_dm, n_bins, ci_lo_dm, ci_hi_dm, median_umi_per_bin, fold_dm |
+| `adipocyte_genes_depth_matched.csv` | same columns |
+| `positivity_native_depth.csv` | signature, sample, roi, n_positive, n_bins, pct_positive, ci_lo, ci_hi, mean_score, fold_vs_reference; plus fold_tumor_over_control (same value on every row of a signature) when there are exactly two samples. Both folds are ratios of the exact rates n_positive / n_bins (fold_vs_reference rounded to 4 decimals, fold_tumor_over_control to 2), not of the rounded pct_positive |
+| `positivity_depth_matched.csv` | signature, sample, pct_positive_mean, pct_positive_sd, n_positive_mean, n_bins, mean_score, ci_lo, ci_hi. pct_positive_sd = SD over the downsampling replicates only; ci_lo, ci_hi = Wilson 95% interval (percent) of round(n_positive_mean) of n_bins |
 | `leiden_domain_screen.csv` | domain, n_bins, ubiquitous_fraction, median_genes_per_umi, top_markers, de_uninterpretable |
 | `leiden_domain_markers.csv` | scanpy rank_genes_groups_df columns (group, names, scores, logfoldchanges, pvals, pvals_adj, pct_nz_group, pct_nz_reference) |
-| `Figure4h_osteoclast_compartment_DE.csv` | group, names, scores, pvals, pvals_adj, log2fc_mean_cp10k, pct_group, pct_rest, selection_gene. log2fc_mean_cp10k = log2((mean CP10k in the group + 1) / (mean CP10k in the other compartment + 1)), CP10k = expm1(lognorm); pct_group / pct_rest = % of bins detecting the gene; selection_gene = gene of the split_by signature's scored list (defines the growth-plate compartment, higher there by construction). scanpy's logfoldchanges is not written (1e-9 floor: \|values\| of 19-32 for genes undetected in one compartment) |
-| `Figure4h_compartment_summary.csv` | sample ("all" first, then one row per section), threshold (the split_by score threshold used: the compartments.percentile of all bins; also `uns["compartment_threshold"]` of the h5ad), threshold_is_zero, pct_bins_above_threshold, n_growth_plate, n_tumor_associated, n_non_growth_plate_control, n_growth_plate_outside_roi, n_tumor_associated_outside_roi, median_umi_growth_plate, median_umi_tumor_associated |
-| `Figure3a_program_composition_native.csv`, `Figure3b_program_composition_depth_matched.csv` | sample, program, n_bins, pct_of_all_bins, pct_of_assigned_bins, sample_ambiguous_pct |
+| `osteoclast_compartment_DE.csv` | group, names, scores, pvals, pvals_adj, log2fc_mean_cp10k, pct_group, pct_rest, selection_gene. log2fc_mean_cp10k = log2((mean CP10k in the group + 1) / (mean CP10k in the other compartment + 1)), CP10k = expm1(lognorm); pct_group / pct_rest = % of bins detecting the gene; selection_gene = gene of the split_by signature's scored list (defines the growth-plate compartment, higher there by construction). scanpy's logfoldchanges is not written (1e-9 floor: \|values\| of 19-32 for genes undetected in one compartment) |
+| `osteoclast_compartment_summary.csv` | sample ("all" first, then one row per section), threshold (the split_by score threshold used: the compartments.percentile of all bins; also `uns["compartment_threshold"]` of the h5ad), threshold_is_zero, pct_bins_above_threshold, n_growth_plate, n_tumor_associated, n_non_growth_plate_control, n_growth_plate_outside_roi, n_tumor_associated_outside_roi, median_umi_growth_plate, median_umi_tumor_associated |
+| `cell_type_composition_native.csv`, `cell_type_composition_depth_matched.csv` | sample, program, n_bins, pct_of_all_bins, pct_of_assigned_bins, sample_ambiguous_pct |
 | `leiden_seed_stability_adjusted_rand_index.csv` | seed_a, seed_b, n_clusters_a, n_clusters_b, ARI |
-| `FigureS5_domain_by_signature_zscores.csv` | leiden_domain, then one column per primary signature (label) |
-| `FigureS5_unresolved_bins.csv` | sample, unresolved_bins, all_bins, percent, unresolved_bins_roi, all_bins_roi, percent_roi; first row sample "all" (all sections pooled, the number quoted before), then one row per section; the _roi columns count bins of the region of interest (in_marrow_roi). Older results have one row and only unresolved_bins, all_bins, percent |
-| `Figure4i_observed_to_null_summary.csv` | sample, n_a, n_b, n_units_roi, ratio_obs_null_mean, ratio_obs_null_lo, ratio_obs_null_hi, p_greater_than_null_mean, median_nn_um, mean_nn_um, null_mean_um, status, ratio_of_ratios_vs_reference, note |
-| `Figure4i_distance_distributions_observed_and_null.csv` | sample, source ("observed" / "null"), distance_um, count |
+| `leiden_domain_by_cell_type_zscores.csv` | leiden_domain, then one column per primary signature (label) |
+| `leiden_unresolved_bins.csv` | sample, unresolved_bins, all_bins, percent, unresolved_bins_roi, all_bins_roi, percent_roi; first row sample "all" (all sections pooled, the number quoted before), then one row per section; the _roi columns count bins of the region of interest (in_marrow_roi). Older results have one row and only unresolved_bins, all_bins, percent |
+| `nearest_partner_observed_to_null_summary.csv` | sample, n_a, n_b, n_units_roi, ratio_obs_null_mean, ratio_obs_null_lo, ratio_obs_null_hi, p_greater_than_null_mean, median_nn_um, mean_nn_um, null_mean_um, status, ratio_of_ratios_vs_reference, note |
+| `nearest_partner_distances_observed_and_null.csv` | sample, source ("observed" / "null"), distance_um, count |
 | `{from}_to_{to}_proximity.csv` | one per proximity pair (defaults `fibroblast_to_osteoblast_proximity.csv`, `macrophage_to_osteoclast_proximity.csv`, original columns with the signature names substituted) |
 | `morans_I_per_section.csv` | sample, gene, I, pval_norm, var_norm, pval_norm_fdr_bh (when available; Benjamini-Hochberg over the genes with a defined pval_norm of that section, NaN for genes with zero variance there), rank_in_sample |
-| `FigureS2_spatially_variable_genes_morans_I.csv` | gene, `moranI_<sample id>` per sample, mean_rank |
-| `Table1_gene_signatures.csv` | signature, canonical_markers, signature_genes, genes_counted_toward_two_gene_rule, excluded_genes |
+| `spatially_variable_genes_morans_I.csv` | gene, `moranI_<sample id>` per sample, mean_rank |
+| `gene_signatures.csv` | signature, canonical_markers, signature_genes, genes_counted_toward_two_gene_rule, excluded_genes |
 | `per_bin_signature_calls_{B}.csv.gz` | barcode, sample_id, section, x_um, y_um, in_region_of_interest, total_umi, assigned_signature, tissue_class, leiden_domain, `positive_<slug>` per primary signature, `positive_<b>_pooled_depthmatched`, `positive_<a>_pooled_depthmatched` (uncoupling pair; suffix `_pooled` for calls "pooled", no columns for "native") |
 | `gene_set_sensitivity_three_gene_sets.csv` | optional (steps.sensitivity): gene_set, signature, sample, n_units_roi, n_positive_native, pct_native, ci_lo, ci_hi, pct_depth_matched_mean, pct_depth_matched_sd, genes_used, genes_missing (comma-separated gene lists of the variant; missing genes are also reported as warnings) |
 | `joint_{B}.h5ad` | optional (steps.write_h5ad) |
@@ -624,7 +624,7 @@ return a cleanup function (stop timers, remove listeners):
                            the readers read, and the server's upload_parts refuses any other (UPLOAD_OTHER_RE)
                            run: "What a run does" (the base run; the APP_STEPS switches written to cfg.steps;
                            Deterministic) and the project's runs
-                           header: the configuration-check chip only (see "Signatures tab"); Save
+                           header: the configuration-check chip only (see "Cell Settings tab"); Save
                            and Discard are in the bar at the bottom shown while there are unsaved changes (and
                            Ctrl+S). data: the sample table (a row's "Sample actions" menu: Move up, Move down, Remove
                            sample) and the Data check card ("Check again"). run: the project's runs (a click on a
@@ -654,12 +654,12 @@ return a cleanup function (stop timers, remove listeners):
 ```
 Components live in js/components/ and are imported by the views.
 
-### Signatures tab (components/signature-editor.js)
+### Cell Settings tab (components/signature-editor.js)
 * `deleteSignature(cfg, name)` removes the signature from every list (competitors, primary, programs, roi.exclude,
   sensitivity sets, positivity panels, composition bars) and drops the proximity pairs that use it; single-signature
   settings stay (the base run of the application does not use them: app_config; the command line's check names them).
   `deletionEffects(cfg, name)` lists what the deletion empties and drops, in the delete dialog.
-* Signatures tab buttons: Delete signature is in the "Signature actions" menu at the head of the signature, "Reset gene
+* Cell Settings tab buttons: Delete signature is in the "Signature actions" menu at the head of the signature, "Reset gene
   sets to manuscript defaults" in the "Gene set actions" menu of the Signatures card, beside Add (and in the empty
   state, beside Add signature); both ask for confirmation. The move and remove buttons of the calling-order lists and
   the tissue classes, and the remove buttons of excluded genes, receptor-panel rows, proximity pairs and positivity

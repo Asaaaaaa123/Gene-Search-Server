@@ -14,10 +14,10 @@ from matplotlib.ticker import LogFormatter
 import pipeline_config as pc
 from bone_sensitivity import common
 
-NULL_CSV = "sensitivity_Figure4i_null_models.csv"
-SUMMARY_CSV = "sensitivity_Figure4i_summary.csv"
-DECOMPOSITION_CSV = "sensitivity_Figure4i_decomposition.csv"
-STABILITY_CSV = "sensitivity_Figure4i_call_stability.csv"
+NULL_CSV = "sensitivity_nearest_partner_null_models.csv"
+SUMMARY_CSV = "sensitivity_nearest_partner_summary.csv"
+DECOMPOSITION_CSV = "sensitivity_nearest_partner_decomposition.csv"
+STABILITY_CSV = "sensitivity_nearest_partner_call_stability.csv"
 FIG = "Sensitivity_Figure4i_null_models"
 FIGURES = [(FIG, "Sensitivity — Figure 4i under other null models")]
 INPUTS = [NULL_CSV, SUMMARY_CSV, DECOMPOSITION_CSV, STABILITY_CSV]

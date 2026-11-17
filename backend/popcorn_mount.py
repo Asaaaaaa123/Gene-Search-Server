@@ -65,15 +65,15 @@ def _lock_workspace(workspace: Path):
 
 def _unavailable(reason: str):
     """ASGI application answering every request under /popcorn with 503 and `reason`."""
-    page = ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Popcorn</title></head>"
-            "<body style=\"font-family:system-ui;padding:32px\"><h1>Popcorn is not available</h1>"
+    page = ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Popcorn Genetic</title></head>"
+            "<body style=\"font-family:system-ui;padding:32px\"><h1>Popcorn Genetic is not available</h1>"
             f"<p>{html.escape(reason)}</p><p><a href=\"/\">Back</a></p></body></html>")
 
     async def app(scope, receive, send):
         if scope["type"] != "http":
             return
         if scope["path"].rstrip("/").endswith("/api") or "/api/" in scope["path"]:
-            response = JSONResponse({"detail": f"Popcorn is not available: {reason}"}, status_code=503)
+            response = JSONResponse({"detail": f"Popcorn Genetic is not available: {reason}"}, status_code=503)
         else:
             response = HTMLResponse(page, status_code=503)
         await response(scope, receive, send)

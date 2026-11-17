@@ -17,10 +17,10 @@ from bone_sensitivity import common
 NAME = "Sensitivity_Figure4h_variants"
 TITLE = "Sensitivity — Figure 4h under other definitions and tests"
 FIGURES = [(NAME, TITLE)]
-DIAG_CSV = "sensitivity_Figure4h_diagnostics.csv"
-REGIONS_CSV = "sensitivity_Figure4h_regions.csv"
-VARIANTS_CSV = "sensitivity_Figure4h_variants.csv"
-TOP_CSV = "sensitivity_Figure4h_top_genes.csv"
+DIAG_CSV = "sensitivity_compartments_diagnostics.csv"
+REGIONS_CSV = "sensitivity_compartments_regions.csv"
+VARIANTS_CSV = "sensitivity_compartments_variants.csv"
+TOP_CSV = "sensitivity_compartments_top_genes.csv"
 INPUTS = [VARIANTS_CSV, TOP_CSV, DIAG_CSV, REGIONS_CSV]
 GROUPS = ("growth_plate", "tumor_associated")
 ALPHA = 0.05

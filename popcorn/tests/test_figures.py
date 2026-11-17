@@ -30,9 +30,9 @@ import bone_figures as bf  # noqa: E402
 import pipeline_config as pc  # noqa: E402
 
 SHAPES = ((3.2, 1.6), (1.2, 2.0), (2.0, 1.0), (2.6, 1.4))        # section width, height in mm
-DE_CSV = "Figure4h_osteoclast_compartment_DE.csv"
-DIST_CSV = "Figure4i_distance_distributions_observed_and_null.csv"
-SUMMARY_4I_CSV = "Figure4i_observed_to_null_summary.csv"
+DE_CSV = "osteoclast_compartment_DE.csv"
+DIST_CSV = "nearest_partner_distances_observed_and_null.csv"
+SUMMARY_4I_CSV = "nearest_partner_observed_to_null_summary.csv"
 GENES_TA = ["Ctsk", "Acp5", "Mmp9", "Atp6v0d2", "Spp1", "Ccl3", "Il1b", "Cxcl2", "Lyz2", "Ptprc", "Tyrobp", "Fcer1g"]
 GENES_GP = ["Col2a1", "Col10a1", "Ibsp", "Mmp13", "Acan", "Sox9", "Comp", "Matn3", "Ihh", "Pth1r", "Runx2", "Sp7"]
 MORAN_GENES = ["Hbb-bs", "Hba-a1", "Col1a1", "Col2a1", "S100a8", "S100a9", "Camp", "Ltf", "Ngp", "Car2", "Ctsk",
@@ -113,9 +113,9 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
                          "pct_of_assigned_bins": round(100 * nb / (tot - amb), 3) if prog != "ambiguous" else np.nan,
                          "sample_ambiguous_pct": round(100 * amb / tot, 2)})
     comp = pd.DataFrame(rows)
-    comp.to_csv(out / "Figure3a_program_composition_native.csv", index=False)
+    comp.to_csv(out / "cell_type_composition_native.csv", index=False)
     comp.assign(program=comp["program"].replace({"neutrophil": "granulocyte"})).to_csv(
-        out / "Figure3b_program_composition_depth_matched.csv", index=False)
+        out / "cell_type_composition_depth_matched.csv", index=False)
 
     # ---- Figures 4g, 6a positivity ---------------------------------------------------------------------------------
     rows = []
@@ -140,7 +140,7 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
     if len(smp) == 2:
         other = nat[nat["sample"] != ref].set_index("signature")["pct_positive"]
         nat["fold_tumor_over_control"] = (nat["signature"].map(other) / nat["signature"].map(ref_pct)).round(2)
-    nat.to_csv(out / "Figure4g_6a_positivity_native_depth_roi.csv", index=False)
+    nat.to_csv(out / "positivity_native_depth.csv", index=False)
     rows = []
     for r in nat.itertuples():
         mean = 0.6 * r.pct_positive
@@ -153,7 +153,7 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
                      "pct_positive_sd": np.nan if single else 0.2 * mean + 0.002,
                      "n_positive_mean": k, "n_bins": r.n_bins, "mean_score": r.mean_score,
                      "ci_lo": round(lo, 4), "ci_hi": round(hi, 4)})
-    pd.DataFrame(rows).to_csv(out / "Figure4g_6a_positivity_depth_matched.csv", index=False)
+    pd.DataFrame(rows).to_csv(out / "positivity_depth_matched.csv", index=False)
 
     # ---- Figure 4h (Acan and Comp: genes of the split signature) -------------------------------------------------
     p_ta = [1e-15, 1e-12, 3e-9, 2e-7, 4e-6, 1e-4, 2e-3, .01, .03, .2, np.nan, .6]
@@ -176,7 +176,7 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
                      "median_umi_growth_plate": 751.5 if tum else np.nan,
                      "median_umi_tumor_associated": 349.0 if tum else np.nan})
     pd.DataFrame(rows).assign(threshold=0.0, threshold_is_zero=True, pct_bins_above_threshold=2.1).to_csv(
-        out / "Figure4h_compartment_summary.csv", index=False)
+        out / "osteoclast_compartment_summary.csv", index=False)
 
     # ---- Figure 4i ------------------------------------------------------------------------------------------------
     summ, dist = [], []
@@ -227,9 +227,9 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
         return pd.DataFrame(rows)
 
     detection(list(cfg["receptor_panel"]), cfg["receptor_panel"], "Csf1", "Tnfsf11").to_csv(
-        out / "Figure6b_receptor_panel_depth_matched.csv", index=False)
+        out / "receptor_panel_depth_matched.csv", index=False)
     detection(cfg["adipocyte_genes"], {g: "adipocyte" for g in cfg["adipocyte_genes"]}, "Lep", "Retn").to_csv(
-        out / "FigureS4_adipocyte_genes_depth_matched.csv", index=False)
+        out / "adipocyte_genes_depth_matched.csv", index=False)
 
     # ---- Supplementary Figure S1 ------------------------------------------------------------------------------------
     qc = []
@@ -241,7 +241,7 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
         qc.append(pd.DataFrame({"sample": s["id"], "n_genes_by_counts": np.round(umis * rng.uniform(.6, .95, n)),
                                 "total_counts": umis, "pct_counts_mt": mt}))
     qc = pd.concat(qc, ignore_index=True)
-    qc.to_csv(out / f"FigureS1_qc_per_bin_{Q}.csv.gz", index=False)
+    qc.to_csv(out / f"qc_per_bin_{Q}.csv.gz", index=False)
     for tag, factor in ((Q, 1.0), (B, 2.5)):
         rows = []
         for s in smp:
@@ -258,7 +258,7 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
     for i, s in enumerate(smp):
         moran[f"moranI_{s['id']}"] = np.clip(np.linspace(.8, .15, len(MORAN_GENES)) + rng.normal(0, .04, 40), 0, 1)
     moran["mean_rank"] = np.arange(1, len(MORAN_GENES) + 1, dtype=float)
-    pd.DataFrame(moran).to_csv(out / "FigureS2_spatially_variable_genes_morans_I.csv", index=False)
+    pd.DataFrame(moran).to_csv(out / "spatially_variable_genes_morans_I.csv", index=False)
     labels = [pc.signature_label(cfg, p) for p in cfg["primary"]]
     domains = ["osteoclast-enriched (domain 0)", "erythroid-enriched (domain 1)", "granulocyte-enriched (domain 2)",
                "chondrocyte-enriched (domain 3)", "4", "unresolved", "unassigned"]
@@ -266,14 +266,14 @@ def make_results(out: Path, cfg: dict, seed: int = 0, shapes=SHAPES) -> Path:
     z[:, -1] = np.nan                                      # a signature constant across domains
     S5 = pd.DataFrame(z, columns=labels)
     S5.insert(0, "leiden_domain", domains)
-    S5.to_csv(out / "FigureS5_domain_by_signature_zscores.csv", index=False)
+    S5.to_csv(out / "leiden_domain_by_cell_type_zscores.csv", index=False)
     rows = [{"sample": "all", "unresolved_bins": 1234, "all_bins": len(pb), "percent": round(100 * 1234 / len(pb), 1)}]
     for i, s in enumerate(smp):
         n = int((pb["sample_id"] == s["id"]).sum())
         rows.append({"sample": s["id"], "unresolved_bins": n // (5 - i), "all_bins": n,
                      "percent": round(100 / (5 - i), 1), "unresolved_bins_roi": n_roi[s["id"]] // (4 - i),
                      "all_bins_roi": n_roi[s["id"]], "percent_roi": round(100 / (4 - i), 1)})
-    pd.DataFrame(rows).to_csv(out / "FigureS5_unresolved_bins.csv", index=False)
+    pd.DataFrame(rows).to_csv(out / "leiden_unresolved_bins.csv", index=False)
 
     (out / "summary.json").write_text(json.dumps({
         "version": 1, "bin_size": cfg["bin_size"], "reference_sample": ref, "depth_match_target_umi": 23,
@@ -354,7 +354,7 @@ def test_make_figures_draws_every_figure(tmp_path, make_cfg):
     cfg = make_cfg()
     folder = make_results(tmp_path / "results", cfg, shapes=((1.0, 2.6),) if len(cfg["samples"]) == 1 else SHAPES)
     if len(cfg["samples"]) == 3:                # the last section has no 8 um bins (optional bin_size column)
-        qc_path = folder / "FigureS1_qc_per_bin_8um.csv.gz"
+        qc_path = folder / "qc_per_bin_8um.csv.gz"
         qc = pd.read_csv(qc_path, dtype={"sample": str}, keep_default_na=False)
         qc.assign(bin_size=np.where(qc["sample"] == cfg["samples"][-1]["id"], "016um", "008um")).to_csv(
             qc_path, index=False)
@@ -384,18 +384,18 @@ def test_absent_and_empty_inputs_are_skipped(tmp_path):
     cfg = pc.default_config()
     cfg["steps"]["moran"] = False
     folder = make_results(tmp_path / "results", cfg)
-    (folder / "FigureS2_spatially_variable_genes_morans_I.csv").unlink()        # step disabled
-    (folder / "FigureS4_adipocyte_genes_depth_matched.csv").unlink()            # step enabled, file absent
+    (folder / "spatially_variable_genes_morans_I.csv").unlink()        # step disabled
+    (folder / "adipocyte_genes_depth_matched.csv").unlink()            # step enabled, file absent
     pd.read_csv(folder / DE_CSV).head(0).to_csv(folder / DE_CSV, index=False)     # header only
     (folder / DIST_CSV).write_text("")                                            # zero bytes
     summ = pd.read_csv(folder / SUMMARY_4I_CSV)
     summ.assign(status="not estimable (n_positive < 10)").to_csv(folder / SUMMARY_4I_CSV, index=False)
-    (folder / "Figure4g_6a_positivity_depth_matched.csv").unlink()              # native panel only
+    (folder / "positivity_depth_matched.csv").unlink()              # native panel only
     per_bin = folder / "per_bin_signature_calls_16um.csv.gz"
     pd.read_csv(per_bin).drop(columns="tissue_class").to_csv(per_bin, index=False)
-    qc = pd.read_csv(folder / "FigureS1_qc_per_bin_8um.csv.gz")                 # analysis-bin fallback, no mt column
-    qc.drop(columns="pct_counts_mt").to_csv(folder / "FigureS1_qc_per_bin_16um.csv.gz", index=False)
-    (folder / "FigureS1_qc_per_bin_8um.csv.gz").unlink()
+    qc = pd.read_csv(folder / "qc_per_bin_8um.csv.gz")                 # analysis-bin fallback, no mt column
+    qc.drop(columns="pct_counts_mt").to_csv(folder / "qc_per_bin_16um.csv.gz", index=False)
+    (folder / "qc_per_bin_8um.csv.gz").unlink()
     progress = Recorder()
     entries = bf.make_figures(folder, cfg, progress)
     assert progress.reported == bf.planned_steps(cfg)
@@ -423,7 +423,7 @@ def test_failing_figure_is_reported_and_the_others_still_run(tmp_path, monkeypat
     cfg = pc.default_config()
     folder = make_results(tmp_path / "results", cfg)
     for f in folder.glob("*"):
-        if f.name not in ("config.json", DE_CSV, "FigureS5_domain_by_signature_zscores.csv"):
+        if f.name not in ("config.json", DE_CSV, "leiden_domain_by_cell_type_zscores.csv"):
             f.unlink()
 
     def broken(*args, **kwargs):
@@ -461,7 +461,7 @@ def test_planned_steps_and_cli(tmp_path, capsys):
     assert extras[2:] == default and "Figure 1a" in extras[0] and "Figure 2c" in extras[1]
     folder = make_results(tmp_path / "results", pc.default_config())
     for f in folder.glob("*"):
-        if f.name not in ("config.json", "FigureS5_domain_by_signature_zscores.csv"):
+        if f.name not in ("config.json", "leiden_domain_by_cell_type_zscores.csv"):
             f.unlink()
     assert bf.main(["--results", str(folder)]) == 0
     assert "1 figures written, 0 failed" in capsys.readouterr().out

@@ -207,7 +207,7 @@ def test_run_leaves_the_object_unchanged(tiny_joint, tiny_run):
 def test_manuscript_variant_reproduces_figure4h(tiny_joint, tiny_run):
     a, t, _ = tiny_run
     cfg = tiny_joint["cfg"]
-    man = pd.read_csv(Path(tiny_joint["out"]) / "Figure4h_osteoclast_compartment_DE.csv")
+    man = pd.read_csv(Path(tiny_joint["out"]) / "osteoclast_compartment_DE.csv")
     de = t[cm.DE_CSV]
     got = de[de["variant"] == "manuscript"].merge(man, on=["group", "names"], suffixes=("", "_ms"), validate="1:1")
     assert len(got) == (de["variant"] == "manuscript").sum() > 0

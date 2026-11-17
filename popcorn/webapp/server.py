@@ -53,6 +53,7 @@ from scipy.spatial import cKDTree
 from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import cell_types as ct
 import pipeline_config as pc
 import spatial_readers as sr
 from webapp import __version__
@@ -575,13 +576,13 @@ def genes_report(cfg: dict, panels: list[tuple[str, ...]]) -> tuple[dict, list[s
         miss = report[key]["missing"]
         if miss and steps.get(step) is True:
             warnings.append(f"{label}: {len(miss)} genes missing from the probe set ({', '.join(miss)})")
-    # the Leiden screen's ubiquitous transcripts (Signatures tab) and the A549 lesion genes of the sensitivity analyses
+    # the Leiden screen's ubiquitous transcripts (Cell Settings tab) and the A549 lesion genes of the sensitivity analyses
     ubiquitous = gene_list(cfg.get("ubiquitous"))
     report["ubiquitous"]["missing"] = miss = [g for g in ubiquitous if g not in present]
     if ubiquitous and len(miss) == len(ubiquitous):
         warnings.append(f"ubiquitous transcripts: none of the {len(ubiquitous)} genes is in the probe set, so the "
                         f"Leiden screen marks no domain unresolved: list abundant housekeeping transcripts of your data "
-                        f"(Signatures tab, Ubiquitous transcripts)")
+                        f"(Cell Settings tab, Ubiquitous transcripts)")
     elif miss:
         warnings.append(f"ubiquitous transcripts: {len(miss)} of {len(ubiquitous)} genes missing from the probe set "
                         f"({', '.join(miss)})")
@@ -591,6 +592,11 @@ def genes_report(cfg: dict, panels: list[tuple[str, ...]]) -> tuple[dict, list[s
     if steps.get("sensitivity_analyses") is True and lesion and len(miss) == len(lesion):
         warnings.append(f"A549 lesion flag: none of its genes ({', '.join(lesion)}) is in the probe set, so the "
                         f"sensitivity analyses flag no bin as lesion")
+    # whether the run uses each of the manuscript's panels (`cfg` is the configuration as the run uses it): the Data
+    # tab lists a panel only then, so a study without them is not shown genes it never needs
+    report["receptor_panel"]["used"] = steps.get("receptor_panel") is True
+    report["adipocyte_genes"]["used"] = steps.get("adipocyte_panel") is True
+    report["lesion_genes"]["used"] = steps.get("sensitivity_analyses") is True and bool(lesion)
     return report, warnings
 
 
@@ -2776,10 +2782,10 @@ def utf8_prefix(data: bytes) -> int:
 # ============================================================================
 # ACCESS TOKEN
 # ============================================================================
-_DENIED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Popcorn</title></head>
+_DENIED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Popcorn Genetic</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:40em;margin:4em auto;line-height:1.5">
 <h1>Access token required</h1>
-<p>This Popcorn server accepts other computers on the network, so it needs its access token. Open the
+<p>This Popcorn Genetic server accepts other computers on the network, so it needs its access token. Open the
 address printed in the terminal where the server was started; it ends with <code>?token=...</code>.</p>
 </body></html>"""
 
@@ -2961,7 +2967,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         finally:
             jobs.stop()
 
-    app = FastAPI(title="Popcorn", version=__version__, lifespan=lifespan, default_response_class=JSONOut,
+    app = FastAPI(title="Popcorn Genetic", version=__version__, lifespan=lifespan, default_response_class=JSONOut,
                   docs_url=None, redoc_url=None, openapi_url=None)
     app.state.storage = storage
     app.state.jobs = jobs
@@ -3570,6 +3576,33 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
                                                           f"when the section is read")
             out.append(entry)
         return JSONOut({"bin_size": cfg["bin_size"], "samples": out})
+
+    @app.post("/api/projects/{pid}/detect-tissue")
+    def detect_tissue(pid: str, body: dict = Depends(optional_json_body)):
+        """[APP] The tissue and cell types of the project's sections (cell_types.detect), and the configuration changes
+        that give the project signatures of those cell types (cell_types.tissue_config; the manuscript's signatures
+        for bone). The unsaved settings may be sent (body.config, as for POST /validate). Nothing is saved: the Data
+        tab applies the changes to the draft."""
+        cfg = explore_config(pid, body)
+        sections, problems = [], []
+        for sample in config_samples(cfg):
+            try:
+                section = raw_section(section_source(cfg, sample))
+            except (NotFound, DataError) as exc:
+                problems.append(f"{sample['id']}: {exc}")
+                continue
+            sections.append((section.X, section.genes))
+        if not sections:
+            raise HTTPException(400, "no section could be read: " + ("; ".join(problems) if problems else
+                                                                      "the project has no samples"))
+        result = ct.detect(sections)
+        # the genes every section measures, named as the data names them
+        common = set(sections[0][1]).intersection(*(set(g) for _, g in sections[1:]))
+        genes = [g for g in sections[0][1] if g in common]
+        return JSONOut({"species": result["species"], "tissue": result["tissue"], "tissues": result["tissues"],
+                        "tissues_used": result["tissues_used"], "n_units": result["n_units"],
+                        "cell_types": ct.summary(result), "problems": problems,
+                        "config": ct.tissue_config(result, genes, pc.default_config())})
 
     @app.post("/api/projects/{pid}/explore/{sid}/bins")
     def explore_bins(pid: str, sid: str, body: dict = Depends(optional_json_body)):

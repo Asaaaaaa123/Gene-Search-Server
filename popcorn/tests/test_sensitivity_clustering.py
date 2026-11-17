@@ -182,7 +182,7 @@ def test_run_outputs_and_columns(run_out, tiny_joint):
 
 def test_unresolved_table_reproduces_the_manuscript_share(run_out, tiny_joint):
     un = run_out["outs"][cl.UNRESOLVED_CSV].df.set_index(["sample", "region"])
-    ref = pd.read_csv(tiny_joint["out"] / "FigureS5_unresolved_bins.csv").iloc[0]
+    ref = pd.read_csv(tiny_joint["out"] / "leiden_unresolved_bins.csv").iloc[0]
     assert un.loc[("all", "all"), "n_unresolved"] == ref["unresolved_bins"]
     assert un.loc[("all", "all"), "n_bins"] == ref["all_bins"]
     assert round(un.loc[("all", "all"), "pct_unresolved"], 1) == ref["percent"]
@@ -200,7 +200,7 @@ def test_unresolved_table_reproduces_the_manuscript_share(run_out, tiny_joint):
 def test_annotation_reproduces_the_manuscript_names_and_markers(run_out, tiny_joint):
     ann = run_out["outs"][cl.ANNOTATION_CSV].df.set_index("domain")
     a, samples = run_out["a"], [s["id"] for s in tiny_joint["cfg"]["samples"]]
-    M = pd.read_csv(tiny_joint["out"] / "FigureS5_domain_by_signature_zscores.csv")
+    M = pd.read_csv(tiny_joint["out"] / "leiden_domain_by_cell_type_zscores.csv")
     assert sorted(ann["manuscript_name"]) == sorted(M["leiden_domain"].astype(str))
     for d, name in ann["manuscript_name"].items():                      # each name sits on its own domain
         assert name == d or name.endswith(f"(domain {d})")

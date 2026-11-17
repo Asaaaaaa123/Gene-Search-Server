@@ -15,7 +15,7 @@ const navLinks: { href: string; label: string; native?: boolean }[] = [
   { href: '/gene-search', label: siteConfig.chemoTox },
   { href: '/gene-ontology', label: siteConfig.thematicGo },
   { href: '/ivcca', label: 'IVCCA' },
-  { href: siteConfig.links.popcorn, label: 'Popcorn', native: true },
+  { href: siteConfig.links.popcorn, label: 'Popcorn Genetic', native: true },
   { href: '/upload-csv', label: 'Upload' },
   { href: '/dashboard', label: 'Dashboard' },
 ];

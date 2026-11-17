@@ -491,11 +491,13 @@ function listBanner(kind, title, items) {
  * onExplore(), when given, adds a pointer to the Explore tab (a text link) once a section was found.
  */
 export function reportPanel({ report, cfg, checking = false, stale = false, error = null, checkedAt = null, onExplore } = {}) {
+  const noSections = !(report && Array.isArray(report.samples) && report.samples.length);
   const status = checking
     ? h('div', { class: 'report-status' }, h('span', { class: 'spinner' }), 'Checking the data…')
     : h('div', { class: 'report-status' },
-      report ? icon(report.ok ? 'check' : 'alert', { size: 16, cls: report.ok ? 'tone-ok' : 'tone-bad' }) : icon('info', { size: 16 }),
-      h('span', null, report ? (report.ok ? 'Data found and readable.' : 'The data check found problems.') : 'The data has not been checked yet.'),
+      report && !(report.ok && noSections) ? icon(report.ok ? 'check' : 'alert', { size: 16, cls: report.ok ? 'tone-ok' : 'tone-bad' }) : icon('info', { size: 16 }),
+      h('span', null, report ? (report.ok ? (noSections ? 'No samples yet: upload the data files, then add the sections as samples (Add samples… under the uploaded files, or Detect samples).' : 'Data found and readable.')
+        : 'The data check found problems.') : 'The data has not been checked yet.'),
       report && checkedAt ? h('span', { class: 'muted' }, `Checked ${fmt.ago(checkedAt)}${stale ? ', settings changed since' : ''}.`) : null);
   const parts = [status];
   if (error) parts.push(banner('danger', `The data check failed: ${error.message || error}`));
@@ -584,15 +586,16 @@ export function reportPanel({ report, cfg, checking = false, stale = false, erro
     } else {
       parts.push(h('p', { class: 'state ok' }, icon('check', { size: 13 }), 'Every signature gene is in the probe set.'));
     }
-    const rec = (genes.receptor_panel && genes.receptor_panel.missing) || [];
-    const adi = (genes.adipocyte_genes && genes.adipocyte_genes.missing) || [];
-    const ubi = (genes.ubiquitous && genes.ubiquitous.missing) || [];
-    const lists = [['Host receptor panel', rec], ['Adipocyte genes', adi], ['Ubiquitous transcripts', ubi]];
-    // the A549 lesion genes count only while the sensitivity analyses run (they flag no bin when emptied)
-    const sa = cfg && cfg.sensitivity_analyses && cfg.sensitivity_analyses.lesion;
-    if (cfg && cfg.steps && cfg.steps.sensitivity_analyses === true && sa && Array.isArray(sa.genes) && sa.genes.length) {
-      lists.push(['A549 lesion genes', (genes.lesion_genes && genes.lesion_genes.missing) || []]);
-    }
+    // the manuscript's panels (host receptors, adipocyte genes, A549 lesion genes) are listed only when the run uses
+    // them (`used`, from the server); the ubiquitous transcripts of the Leiden screen always
+    const lists = [];
+    const panel = (title, entry) => {
+      if (entry && entry.used === true) lists.push([title, entry.missing || []]);
+    };
+    panel('Host receptor panel', genes.receptor_panel);
+    panel('Adipocyte genes', genes.adipocyte_genes);
+    lists.push(['Ubiquitous transcripts', (genes.ubiquitous && genes.ubiquitous.missing) || []]);
+    panel('A549 lesion genes', genes.lesion_genes);
     for (const [title, miss] of lists) {
       parts.push(h('div', { class: 'report-genes' }, h('span', { class: 'report-genes-title' }, `${title}:`),
         miss.length ? h('div', { class: 'pill-list' }, miss.map((g) => h('span', { class: 'chip no-x bad', title: 'missing from the probe set' }, g)))

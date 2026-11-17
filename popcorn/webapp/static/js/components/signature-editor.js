@@ -1,4 +1,4 @@
-// signature-editor.js — the Signatures tab: the gene signatures and how they are used (positivity calls =
+// signature-editor.js — the Cell Settings tab: the gene signatures and how they are used (positivity calls =
 // cfg.primary, tissue assignment = cfg.programs), tissue classes and ubiquitous transcripts. Gene chips are colored
 // with the last data-check report. Edits change the draft config in place. The host receptor panel and the adipocyte
 // genes of the manuscript are no longer edited here: a run of the application does not use them (any gene list is
@@ -126,7 +126,7 @@ const signatureGenes = (s) => uniqueList([...(s.extended || []), ...(s.core || [
 
 // ------------------------------------------------------------------------------------------------ editor
 /**
- * The Signatures tab. ui keeps the selected signature across renders (ui.signature). Returns {el, setReport(report)}.
+ * The Cell Settings tab. ui keeps the selected signature across renders (ui.signature). Returns {el, setReport(report)}.
  */
 export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
   let cov = geneCoverage(report);
@@ -248,7 +248,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       inputs = [];
       mount(box, rows.length ? h('div', { class: 'sig-ex-rows' }, rows.map((r, i) => {
         const input = h('input', { class: 'input mono', value: r.gene, placeholder: 'Gene', 'aria-label': `Excluded gene ${i + 1}`, spellcheck: false, autocomplete: 'off' });
-        const reason = h('input', { class: 'input', value: r.reason, placeholder: 'Reason (Table 1)', 'aria-label': `Reason for excluding gene ${i + 1}` });
+        const reason = h('input', { class: 'input', value: r.reason, placeholder: 'Reason', 'aria-label': `Reason for excluding gene ${i + 1}` });
         input.addEventListener('input', () => { r.gene = input.value; write(); });
         reason.addEventListener('input', () => { r.reason = reason.value; write(); });
         inputs.push({ input, r });
@@ -261,7 +261,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     };
     paint();
     return h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Excluded genes'), box,
-      h('div', { class: 'help' }, 'Genes deliberately left out of the signature, with the reason (listed in Table 1).'));
+      h('div', { class: 'help' }, 'Genes deliberately left out of the signature, with the reason (listed in the signature table).'));
   }
 
   function paintEditor() {
@@ -271,10 +271,10 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       flagSwitches = { primary: null, programs: null };
       paintCoreNote = () => {};
       mount(editorBody, emptyState({
-        icon: 'dna', title: 'No signatures', text: 'Add a signature, or start again from the gene sets of the manuscript.',
+        icon: 'dna', title: 'No signatures', text: 'Add a signature, or detect the cell types again (Data tab, Detect again).',
         action: h('div', { class: 'row sig-empty-actions' },
           button({ label: 'Add signature', icon: 'plus', kind: 'primary', onClick: addSignature }),
-          button({ label: 'Reset to manuscript defaults', icon: 'undo', onClick: resetToDefaults })),
+          button({ label: 'Reset to the default (bone) gene sets', icon: 'undo', onClick: resetToDefaults })),
       }));
       return;
     }
@@ -361,7 +361,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       paintCoreNote();
       paintList();
     };
-    const canonical = geneField(s, 'canonical', 'Canonical markers', 'Listed in Table 1; not scored unless they are also scored genes.');
+    const canonical = geneField(s, 'canonical', 'Canonical markers', 'Listed in the signature table; not scored unless they are also scored genes.');
     extended = geneField(s, 'extended', 'Scored genes', 'The genes scored for this signature. Core genes are shown in bold.', {
       isCore: (g) => (s.core || []).includes(g), after: afterGenes,
     });
@@ -407,7 +407,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
         h('div', { class: 'field' }, h('label', { for: keyId }, 'Key name'), keyInput, keyErr,
           h('div', { class: 'help' }, 'Used in the configuration and in column names; renaming updates every reference.')),
         text('Label', 'label', { help: 'Shown on the maps and in the charts.', after: () => { paintHead(); paintList(); } }),
-        text('Table label', 'table_label', { help: 'Written to the table of signatures (Table 1).' }),
+        text('Table label', 'table_label', { help: 'Written to the table of signatures.' }),
         h('div', { class: 'field' }, h('label', { for: classId }, 'Tissue class'), classSel,
           h('div', { class: 'help' }, 'The class of the bins assigned to this signature: a coarser grouping of the cell types.')),
         h('div', { class: 'field' }, h('label', { for: colorId }, 'Color'), h('div', { class: 'row' }, color, hexText))),
@@ -627,7 +627,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     const ok = await confirmDialog({
       title: 'Reset the gene sets?',
       message: 'Signatures, tissue classes, positivity calls, tissue assignment and ubiquitous transcripts return to '
-        + 'the gene sets of the manuscript (mouse bone and marrow). The other settings are kept.',
+        + 'the default gene sets (mouse bone and marrow). The other settings are kept.',
       confirmLabel: 'Reset gene sets', danger: true,
     });
     if (!ok) return;
@@ -636,14 +636,14 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     emit();
     paintAll();
     focusShownLater();         // when it was the button of the empty state, that button is gone
-    toast('Gene sets reset to the manuscript defaults', 'success');
+    toast('Gene sets reset to the default (bone) gene sets', 'success');
   }
   const listActions = [
     button({ label: 'Add', icon: 'plus', small: true, onClick: addSignature }),
     menuButton({
       title: 'Gene set actions', small: true,
       items: [{
-        label: 'Reset gene sets to manuscript defaults', icon: 'undo', danger: true, onClick: resetToDefaults,
+        label: 'Reset gene sets to the default (bone) gene sets', icon: 'undo', danger: true, onClick: resetToDefaults,
         hint: 'Signatures, tissue classes, calling order and ubiquitous transcripts (mouse bone and marrow)',
       }],
     }),

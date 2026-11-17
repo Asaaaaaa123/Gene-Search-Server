@@ -34,7 +34,7 @@ BINS_PER_SAMPLE = 40
 # assigned signature -> tissue class, as the analysis writes them (a "removed" class and an ambiguous bin included)
 ASSIGNMENTS = [("osteoclast", "bone lineage"), ("osteoblast", "bone lineage"), ("granulocyte", "hematopoietic marrow"),
                ("skeletal_muscle", "removed"), ("ambiguous", "unassigned")]
-POSITIVITY_TABLE = "Figure4g_6a_positivity_native_depth_roi.csv"
+POSITIVITY_TABLE = "positivity_native_depth.csv"
 FIGURE = "Figure4g_bone_lineage_positivity"
 
 

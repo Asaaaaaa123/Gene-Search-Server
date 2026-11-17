@@ -16,8 +16,8 @@ from bone_sensitivity import uncoupling as U
 from bone_sensitivity import uncoupling_figures as UF
 
 BIN = 16.0
-OUTPUT_FILES = ["sensitivity_Figure4i_null_models.csv", "sensitivity_Figure4i_summary.csv",
-                "sensitivity_Figure4i_decomposition.csv", "sensitivity_Figure4i_call_stability.csv"]
+OUTPUT_FILES = ["sensitivity_nearest_partner_null_models.csv", "sensitivity_nearest_partner_summary.csv",
+                "sensitivity_nearest_partner_decomposition.csv", "sensitivity_nearest_partner_call_stability.csv"]
 CALL_COLUMNS = {"pooled_dm": ("pooled_dm_pos_", "program_dm"), "pooled": ("pooled_pos_", "program"),
                 "native": ("pos_", "program")}
 
@@ -276,11 +276,11 @@ def _tiny_calls(tiny_run):
 def test_run_outputs_and_obs_columns(tiny_run):
     outs, a, before = tiny_run["outputs"], tiny_run["a"], tiny_run["before"]
     assert list(outs) == OUTPUT_FILES
-    nm = outs["sensitivity_Figure4i_null_models.csv"].df
+    nm = outs["sensitivity_nearest_partner_null_models.csv"].df
     assert list(nm.columns) == U.NULL_COLUMNS
-    assert list(outs["sensitivity_Figure4i_summary.csv"].df.columns) == U.SUMMARY_COLUMNS
-    assert list(outs["sensitivity_Figure4i_decomposition.csv"].df.columns) == U.DECOMPOSITION_COLUMNS
-    assert list(outs["sensitivity_Figure4i_call_stability.csv"].df.columns) == U.STABILITY_COLUMNS
+    assert list(outs["sensitivity_nearest_partner_summary.csv"].df.columns) == U.SUMMARY_COLUMNS
+    assert list(outs["sensitivity_nearest_partner_decomposition.csv"].df.columns) == U.DECOMPOSITION_COLUMNS
+    assert list(outs["sensitivity_nearest_partner_call_stability.csv"].df.columns) == U.STABILITY_COLUMNS
     assert set(nm["null_model"]) == set(U.NULL_MODELS) and set(nm["call_set"]) == {"pooled_dm", "pooled", "native"}
     assert sorted(nm.loc[nm["call_set"] == "pooled_dm", "draw"].unique()) == [0, 1]
     assert (nm["status"] == "estimable").all()
@@ -302,13 +302,13 @@ def test_habitat_pool_and_csr_p_less_match_an_independent_recomputation(tiny_run
     bone_analysis.uncoupling_metric's generator stream (one default_rng(seed) over the estimable sections)."""
     a, cfg = tiny_run["a"], tiny_run["cfg"]
     unc, st = cfg["uncoupling"], common.settings(cfg, "uncoupling")
-    nm = tiny_run["outputs"]["sensitivity_Figure4i_null_models.csv"].df.set_index(
+    nm = tiny_run["outputs"]["sensitivity_nearest_partner_null_models.csv"].df.set_index(
         ["call_set", "draw", "null_model", "sample"])
     hab_sigs = [k for k, d in cfg["signatures"].items() if d.get("class") in set(st["habitat_classes"])]
     assert hab_sigs
     smp, roi = a.obs["sample"].astype(str).to_numpy(), common.as_bool(a.obs["in_marrow_roi"])
     xy_all = np.column_stack([a.obs["array_col"], a.obs["array_row"]]).astype(float) * pc.bin_um(cfg["bin_size"])
-    fig4i = pd.read_csv(tiny_run["out"] / "Figure4i_observed_to_null_summary.csv").set_index("sample")
+    fig4i = pd.read_csv(tiny_run["out"] / "nearest_partner_observed_to_null_summary.csv").set_index("sample")
     n_perm = int(unc["n_perm"])
     for (cs, d), (A_all, B_all, assign) in _tiny_calls(tiny_run).items():
         H_all = a.obs[assign].astype(str).isin(hab_sigs).to_numpy()
@@ -340,7 +340,7 @@ def test_call_stability_on_the_tiny_demo(tiny_run):
     """The stability table agrees with the per-bin draw fractions and the draw-0 (pipeline) calls."""
     a, cfg = tiny_run["a"], tiny_run["cfg"]
     unc = cfg["uncoupling"]
-    t = tiny_run["outputs"]["sensitivity_Figure4i_call_stability.csv"].df
+    t = tiny_run["outputs"]["sensitivity_nearest_partner_call_stability.csv"].df
     samples = common.sample_ids(a, cfg)
     assert len(t) == 2 * len(samples) * 2 and set(t["call_set"]) == {"pooled_dm"} and (t["n_draws"] == 2).all()
     smp, roi = a.obs["sample"].astype(str).to_numpy(), common.as_bool(a.obs["in_marrow_roi"])
@@ -381,8 +381,8 @@ def test_habitat_without_bins_beyond_the_calls_is_not_estimable(tiny_joint):
 
 
 def test_csr_both_draw_zero_reproduces_figure_4i(tiny_run):
-    nm = tiny_run["outputs"]["sensitivity_Figure4i_null_models.csv"].df
-    ref = pd.read_csv(tiny_run["out"] / "Figure4i_observed_to_null_summary.csv").set_index("sample")
+    nm = tiny_run["outputs"]["sensitivity_nearest_partner_null_models.csv"].df
+    ref = pd.read_csv(tiny_run["out"] / "nearest_partner_observed_to_null_summary.csv").set_index("sample")
     m = nm[(nm["call_set"] == "pooled_dm") & (nm["draw"] == 0) & (nm["null_model"] == "csr_both")].set_index("sample")
     assert list(m.index) == list(ref.index)
     for mine, theirs in (("n_a", "n_a"), ("n_b", "n_b"), ("n_units", "n_units_roi"), ("obs_mean_um", "mean_nn_um"),
@@ -392,15 +392,15 @@ def test_csr_both_draw_zero_reproduces_figure_4i(tiny_run):
                          ("ratio_of_ratios_vs_reference", "ratio_of_ratios_vs_reference")):
         np.testing.assert_allclose(m[mine].astype(float), ref.loc[m.index, theirs].astype(float), rtol=1e-12,
                                    err_msg=mine)
-    summ = tiny_run["outputs"]["sensitivity_Figure4i_summary.csv"].df
+    summ = tiny_run["outputs"]["sensitivity_nearest_partner_summary.csv"].df
     man = summ[summ["manuscript"]]
     assert set(man["call_set"]) == {"pooled_dm"} and set(man["null_model"]) == {"csr_both"}
     assert (man["n_draws"] == 2).all()
 
 
 def test_decomposition_on_the_tiny_demo(tiny_run):
-    nm = tiny_run["outputs"]["sensitivity_Figure4i_null_models.csv"].df
-    dec = tiny_run["outputs"]["sensitivity_Figure4i_decomposition.csv"].df
+    nm = tiny_run["outputs"]["sensitivity_nearest_partner_null_models.csv"].df
+    dec = tiny_run["outputs"]["sensitivity_nearest_partner_decomposition.csv"].df
     csr = nm[nm["null_model"] == "csr_both"].set_index(["call_set", "draw", "sample"])["ratio"]
     d = dec.set_index(["call_set", "draw", "sample"])
     np.testing.assert_allclose(d["factor_a_specific"] * d["factor_b_pattern"], csr.loc[d.index], rtol=1e-12)
@@ -413,7 +413,7 @@ def test_figure(tiny_run, tmp_path):
     e = entries[0]
     assert (tmp_path / e["png"]).is_file() and (tmp_path / e["pdf"]).is_file()
     assert e["group"] == common.GROUP and e["error"] is None and e["title"] == UF.FIGURES[0][1]
-    nm = tiny_run["outputs"]["sensitivity_Figure4i_null_models.csv"].df
+    nm = tiny_run["outputs"]["sensitivity_nearest_partner_null_models.csv"].df
     man = nm[(nm["call_set"] == "pooled_dm") & (nm["draw"] == 0) & (nm["null_model"] == "csr_both")]
     for v in man["ratio"]:
         assert f"{v:.2f}" in e["caption"]

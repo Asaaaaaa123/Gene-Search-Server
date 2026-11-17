@@ -42,7 +42,7 @@ function buildShell() {
   mount(app,
     h('aside', { class: 'sidebar' },
       h('div', { class: 'brand' }, brandMark(),
-        h('div', null, h('div', { class: 'brand-name' }, 'Popcorn'), h('div', { class: 'brand-sub' }, 'Spatial transcriptomics analysis'))),
+        h('div', null, h('div', { class: 'brand-name' }, 'Popcorn Genetic'), h('div', { class: 'brand-sub' }, 'Spatial transcriptomics analysis'))),
       h('div', { class: 'nav-label' }, 'Workspace'),
       nav,
       h('div', { class: 'sidebar-foot' },

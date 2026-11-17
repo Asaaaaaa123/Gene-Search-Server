@@ -11,13 +11,14 @@ import { openFolderPicker } from '../components/folder-picker.js';
 import { uploadPanel } from '../components/upload-panel.js';
 import { chooseDetectedSamples, applyDetectedSamples, reportPanel, binLabel, platformName, unitWord } from '../components/sample-editor.js';
 import { signatureEditor, geneCoverage } from '../components/signature-editor.js';
+import { tissuePanel, applyTissueConfig, undoTissueConfig, mayAutoApply, appliedMessage } from '../components/tissue-panel.js';
 import { roiEditor } from '../components/roi-editor.js';
 import { dataExplorer, exploreState } from '../components/data-explorer.js';
 
 const TABS = [
   { id: 'data', label: 'Data', icon: 'folder' },
   { id: 'explore', label: 'Explore', icon: 'eye' },
-  { id: 'signatures', label: 'Signatures', icon: 'dna' },
+  { id: 'signatures', label: 'Cell Settings', icon: 'dna' },
   { id: 'roi', label: 'Region of interest', icon: 'polygon' },
   { id: 'run', label: 'Run', icon: 'play' },
 ];
@@ -40,11 +41,24 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const uniq = (list) => [...new Set(list)];
 
 // ------------------------------------------------------------------------------------------------ drafts
+// A new project has no samples until its data is uploaded: the server's "at least one sample is required" is not shown
+// while the project is set up (checks, badges, banners); pressing Run says so instead (start()).
+const NO_SAMPLES_ERROR = 'at least one sample is required';
+const shownErrors = (list) => (Array.isArray(list) ? list : []).filter((t) => t !== NO_SAMPLES_ERROR);
+const hasSamples = (cfg) => Array.isArray(cfg && cfg.samples) && cfg.samples.length > 0;
+
 function normValidation(v) {
   return {
-    errors: v && Array.isArray(v.errors) ? v.errors : [],
+    errors: shownErrors(v && v.errors),
     warnings: v && Array.isArray(v.warnings) ? v.warnings : [],
   };
+}
+
+// the data check without the hidden error; ok is "no errors", as the server computes it
+function normReport(r) {
+  if (!r || typeof r !== 'object') return null;
+  const errors = shownErrors(r.errors);
+  return { ...r, errors, ok: errors.length === 0 };
 }
 
 const snapshot = (name, config) => JSON.stringify({ name, config });
@@ -403,7 +417,7 @@ function projectView(container, d, defaults, initialTab) {
     notifyReport();
     try {
       const report = await api(`/api/projects/${enc(d.id)}/validate`, { method: 'POST', body: { config: d.config }, signal: ctrl.signal });
-      d.report = report && typeof report === 'object' ? report : null;
+      d.report = normReport(report);
       d.reportKey = key;
       d.reportAt = new Date().toISOString();
       if (manual && alive && d.report) {
@@ -649,6 +663,69 @@ function projectView(container, d, defaults, initialTab) {
       }));
       recheck.disabled = d.checking;
       fillBins();
+      paintTissue();
+      autoDetectTissue();
+    }
+
+    // ---- tissue and cell types (cell_types.py): detected once the data check has found the sections; the
+    // signatures follow the detected cell types unless the user edited them
+    const tissueBox = h('div');
+    const redetect = button({ label: 'Detect again', icon: 'refresh', small: true, kind: 'ghost', onClick: () => { detectTissue(true); } });
+    redetect.title = 'Detect the tissue and its cell types from the data again';
+
+    function paintTissue() {
+      const key = dataKey(d.config);
+      mount(tissueBox, tissuePanel({
+        result: d.tissue && d.tissueKey === key ? d.tissue : null, record: d.config.tissue, cfg: d.config,
+        busy: d.tissueBusy, error: d.tissueKey === key ? d.tissueError : null, onApply: () => applyTissue(d.tissue, false),
+      }));
+      redetect.disabled = !!d.tissueBusy || !sectionsFound();
+    }
+
+    function sectionsFound() {
+      return !!(d.report && !reportStale() && (d.report.samples || []).some((s) => s.bin_dir));
+    }
+
+    function autoDetectTissue() {
+      if (d.checking || d.tissueBusy || !sectionsFound()) return;
+      const key = dataKey(d.config);
+      if (d.tissueKey === key) return;
+      // detected before for this data (saved with the project): shown as such; "Detect again" repeats it
+      if (d.config.tissue && d.config.tissue.data_key === key) return;
+      detectTissue(false);
+    }
+
+    async function detectTissue(manual) {
+      if (d.tissueBusy) return;
+      const key = dataKey(d.config);
+      d.tissueBusy = true;
+      d.tissueError = null;
+      if (alive) paintTissue();
+      try {
+        const res = await api(`/api/projects/${enc(d.id)}/detect-tissue`, { method: 'POST', body: { config: d.config } });
+        d.tissue = res;
+        d.tissueKey = key;
+        if (dataKey(d.config) === key && mayAutoApply(d.config, defCfg)) applyTissue(res, true);
+        else if (manual) toast(`Detected tissue: ${res.tissue.label}. Your edited signatures were kept; “Use these cell types” replaces them.`, 'info', { timeout: 8000 });
+      } catch (e) {
+        d.tissueError = e;
+        d.tissueKey = key;
+      } finally {
+        d.tissueBusy = false;
+        if (alive) paintTissue();
+      }
+    }
+
+    function applyTissue(res, automatic) {
+      if (!res || !res.config) return;
+      const undo = applyTissueConfig(d.config, res.config, dataKey(d.config));
+      changed({ data: true });
+      paintTissue();
+      const undoBtn = h('button', {
+        type: 'button', class: 'linklike',
+        onClick: () => { undoTissueConfig(d.config, undo); changed({ data: true }); paintTissue(); toast('The previous signatures are back.', 'info', { timeout: 2500 }); },
+      }, 'Undo');
+      toast(h('span', null, appliedMessage(res), automatic ? ' (automatic) ' : ' ', undoBtn), 'success', { timeout: 12000 });
     }
 
     function suggestReplace() {
@@ -673,7 +750,7 @@ function projectView(container, d, defaults, initialTab) {
 
     const binFields = h('div', { class: 'form-grid' },
       field({ label: 'Analysis bin size', forId: binId, control: binSel, help: 'The square_<size> folder of Visium HD sections that is analysed, and the bins a Stereo-seq chip is summed into. Spots and cells are analysed as they are.' }),
-      field({ label: 'Quality-control bin size', forId: qcId, control: qcSel, help: 'Per-bin QC of Supplementary Figure S1.' }));
+      field({ label: 'Quality-control bin size', forId: qcId, control: qcSel, help: 'The bin size of the per-bin quality-control table.' }));
     // a hosted server: the data is uploaded to the project's upload folder, its data root, instead of chosen on disk
     const upload = state.health && state.health.hosted ? uploadPanel({
       projectId: d.id,
@@ -684,9 +761,35 @@ function projectView(container, d, defaults, initialTab) {
           changed({ data: true });
         }
         const res = await api(`/api/projects/${enc(d.id)}/detect-samples`, { method: 'POST', body: { data_root: root } });
-        if (alive) chooseSamples(res);
+        if (!alive) return;
+        if (!hasSamples(d.config)) addFoundSamples(res);   // nothing to choose between: every section is added
+        else chooseSamples(res);
       },
     }) : null;
+
+    // A project without samples whose upload folder holds sections (uploaded earlier, the choice of samples cancelled,
+    // or its samples removed): the sections are found and added when the Data tab opens, so that the data check finds
+    // them. Hosted servers only: there the data root is the project's own upload folder.
+    function addFoundSamples(res) {
+      const candidates = (res && res.candidates) || [];
+      if (!candidates.length || hasSamples(d.config)) return;
+      const added = applyDetectedSamples(d.config, candidates, { replace: false, templates: defCfg.samples });
+      const preset = applyQcPreset(d.config);
+      changed({ data: true });
+      toast(`${plural(added.length, 'section')} found in the uploaded data and added as samples (${added.map((s) => s.id).join(', ')}). Check them in the sample table, then save.${preset ? ` ${preset}` : ''}`,
+        'success', { timeout: 9000 });
+    }
+
+    async function autoAddUploadedSamples() {
+      if (!upload || hasSamples(d.config) || !d.config.data_root || d.autoSamplesRoot === d.config.data_root) return;
+      d.autoSamplesRoot = d.config.data_root;   // once per folder and session: removing every sample is respected
+      try {
+        const res = await api(`/api/projects/${enc(d.id)}/detect-samples`, { method: 'POST', body: { data_root: d.config.data_root } });
+        if (alive) addFoundSamples(res);
+      } catch (e) {
+        console.warn('detecting the uploaded sections failed', e);
+      }
+    }
 
     mount(host, h('div', { class: 'stack-lg' },
       upload ? card({
@@ -702,8 +805,10 @@ function projectView(container, d, defaults, initialTab) {
           h('div', { class: 'row' }, detect, h('span', { class: 'muted small' }, 'Finds the sections under the data root (up to four levels deep) and adds them as samples: Space Ranger outputs (Visium HD, Visium), Xenium, MERSCOPE, CosMx, Stereo-seq, .h5ad files and count tables.')),
           binFields),
       }),
-      card({ title: 'Data check', subtitle: 'Sample folders, bin sizes, images and gene coverage, checked with the settings above (saved or not).', actions: recheck, body: reportBox })));
+      card({ title: 'Data check', subtitle: 'Sample folders, bin sizes, images and gene coverage, checked with the settings above (saved or not).', actions: recheck, body: reportBox }),
+      card({ title: 'Tissue and cell types', subtitle: 'Detected from the expression data: the signatures (Cell Settings tab) are set to the cell types of the detected tissue.', actions: redetect, body: tissueBox })));
     paintReport();
+    autoAddUploadedSamples();
     const tabHandle = { onReport: paintReport, start: () => { if (!d.checking) validateNow(false); } };
     return tabHandle;
   }
@@ -891,7 +996,7 @@ function projectView(container, d, defaults, initialTab) {
       const pending = roiUnsaved(d);
       if (roi.use_drawn && pending.length) items.push(banner('warning', `Unsaved drawn region${pending.length === 1 ? '' : 's'} (${pending.join(', ')}): runs use the saved regions only. Save them in the Region of interest tab.`));
       if (roi.use_drawn && !d.rois.size) items.push(banner('info', 'Drawn regions are switched on, but no section has a saved region: the analysis is not restricted.'));
-      if (!items.length) items.push(banner('success', 'Ready to start.'));
+      if (!items.length && hasSamples(d.config)) items.push(banner('success', 'Ready to start.'));
       mount(statusBox, items);
       if (!starting) startBtn.disabled = missing.length > 0 || (errs.length > 0 && !d.dirty);
     }
@@ -942,6 +1047,11 @@ function projectView(container, d, defaults, initialTab) {
         });
         if (!ok) return;
         if (!(await save())) return;
+      }
+      if (!hasSamples(d.config)) {
+        showStartError(h('span', null, 'No data yet: upload the data files of the sections and add the samples on the ',
+          h('button', { type: 'button', class: 'linklike', onClick: () => switchTab('data') }, 'Data tab'), ' first.'));
+        return;
       }
       if (d.validation.errors.length) {
         showStartError(`Fix the ${plural(d.validation.errors.length, 'configuration error')} listed above first.`);

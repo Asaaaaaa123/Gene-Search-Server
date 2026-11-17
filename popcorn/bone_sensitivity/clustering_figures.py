@@ -14,7 +14,7 @@ from matplotlib.patches import Patch
 import pipeline_config as pc
 from bone_sensitivity import common
 
-UNRESOLVED_CSV = "sensitivity_FigureS5_unresolved_by_section.csv"
+UNRESOLVED_CSV = "sensitivity_leiden_unresolved_by_section.csv"
 ANNOTATION_CSV = "sensitivity_leiden_domain_annotation.csv"
 HARMONY_CSV = "sensitivity_leiden_harmony.csv"
 STABILITY_CSV = "leiden_seed_stability_adjusted_rand_index.csv"

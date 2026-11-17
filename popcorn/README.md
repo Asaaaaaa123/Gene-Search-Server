@@ -1,4 +1,4 @@
-# Popcorn
+# Popcorn Genetic
 
 The Visium HD bone-lesion analysis of the manuscript (`bone_analysis.py`, `bone_figures.py`), fixed and turned into a
 local web application that reads the sections of most spatial transcriptomics instruments: 10x Visium HD and Visium,
@@ -39,7 +39,9 @@ Without the scripts: `python -m pip install -r requirements.txt`, then `python -
    `SR007144_LL-2-1/` and `SR007144_RL-1-5/`, or the output folders of another instrument), **Detect samples**, pick
    the reference (control) section; the data check names each section's instrument and confirms its files, positions,
    images, microns per pixel and which signature genes are in the probe set. When every section comes from one
-   instrument, quality-control thresholds suited to it are set.
+   instrument, quality-control thresholds suited to it are set. **Tissue and cell types** then detects the tissue
+   from the expression data (see [Any tissue](#any-tissue-automatic-tissue-and-cell-type-detection)) and sets the
+   signatures to its cell types.
 3. **Explore** (or click the count of a section in the Data tab): read the raw data before running anything, with the
    settings as they are (saved or not). A table gives the bins (spots, cells), genes and UMIs of each section, the
    median UMIs, genes and mitochondrial share per bin and the bins that pass quality control, whose thresholds are set
@@ -128,7 +130,7 @@ it.
 3. Steps of the bone/A549 study (command line): host receptor panel (Figure 6b), adipocyte genes (Supplementary Figure
    S4), osteoclast compartments (Figure 4h), distance to the nearest partner (Figure 4i; osteoblast to osteoclast in
    the manuscript) and the three-gene-set sensitivity (off by default; it tests only the osteoclast and osteoblast gene
-   sets). The receptor panel and the adipocyte genes take any gene list (Signatures tab); with a panel of your own,
+   sets). The receptor panel and the adipocyte genes take any gene list (Cell Settings tab); with a panel of your own,
    also choose the genes Figure 6b draws (`figures.receptor_genes`). Figure 4h calls its compartments growth plate and
    tumor-associated only for the manuscript's osteoclast bins split by the chondrocyte score; any other split is named
    after the split signature (*high-endothelium* and *low-endothelium*, say). In the sensitivity analyses, the Figure
@@ -136,12 +138,12 @@ it.
    Krt18: empty that list (`sensitivity_analyses.lesion.genes: []`) in other studies, where they are ordinary
    epithelial genes (the run log says how many bins were flagged).
 4. Gene names must match the probe set exactly. The defaults are mouse symbols (`Lyz2`, `Ptprc`); human data needs
-   human symbols (`LYZ`, `PTPRC`), also in the ubiquitous transcripts of the Leiden screen (Signatures tab). The data
+   human symbols (`LYZ`, `PTPRC`), also in the ubiquitous transcripts of the Leiden screen (Cell Settings tab). The data
    check lists the missing genes of every signature, the receptor panel, the adipocyte genes, the ubiquitous
    transcripts and (with the sensitivity analyses on) the A549 lesion genes; a run warns when none of the ubiquitous
    transcripts is in the data. A positivity panel leaves out, and names in its caption, a signature with fewer than two
    of its genes in the data (it cannot be scored). Mitochondrial genes are those whose name starts with `mt-` in any
-   case, so `MT-` works too. File names (e.g. `Figure4h_osteoclast_compartment_DE.csv`) stay those of the manuscript;
+   case, so `MT-` works too. File names (e.g. `osteoclast_compartment_DE.csv`) stay those of the manuscript;
    figure titles and captions use your signature labels.
 
 ## Viewing results in Loupe Browser
@@ -176,7 +178,7 @@ in Loupe Browser itself (no `.cloupe` file was available), and the menu names ab
 
 ## Online
 
-The Geno Intelligence site serves this application at `/popcorn` (button "Popcorn" on its home page): its API
+The Geno Intelligence site serves this application at `/popcorn` (button "Popcorn Genetic" on its home page): its API
 (`backend/`) mounts it with `create_app(workspace, hosted=Hosted(...))` (`backend/popcorn_mount.py`, which lists the
 environment variables), and the Next.js site rewrites `/popcorn` to it. A hosted server is open to everyone, so:
 
@@ -212,10 +214,42 @@ python bone_analysis.py --config my_config.json --out results/run2
 Old flags still work: `--skip-moran`, `--geneset-sensitivity`, `--project-8um`, `--roi-mask SAMPLE=PATH.geojson`.
 The outputs and their columns are listed in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), section 3.
 
+## Any tissue: automatic tissue and cell-type detection
+
+The manuscript's signatures are bone cell types. For data of any other tissue the Data tab's **Tissue and cell types**
+card (`cell_types.py`, `POST /api/projects/{id}/detect-tissue`) chooses signatures from the data, once the data check
+has found the sections:
+
+* **Library**: 75 cell types with canonical markers (PanglaoDB, CellMarker, Tabula Muris / Sapiens, Allen Brain):
+  generic ones found in any tissue (endothelium, fibroblasts, pericytes, smooth muscle, macrophages, T, B, plasma,
+  NK, dendritic and mast cells, neutrophils, erythroid, adipocytes, proliferating cells, epithelial / carcinoma,
+  melanocyte / melanoma, skeletal muscle, peripheral nerve) and those of 18 tissues (brain and spinal cord, heart,
+  lung, liver, kidney, intestine and colon, stomach, pancreas, lymph node and spleen, thymus, skin, breast, prostate,
+  testis, ovary, skeletal muscle, fat, bone and marrow).
+* **Species**: mouse and human gene names are both matched (`Actb` / `ACTB`; `Lyz2|LYZ` where the names differ), and
+  the signatures are written with the names the data uses.
+* **Cell types**: a cell type is present when its core markers are co-expressed: their mean pairwise correlation
+  across bins (spots, cells) is at least 4 standard deviations and 0.03 above that of 40 random gene sets with the
+  same detection rates.
+* **Tissue**: each tissue scores the mean over its hallmark cell types (its parenchyma: neurons, astrocytes and
+  oligodendrocytes for brain, hepatocytes for liver, ...) of present x abundance (the expression rank of the markers).
+  Organs win over the tissues that accompany them in most sections (muscle, fat, lymphoid tissue); another tissue that
+  scores at least half as much is used too (a bone section with its muscle, a tumor with its lymphoid aggregates).
+* **Signatures**: the present cell types that are generic or belong to the tissues found, the tissue's own first. A
+  bone dataset keeps the manuscript's signatures. With no tissue recognised, the generic cell types and those with
+  strong evidence are used, and the Leiden domains (unsupervised) work as for any data.
+
+A project whose signatures are the defaults (or still those a detection set) takes the detected ones automatically,
+with Undo; edited signatures are kept and the detected ones offered. The detection was checked on 10x Visium sections
+of mouse brain, mouse kidney, human heart, lymph node, cerebellum, glioblastoma, breast and colorectal cancer, and the
+SR007144 tibiae (bone, with their muscle). The marker lists are a starting point: review them in the Cell Settings tab
+for your question.
+
 ## Files
 
 | Path | What |
 |---|---|
+| `cell_types.py` | the cell-type library, tissue and cell-type detection, the signatures of a detected tissue |
 | `bone_analysis.py` | analysis pipeline (fixed; `[FIX]` / `[APP]` notes mark every change) |
 | `bone_figures.py` | figures (fixed) |
 | `bone_pending_masks.py` | hand-drawn region of interest (GeoJSON → per-bin mask) |

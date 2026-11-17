@@ -388,21 +388,21 @@ def run(a, cfg, progress=None):
                  else pd.DataFrame(columns=STABILITY_COLUMNS))
     a_lbl, b_lbl = pc.signature_label(cfg, unc["a"]), pc.signature_label(cfg, unc["b"])
     return [
-        common.Output("sensitivity_Figure4i_null_models.csv", "Figure 4i under other null models",
+        common.Output("sensitivity_nearest_partner_null_models.csv", "Figure 4i under other null models",
                       f"Observed / null mean distance from each {a_lbl}-called bin to the nearest {b_lbl}-called bin "
                       f"per call set, depth-matching draw, null model and section (ROI); csr_both is the manuscript "
                       f"test; n_habitat is the habitat_fixed_b draw pool (always holds the calls), n_habitat_extra "
                       f"its bins outside the calls; P values treat bins as independent.", df),
-        common.Output("sensitivity_Figure4i_summary.csv", "Figure 4i null models, summary over draws",
+        common.Output("sensitivity_nearest_partner_summary.csv", "Figure 4i null models, summary over draws",
                       "Ratio and ratio of ratios vs the reference section per call set, null model and section: mean, "
                       "SD and range over the depth-matching draws; manuscript marks the Figure 4i setup.", summary),
-        common.Output("sensitivity_Figure4i_decomposition.csv", "Figure 4i ratio decomposition",
+        common.Output("sensitivity_nearest_partner_decomposition.csv", "Figure 4i ratio decomposition",
                       f"The csr_both ratio as factor_a_specific (observed / mean distance from every ROI bin to the "
                       f"nearest {b_lbl}-called bin) x factor_b_pattern (that baseline / csr null mean: how far the "
                       f"{b_lbl} pattern departs from random placement in the ROI, by local clumping or by confinement "
                       f"to part of it), and the local clumping of both call sets (frac_*_clumped, nn_self_ratio_*).",
                       dec),
-        common.Output("sensitivity_Figure4i_call_stability.csv", "Figure 4i calls between depth-matching draws",
+        common.Output("sensitivity_nearest_partner_call_stability.csv", "Figure 4i calls between depth-matching draws",
                       f"Pooled depth-matched {a_lbl} and {b_lbl} calls over the downsampling draws, per section, in "
                       f"the marrow ROI and the whole section: bins called in any, all, or some but not all draws "
                       f"(n_unstable), and per later draw the % of bins whose call differs from draw 0 among those "

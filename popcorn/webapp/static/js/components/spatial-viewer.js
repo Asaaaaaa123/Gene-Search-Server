@@ -2176,8 +2176,8 @@ export function spatialViewer({ source, store, binUm: binUmOption, emptyText }) 
       h('div', { class: 'sv-control' }, h('label', { for: ids.sample }, 'Section'), sampleSel),
       geneCtl,
       cellsCtl,
-      topCtl,
-      h('div', { class: 'sv-control sv-control-auto' }, h('span', { class: 'sv-control-label' }, 'Layers'), addBtn));
+      h('div', { class: 'sv-control sv-control-auto' }, h('span', { class: 'sv-control-label' }, 'Layers'), addBtn),
+      topCtl);
     const canvas = h('canvas', {
       class: 'sv-canvas', tabIndex: 0, role: 'img',
       'aria-label': 'Map of the bins of the section. Drag or use the arrow keys to pan; scroll, + and − to zoom; 0 fits the section.',

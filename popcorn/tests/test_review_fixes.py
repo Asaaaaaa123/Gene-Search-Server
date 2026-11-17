@@ -217,13 +217,13 @@ def test_geneset_sensitivity_names_used_and_missing_genes():
 # ---------------------------------------------------------------------------------------------- run on tiny_joint
 def test_tiny_joint_tables_reproduce_from_the_object(tiny_joint):
     a, cfg, out = tiny_joint["a"].copy(), tiny_joint["cfg"], tiny_joint["out"]
-    nat = pd.read_csv(out / "Figure4g_6a_positivity_native_depth_roi.csv")
+    nat = pd.read_csv(out / "positivity_native_depth.csv")
     rate = 100 * nat["n_positive"] / nat["n_bins"]                                # as positivity_table computes it
     is_ref = nat["sample"] == cfg["reference_sample"]
     ref = rate[is_ref].set_axis(nat.loc[is_ref, "signature"]).replace(0, np.nan)
     expected = (rate / nat["signature"].map(ref)).round(4)
     np.testing.assert_allclose(nat["fold_vs_reference"], expected, rtol=1e-12, equal_nan=True)
-    dm = pd.read_csv(out / "Figure4g_6a_positivity_depth_matched.csv")
+    dm = pd.read_csv(out / "positivity_depth_matched.csv")
     for r in dm.itertuples():
         lo, hi = proportion_confint(int(round(r.n_positive_mean)), int(r.n_bins), method="wilson")
         assert r.ci_lo == pytest.approx(round(100 * lo, 4)) and r.ci_hi == pytest.approx(round(100 * hi, 4))
@@ -231,21 +231,21 @@ def test_tiny_joint_tables_reproduce_from_the_object(tiny_joint):
     cp = cfg["compartments"]
     assert a.uns["compartment_threshold"] == pytest.approx(np.nanpercentile(a.obs[f"score_{cp['split_by']}"],
                                                                             cp["percentile"]))
-    summ = pd.read_csv(out / "Figure4h_compartment_summary.csv", dtype={"sample": str}, keep_default_na=False,
+    summ = pd.read_csv(out / "osteoclast_compartment_summary.csv", dtype={"sample": str}, keep_default_na=False,
                        na_values=["", "NaN", "nan"])
     again = ba.compartment_summary(a, samples=pc.sample_ids(cfg))
     pd.testing.assert_frame_equal(summ, again, check_dtype=False)
     sections = summ[summ["sample"] != "all"]
     for c in ("n_growth_plate", "n_tumor_associated", "n_growth_plate_outside_roi"):
         assert summ.loc[summ["sample"] == "all", c].iloc[0] == sections[c].sum()
-    de = pd.read_csv(out / "Figure4h_osteoclast_compartment_DE.csv")
+    de = pd.read_csv(out / "osteoclast_compartment_DE.csv")
     assert list(de.columns) == ba.COMPARTMENT_DE_COLUMNS
     if len(de):
         chondro = set(cfg["signatures"][cp["split_by"]]["extended"])
         assert set(de.loc[de["selection_gene"].astype(bool), "names"]) == chondro & set(de["names"])
         assert de["log2fc_mean_cp10k"].abs().max() < 19 and de["pct_group"].between(0, 100).all()
 
-    un = pd.read_csv(out / "FigureS5_unresolved_bins.csv", dtype={"sample": str}, keep_default_na=False)
+    un = pd.read_csv(out / "leiden_unresolved_bins.csv", dtype={"sample": str}, keep_default_na=False)
     assert list(un["sample"]) == ["all"] + pc.sample_ids(cfg)
     ld = a.obs["leiden"].astype(str)
     for r in un.itertuples():
@@ -256,7 +256,7 @@ def test_tiny_joint_tables_reproduce_from_the_object(tiny_joint):
     moran = pd.read_csv(out / "morans_I_per_section.csv")
     assert np.isfinite(moran.loc[moran["pval_norm"].notna(), "pval_norm_fdr_bh"]).all()
     manifest = {f["file"]: f for f in json.loads((out / "manifest.json").read_text())["files"]}
-    assert "threshold" in manifest["Figure4h_compartment_summary.csv"]["description"]
+    assert "threshold" in manifest["osteoclast_compartment_summary.csv"]["description"]
 
 
 def test_module_docstring_no_longer_claims_every_transcript_is_murine():
@@ -366,7 +366,7 @@ def test_figure4i_caption_states_the_null_model(drawn):
     assert "Sensitivity_Figure4i" not in c and "sensitivity_Figure4i" not in c
     pd.DataFrame({"sample": ["LL-2-1", "RL-1-5"]}).to_csv(folder / bf.SENSITIVITY_4I_CSV, index=False)
     c = _figure4i_caption(folder, pc.default_config())
-    assert "Sensitivity_Figure4i_null_models" in c and "sensitivity_Figure4i_summary.csv" in c
+    assert "Sensitivity_Figure4i_null_models" in c and "sensitivity_nearest_partner_summary.csv" in c
     cfg = pc.default_config()
     cfg["steps"]["sensitivity_analyses"] = False                     # a table left over from another run is not cited
     assert "Sensitivity_Figure4i" not in _figure4i_caption(folder, cfg)
@@ -374,12 +374,12 @@ def test_figure4i_caption_states_the_null_model(drawn):
 
 def test_figure_s5_caption_gives_the_share_per_section(drawn, tmp_path):
     folder, cap = drawn
-    un = pd.read_csv(folder / "FigureS5_unresolved_bins.csv", dtype={"sample": str}).set_index("sample")
+    un = pd.read_csv(folder / "leiden_unresolved_bins.csv", dtype={"sample": str}).set_index("sample")
     c = cap["FigureS5_leiden_domain_heatmap"]
     assert f"Unresolved: 1,234 of {int(un.loc['all', 'all_bins']):,} bins ({un.loc['all', 'percent']:.1f}%)." in c
     assert (f"control {un.loc['LL-2-1', 'percent']:.1f}% ({un.loc['LL-2-1', 'percent_roi']:.1f}% of its region of "
             f"interest)") in c
-    M = pd.read_csv(folder / "FigureS5_domain_by_signature_zscores.csv")
+    M = pd.read_csv(folder / "leiden_domain_by_cell_type_zscores.csv")
     old = pd.DataFrame([{"unresolved_bins": 10, "all_bins": 40, "percent": 25.0}])        # single-row table
     e = bf.figureS5(M, pc.default_config(), tmp_path, old)[0]
     assert "Unresolved: 10 of 40 bins (25.0%)." in e["caption"] and "per section" not in e["caption"]

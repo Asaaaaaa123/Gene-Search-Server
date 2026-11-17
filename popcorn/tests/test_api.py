@@ -351,6 +351,8 @@ def test_validate(client, tiny_demo):
     assert genes["signatures"]["osteocyte"]["missing"] == ["Fgf23"]
     assert genes["signatures"]["osteocyte"]["core_present"] == 3
     assert genes["signatures"]["osteoclast"]["missing"] == [] and genes["receptor_panel"]["missing"] == []
+    # a run of the application uses none of the manuscript's panels: the Data tab does not list them
+    assert [genes[k]["used"] for k in ("receptor_panel", "adipocyte_genes", "lesion_genes")] == [False, False, False]
     assert any(w.startswith("signature osteocyte: 1 of 5 genes missing") for w in r["warnings"])
 
     # unsaved edits are checked instead of the saved configuration

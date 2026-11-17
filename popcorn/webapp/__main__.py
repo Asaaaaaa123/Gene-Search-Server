@@ -77,7 +77,7 @@ def bind_problem(host: str, port: int) -> str | None:
         except socket.gaierror as exc:
             return f"unknown host {host!r} ({exc})"
         except OSError as exc:
-            return (f"cannot listen on {host}:{port} ({exc.strerror or exc}). If Popcorn is already "
+            return (f"cannot listen on {host}:{port} ({exc.strerror or exc}). If Popcorn Genetic is already "
                     f"running, open http://{url_host(host)}:{port}/; otherwise choose another port with --port.")
     return None
 
@@ -102,7 +102,7 @@ def open_browser_when_ready(url: str, host: str, port: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m webapp", description="Popcorn: a local web application "
+    ap = argparse.ArgumentParser(prog="python -m webapp", description="Popcorn Genetic: a local web application "
                                  "for the Visium HD bone-lesion analysis.")
     ap.add_argument("--host", default=DEFAULT_HOST,
                     help=f"address to listen on (default {DEFAULT_HOST}: this computer only; 0.0.0.0 = every "
@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
 
     query = f"?token={token}" if token else ""
     url = f"http://{url_host(args.host)}:{args.port}/{query}"
-    print(f"Popcorn {__version__}", flush=True)
+    print(f"Popcorn Genetic {__version__}", flush=True)
     print(f"  workspace: {app.state.storage.root}", flush=True)
     print(f"  open:      {url}", flush=True)
     if not is_loopback(args.host):

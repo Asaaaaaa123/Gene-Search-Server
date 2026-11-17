@@ -124,7 +124,7 @@ def test_context(analysed):
     assert [t["id"] for t in ctx["tools"]] == [t.id for t in an.TOOLS]
     assert ctx["expression"] == {"available": True, "reason": ""} and ctx["regions"] == []
     files = {t["file"]: t["title"] for t in ctx["tables"]}
-    assert files["Figure4g_6a_positivity_native_depth_roi.csv"] == "Positivity, native depth (ROI)"
+    assert files["positivity_native_depth.csv"] == "Positivity, native depth (ROI)"
     assert "per_bin_signature_calls_16um.csv.gz" in files and "joint_16um.h5ad" not in files
     assert ctx["limits"]["genes"] == an.MAX_GENES
     assert env["c"].get("/api/runs/r-20200101-000000-abcd/analysis/context").status_code == 404
@@ -136,10 +136,10 @@ def test_context(analysed):
 
 def test_composition_is_the_positivity_table(analysed):
     """Figures 4g and 6a: positive bins per signature and section inside the region of interest, with their Wilson
-    intervals, as Figure4g_6a_positivity_native_depth_roi.csv."""
+    intervals, as positivity_native_depth.csv."""
     env = analysed
     cfg = env["cfg"]
-    want = pd.read_csv(env["out"] / "Figure4g_6a_positivity_native_depth_roi.csv")
+    want = pd.read_csv(env["out"] / "positivity_native_depth.csv")
     names = list(dict.fromkeys(want["signature"]))
     res = done(env, "composition", {"count": {"calls": [f"positive_{slug(cfg, n)}" for n in names]},
                                     "scope": {"roi": True}})
@@ -155,10 +155,10 @@ def test_composition_is_the_positivity_table(analysed):
 
 
 def test_composition_is_the_tissue_assignment(analysed):
-    """Figure 3a: bins per assigned signature and section, as Figure3a_program_composition_native.csv."""
+    """Figure 3a: bins per assigned signature and section, as cell_type_composition_native.csv."""
     env = analysed
     cfg = env["cfg"]
-    want = pd.read_csv(env["out"] / "Figure3a_program_composition_native.csv")
+    want = pd.read_csv(env["out"] / "cell_type_composition_native.csv")
     res = done(env, "composition", {"count": {"field": "assigned_signature"}, "across": {"field": "sample"}})
     assert res["exclusive"] and res["what"] == "Cell type"
     by_key = {s["key"]: i for i, s in enumerate(res["series"])}
@@ -185,11 +185,11 @@ def test_composition_is_the_tissue_assignment(analysed):
 
 def test_distance_is_figure_4i(analysed):
     """Figure 4i: the distance from each pooled, depth-matched osteoblast bin to the nearest osteoclast one against the
-    random-placement null, as Figure4i_observed_to_null_summary.csv (the same draws: one generator, the run's seed)."""
+    random-placement null, as nearest_partner_observed_to_null_summary.csv (the same draws: one generator, the run's seed)."""
     env = analysed
     cfg = env["cfg"]
     unc = cfg["uncoupling"]
-    want = pd.read_csv(env["out"] / "Figure4i_observed_to_null_summary.csv").set_index("sample")
+    want = pd.read_csv(env["out"] / "nearest_partner_observed_to_null_summary.csv").set_index("sample")
     res = done(env, "distance", {
         "a": [{"field": f"positive_{slug(cfg, unc['a'])}_pooled_depthmatched", "values": [True]}],
         "b": [{"field": f"positive_{slug(cfg, unc['b'])}_pooled_depthmatched", "values": [True]}],

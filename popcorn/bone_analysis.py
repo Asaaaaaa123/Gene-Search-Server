@@ -1071,7 +1071,7 @@ def compare_osteoclast_states(a, sections="all", tumor_conditions=("tumor",), se
 
 def compartment_summary(a, roi_key="in_marrow_roi", samples=None):
     """
-    [FIX] Figure 4h compartments as computed (Figure4h_compartment_summary.csv): one row for all sections ("all"),
+    [FIX] Figure 4h compartments as computed (osteoclast_compartment_summary.csv): one row for all sections ("all"),
     then one per section, with the threshold actually used (a.uns["compartment_threshold"], the joint percentile of the
     split score; on the SR007144 data it is 0, so 'above the 90th percentile' means at least one UMI of a chondrocyte
     gene), the percentage of bins above it, the bins of each compartment, how many of them lie outside the region of
@@ -1674,26 +1674,26 @@ def _steps(cfg):
     """[APP] (key, progress label, enabled) of every step of run_analysis_from_config, in order."""
     B, Q, st = _bin_label(cfg["bin_size"]), _bin_label(cfg["qc_bin_size"]), cfg["steps"]
     return [
-        ("load", f"Load sections and quality control ({B} bins)", True),
-        ("qc_figure_bins", f"Per-bin QC at {Q} (Supplementary Figure S1)", st["qc_figure_bins"]),
+        ("load", f"Load the sections and quality control ({B} bins)", True),
+        ("qc_figure_bins", f"Per-bin quality control at {Q}", st["qc_figure_bins"]),
         ("normalize", "Normalization, embedding and Leiden domains" if st["leiden"] else "Normalization", True),
         ("scores", "Gene-set scores and positivity calls", True),
         ("roi", "Region of interest", True),
-        ("receptor_panel", "Host receptor panel (Figure 6b)", st["receptor_panel"]),
-        ("adipocyte_panel", "Adipocyte genes (Supplementary Figure S4)", st["adipocyte_panel"]),
-        ("positivity", "Positivity at native depth (Figures 4g, 6a)", True),
-        ("depth_matched", "Depth-matched positivity (Figures 4g, 6a)", st["depth_matched"]),
+        ("receptor_panel", "Host receptor panel (bone study)", st["receptor_panel"]),
+        ("adipocyte_panel", "Adipocyte genes", st["adipocyte_panel"]),
+        ("positivity", "Positivity rates at native depth", True),
+        ("depth_matched", "Positivity rates after depth matching", st["depth_matched"]),
         ("leiden", "Leiden domain markers and screen", st["leiden"]),
-        ("compartments", "Osteoclast compartments (Figure 4h)", st["compartments"]),
-        ("assignment", "Spatially pooled scores and tissue assignment (Figure 3)", st["assignment"]),
-        ("stability", "Leiden seed stability (Methods)", st["stability"]),
-        ("domain_matrix", "Leiden domains by signature (Supplementary Figure S5)", st["leiden"]),
-        ("uncoupling", "Distance to nearest partner (Figure 4i)", st["uncoupling"]),
+        ("compartments", "Osteoclast compartments (bone study)", st["compartments"]),
+        ("assignment", "Cell type of every bin (spatially pooled scores)", st["assignment"]),
+        ("stability", "Leiden stability across seeds", st["stability"]),
+        ("domain_matrix", "Leiden domains by cell type", st["leiden"]),
+        ("uncoupling", "Distance to the nearest partner cell type", st["uncoupling"]),
         ("proximity", "Proximity tables", st["proximity"]),
-        ("moran", "Moran's I (Supplementary Figure S2)", st["moran"]),
-        ("sensitivity", "Gene-set sensitivity (Methods)", st["sensitivity"]),
-        ("sensitivity_analyses", "Sensitivity analyses (second review)", st.get("sensitivity_analyses", False)),
-        ("tables", "Table 1 and per-bin calls", True),
+        ("moran", "Spatially variable genes (Moran's I)", st["moran"]),
+        ("sensitivity", "Gene-set sensitivity (bone study)", st["sensitivity"]),
+        ("sensitivity_analyses", "Sensitivity analyses (bone study)", st.get("sensitivity_analyses", False)),
+        ("tables", "Gene-set table and per-bin calls", True),
         ("write_h5ad", f"Write joint_{B}.h5ad", st["write_h5ad"]),
         ("project_fine_bins", f"Project labels onto {Q} bins", st["project_fine_bins"]),
         ("summary", "Summary", True),
@@ -1701,9 +1701,9 @@ def _steps(cfg):
 
 
 def planned_steps(cfg) -> list[str]:
-    """[APP] Progress labels run_analysis_from_config reports for this configuration, in order (disabled steps are
-    reported as skipped)."""
-    return [label for _, label, _ in _steps(pc.merge_with_defaults(cfg))]
+    """[APP] Progress labels run_analysis_from_config reports for this configuration, in order. Steps switched off are
+    not part of the run and not listed (2026-11-16: they used to be reported as skipped)."""
+    return [label for _, label, on in _steps(pc.merge_with_defaults(cfg)) if on]
 
 
 def run_analysis_from_config(cfg, out, progress=None):
@@ -1734,7 +1734,7 @@ def _run(cfg, out, progress):
     steps = _steps(cfg)
     label = {k: lab for k, lab, _ in steps}
     enabled = {k: en for k, _, en in steps}
-    progress.plan([lab for _, lab, _ in steps])
+    progress.plan([lab for _, lab, on in steps if on])
     sco, clu = cfg["scoring"], cfg["clustering"]
     sigs = {k: {"core": list(d["core"]), "extended": list(d["extended"]), "competes": list(d.get("competes") or []),
                 "excluded": dict(d.get("excluded") or {})} for k, d in cfg["signatures"].items()}
@@ -1753,8 +1753,7 @@ def _run(cfg, out, progress):
     def begin(key, needs=(), unavailable=None):
         # unavailable: why an enabled step whose inputs exist has nothing to compute (e.g. its signatures have no
         # calls); it is skipped with that reason instead of reported as done ([APP] 2026-11-03)
-        if not enabled[key]:
-            progress.skip(label[key], "disabled in the configuration")
+        if not enabled[key]:   # switched off: not part of this run (not in the plan either)
             return False
         missing = [label[n] for n in needs if n not in done]
         if missing:
@@ -1771,7 +1770,7 @@ def _run(cfg, out, progress):
         begin("load")
         adatas, sweep, loaded = load_sections(cfg, cfg["bin_size"], progress=progress)
         W.csv(sweep, f"qc_threshold_sweep_{B}.csv", f"QC retention sweep ({B} bins)",
-              "Bins retained at each minimum gene count, before filtering (Supplementary Figure S1).")
+              "Bins retained at each minimum gene count, before filtering.")
         mpp = {}
         for sid, x in adatas.items():
             sf = x.uns["spatial"][sid]["scalefactors"]
@@ -1790,7 +1789,7 @@ def _run(cfg, out, progress):
             for s in cfg["samples"]:
                 size = cfg["qc_bin_size"]
                 if pc.sample_platform(cfg, s) == "visium_hd" and pc.resolve_bin_dir(cfg, s, size) is None:
-                    _warn(progress, f"{s['id']}: no square_{size} folder; Supplementary Figure S1 uses the "
+                    _warn(progress, f"{s['id']}: no square_{size} folder; the per-bin quality control uses the "
                                     f"{cfg['bin_size']} bins")
                     size = cfg["bin_size"]
                 elif pc.sample_platform(cfg, s) in ("visium", "xenium", "merscope", "cosmx", "h5ad", "table"):
@@ -1800,10 +1799,10 @@ def _run(cfg, out, progress):
                                [["sample", "bin_size", "n_genes_by_counts", "total_counts", "pct_counts_mt"]])
                 sweeps.append(qc_sweep(x, s["id"], cfg["qc"]["sweep_thresholds"]).assign(bin_size=size))
                 del x
-            W.csv(pd.concat(per_bin, ignore_index=True), f"FigureS1_qc_per_bin_{Q}.csv.gz", f"Per-bin QC ({Q} bins)",
-                  "Genes, UMIs and % mitochondrial counts of every bin before filtering (Supplementary Figure S1).")
+            W.csv(pd.concat(per_bin, ignore_index=True), f"qc_per_bin_{Q}.csv.gz", f"Per-bin QC ({Q} bins)",
+                  "Genes, UMIs and % mitochondrial counts of every bin before filtering.")
             W.csv(pd.concat(sweeps, ignore_index=True), f"qc_threshold_sweep_{Q}.csv", f"QC retention sweep ({Q} bins)",
-                  "Bins retained at each minimum gene count (Supplementary Figure S1, right panel).")
+                  "Bins retained at each minimum gene count.")
             done.add("qc_figure_bins")
 
         # ---- 2. normalization, embedding, Leiden ---------------------------------- [SHAMIM, MODIFIED] steps 4-8
@@ -1845,15 +1844,15 @@ def _run(cfg, out, progress):
                         samples=samples, progress=progress)
         if begin("receptor_panel"):
             tables["receptor"] = W.csv(receptor_panel(a, cfg["receptor_panel"], name="host receptor panel", **panel_kw),
-                                       "Figure6b_receptor_panel_depth_matched.csv", "Host receptor panel",
+                                       "receptor_panel_depth_matched.csv", "Host receptor panel",
                                        "Percentage of ROI bins detecting each receptor-panel gene, raw and depth-matched "
                                        "(mean of the replicates, Wilson 95% interval); fold_dm vs the reference section.")
             done.add("receptor_panel")
         if begin("adipocyte_panel"):
             W.csv(receptor_panel(a, {g: "adipocyte" for g in cfg["adipocyte_genes"]}, name="adipocyte genes",
                                  **panel_kw),
-                  "FigureS4_adipocyte_genes_depth_matched.csv", "Adipocyte genes",
-                  "Detection of the adipocyte genes in ROI bins, raw and depth-matched (Supplementary Figure S4).")
+                  "adipocyte_genes_depth_matched.csv", "Adipocyte genes",
+                  "Detection of the adipocyte genes in ROI bins, raw and depth-matched.")
             done.add("adipocyte_panel")
 
         # ---- 6. positivity, native depth and depth-matched (Figures 4g, 6a) ------ [RUN]
@@ -1861,15 +1860,15 @@ def _run(cfg, out, progress):
         tumor_ids = [s["id"] for s in cfg["samples"] if s.get("condition") in cfg["compartments"]["tumor_conditions"]]
         tables["native"] = W.csv(positivity_table(a, primary, roi_key="in_marrow_roi", reference=ref, samples=samples,
                                                   tumor_samples=tumor_ids),
-                                 "Figure4g_6a_positivity_native_depth_roi.csv", "Positivity, native depth (ROI)",
+                                 "positivity_native_depth.csv", "Positivity, native depth (ROI)",
                                  "Positive bins per signature and section inside the region of interest, Wilson 95% "
-                                 "intervals (Figures 4g, 6a, left panels).")
+                                 "intervals.")
         done.add("positivity")
         if begin("depth_matched"):
             tables["dm"] = W.csv(depth_matched(a, primary, n_reps=sco["n_depth_reps"], roi_key="in_marrow_roi", mode=mode,
                                                n_perm=sco["n_perm_resampled"], target_sum=target_sum, samples=samples,
                                                **call_kw),
-                                 "Figure4g_6a_positivity_depth_matched.csv", "Positivity, depth-matched (ROI)",
+                                 "positivity_depth_matched.csv", "Positivity, depth-matched (ROI)",
                                  "Positivity after depth matching: mean and SD over the replicates (Figures 4g, 6a, "
                                  "right panels).")
             done.add("depth_matched")
@@ -1880,7 +1879,7 @@ def _run(cfg, out, progress):
                 # [APP] e.g. the default mouse symbols on human data: the screen would mark no domain unresolved
                 _warn(progress, f"Leiden screen: none of the {len(cfg['ubiquitous'])} ubiquitous transcripts is in "
                                 f"the data, so no domain can be marked unresolved: list the abundant housekeeping "
-                                f"transcripts of your data (Signatures tab, Ubiquitous transcripts)")
+                                f"transcripts of your data (Cell Settings tab, Ubiquitous transcripts)")
             de = domain_markers(a, n_top=clu["n_top_markers"], progress=progress)
             screen = W.csv(domain_screen(a, de, n_top=clu["screen_top"], ubiquitous=set(cfg["ubiquitous"]),
                                          genes_per_umi=clu["screen_genes_per_umi"],
@@ -1909,16 +1908,16 @@ def _run(cfg, out, progress):
             W.csv(compare_osteoclast_states(a, cp["de_sections"], cp["tumor_conditions"],
                                             cfg["signatures"][cp["split_by"]]["extended"], progress,
                                             f"{S} compartments", names),
-                  "Figure4h_osteoclast_compartment_DE.csv", "Osteoclast compartment DE",
-                  f"Wilcoxon rank-sum, {gp_name} vs {ta_name} {S}-positive bins (Figure 4h), "
+                  "osteoclast_compartment_DE.csv", "Osteoclast compartment DE",
+                  f"Wilcoxon rank-sum, {gp_name} vs {ta_name} {S}-positive bins, "
                   f"with log2 fold change of mean CP10k, % of bins detecting each gene, and selection_gene (genes "
                   f"of the split signature, higher in the {gp_name} compartment by construction).")
-            W.csv(compartment_summary(a, samples=samples), "Figure4h_compartment_summary.csv",
+            W.csv(compartment_summary(a, samples=samples), "osteoclast_compartment_summary.csv",
                   "Osteoclast compartments as computed",
                   f"Per section and overall: the {cp['split_by']} score threshold actually used (the "
                   f"{cp['percentile']:g}th percentile of all bins; 0 means at least one UMI of a {cp['split_by']} "
                   f"gene), % of bins above it, bins per compartment, compartment bins outside the region of "
-                  f"interest and median UMI per bin of each compartment (Figure 4h).")
+                  f"interest and median UMI per bin of each compartment.")
             done.add("compartments")
 
         # ---- 9. deterministic tissue assignment (Figure 3) ------------------------ [RUN]
@@ -1929,11 +1928,11 @@ def _run(cfg, out, progress):
             a = assign_dominant_program(a, "pooled_", "program", programs, sco["min_core"])
             a = spatially_pooled_scores(a, depth_match=True, **pool_kw)            # depth-matched -> 'program_dm' (3b)
             a = assign_dominant_program(a, "pooled_dm_", "program_dm", programs, sco["min_core"])
-            tables["comp"] = W.csv(program_composition(a, "program", samples), "Figure3a_program_composition_native.csv",
-                                   "Tissue assignment, native depth", "Bins per assigned signature and section (Figure 3a).")
+            tables["comp"] = W.csv(program_composition(a, "program", samples), "cell_type_composition_native.csv",
+                                   "Cell type of every bin, native depth", "Bins per assigned cell type and section.")
             tables["comp_dm"] = W.csv(program_composition(a, "program_dm", samples),
-                                      "Figure3b_program_composition_depth_matched.csv", "Tissue assignment, depth-matched",
-                                      "Bins per assigned signature and section after depth matching (Figure 3b).")
+                                      "cell_type_composition_depth_matched.csv", "Cell type of every bin, depth-matched",
+                                      "Bins per assigned cell type and section after depth matching.")
             done.add("assignment")
 
         # ---- 10. Leiden stability (Methods; Supplementary Figure S5) -------------- [RUN]
@@ -1947,9 +1946,9 @@ def _run(cfg, out, progress):
         if begin("domain_matrix", ("leiden",)):
             M, un = leiden_signature_matrix(a, primary, cfg["signatures"], lambda c: pc.signature_label(cfg, c),
                                             samples=samples)
-            W.csv(M, "FigureS5_domain_by_signature_zscores.csv", "Leiden domains by signature",
-                  "Mean signature score per Leiden domain, z-scored across domains (Supplementary Figure S5).")
-            tables["unresolved"] = W.csv(un, "FigureS5_unresolved_bins.csv", "Unresolved bins",
+            W.csv(M, "leiden_domain_by_cell_type_zscores.csv", "Leiden domains by cell type",
+                  "Mean cell-type score per Leiden domain, z-scored across domains.")
+            tables["unresolved"] = W.csv(un, "leiden_unresolved_bins.csv", "Unresolved bins",
                                          "Bins in the 'unresolved' domain: all sections (first row, sample 'all'), "
                                          "then each section, in all bins and in the region of interest.")
             done.add("domain_matrix")
@@ -1963,10 +1962,10 @@ def _run(cfg, out, progress):
             summ, dist = uncoupling_metric(a, f"{prefix}pos_{unc['a']}", f"{prefix}pos_{unc['b']}",
                                            bin_um=pc.bin_um(cfg["bin_size"]), n_perm=unc["n_perm"],
                                            min_pos=unc["min_pos"], reference_sample=ref, seed=seed, samples=samples)
-            tables["unc"] = W.csv(summ, "Figure4i_observed_to_null_summary.csv", "Distance to nearest partner",
+            tables["unc"] = W.csv(summ, "nearest_partner_observed_to_null_summary.csv", "Distance to nearest partner",
                                   "Observed / random-placement mean distance per section, 95% null interval "
-                                  "(Figure 4i).")
-            W.csv(dist, "Figure4i_distance_distributions_observed_and_null.csv", "Distance distributions",
+                                  ".")
+            W.csv(dist, "nearest_partner_distances_observed_and_null.csv", "Distance distributions",
                   "Distances observed and under the random-placement null (counts per replicate).")
             done.add("uncoupling")
         prox = cfg["proximity"]
@@ -1989,8 +1988,8 @@ def _run(cfg, out, progress):
         if begin("moran"):
             moran, cons = morans_i(a, cfg["moran"]["n_genes"], cfg["moran"]["n_consensus"], samples, progress)
             W.csv(moran, "morans_I_per_section.csv", "Moran's I per section", "Moran's I of the highly variable genes.")
-            W.csv(cons, "FigureS2_spatially_variable_genes_morans_I.csv", "Spatially variable genes",
-                  "Genes in the top Moran's I of every section (Supplementary Figure S2).")
+            W.csv(cons, "spatially_variable_genes_morans_I.csv", "Spatially variable genes",
+                  "Genes in the top Moran's I of every section.")
             done.add("moran")
         sen = cfg["sensitivity"]
         tested = [n for n in sen["signatures"] if n in cfg["signatures"]]
@@ -2004,7 +2003,7 @@ def _run(cfg, out, progress):
                                       mode=mode, n_perm=sco["n_perm"], n_perm_resampled=sco["n_perm_resampled"],
                                       target_sum=target_sum, samples=samples, **call_kw),
                   "gene_set_sensitivity_three_gene_sets.csv", "Gene-set sensitivity",
-                  "Bone-lineage positivity under three gene sets, native and depth-matched (Methods).")
+                  "Bone-lineage positivity under three gene sets, native and depth-matched.")
             done.add("sensitivity")
         # ---- 11b. sensitivity analyses of the second review (bone_sensitivity/) ---- [APP]
         if begin("sensitivity_analyses", ("assignment",)):
@@ -2013,7 +2012,7 @@ def _run(cfg, out, progress):
 
         # ---- 12. Table 1, per-bin table ------------------------------------------- [RUN]
         begin("tables")
-        W.csv(table1_signatures(cfg["signatures"]), "Table1_gene_signatures.csv", "Table 1: gene signatures",
+        W.csv(table1_signatures(cfg["signatures"]), "gene_signatures.csv", "Gene signatures (cell types)",
               "Signature genes, genes counted toward the two-gene rule, excluded genes.")
         W.csv(per_bin_table(a, cfg), f"per_bin_signature_calls_{B}.csv.gz", "Per-bin calls",
               "One row per bin: position (um), region of interest, assignment, tissue class, positivity.")
@@ -2100,7 +2099,7 @@ def _sensitivity_metrics(cfg, sens, add):
     G = "Sensitivity analyses"
     sl = {s["id"]: s.get("label") or s["id"] for s in cfg["samples"]}
     lbl = lambda n: pc.signature_label(cfg, n)                                   # noqa: E731
-    t = sens.get("sensitivity_Figure4i_summary.csv")
+    t = sens.get("sensitivity_nearest_partner_summary.csv")
     if t is not None and len(t):
         calls = cfg["uncoupling"]["calls"]
         for r in t[t["call_set"] == calls].to_dict("records"):
@@ -2111,7 +2110,7 @@ def _sensitivity_metrics(cfg, sens, add):
             if _num(r.get("ratio_of_ratios_mean")) is not None and r["sample"] != cfg["reference_sample"]:
                 detail += (f"; ratio of ratios vs reference {_num(r['ratio_of_ratios_mean'], 3)} "
                            f"({_num(r['ratio_of_ratios_min'], 3)}–{_num(r['ratio_of_ratios_max'], 3)})")
-            add(G, f"Figure 4i, {sl.get(r['sample'], r['sample'])}: observed / null, {r['null_model']}",
+            add(G, f"Nearest partner, {sl.get(r['sample'], r['sample'])}: observed / null, {r['null_model']}",
                 r["ratio_mean"], "", detail)
     t = sens.get("sensitivity_proximity.csv")
     if t is not None and len(t):
@@ -2140,19 +2139,19 @@ def _sensitivity_metrics(cfg, sens, add):
                 f"range {_num(f.min(), 2)}–{_num(f.max(), 2)} over {int(np.isfinite(f).sum())} region, rule and "
                 f"depth-matching variants{ci}")
     gp_name, ta_name = pc.compartment_names(cfg)
-    t = sens.get("sensitivity_Figure4h_diagnostics.csv")
+    t = sens.get("sensitivity_compartments_diagnostics.csv")
     if t is not None and len(t):
         r = t[t["sample"].astype(str) == "all"]
         if len(r):
             r = r.iloc[0]
-            add(G, f"Figure 4h: {gp_name} threshold of the split score", r["threshold"], "",
+            add(G, f"Osteoclast compartments: {gp_name} threshold of the split score", r["threshold"], "",
                 f"{_num(r['pct_bins_above_threshold'], 2)}% of bins above it"
                 + ("; the threshold is 0, so the rule is 'at least one UMI of a split gene'"
                    if str(r["threshold_is_zero"]).lower() in ("true", "1") else ""))
-    t = sens.get("sensitivity_Figure4h_variants.csv")
+    t = sens.get("sensitivity_compartments_variants.csv")
     if t is not None and len(t):
         for r in t[t["status"].astype(str) != "not configured"].to_dict("records"):
-            add(G, f"Figure 4h, {r['variant']}: genes significant ({gp_name} / {ta_name})",
+            add(G, f"Osteoclast compartments, {r['variant']}: genes significant ({gp_name} / {ta_name})",
                 r.get("n_significant_growth_plate"), "", f"{r['status']}; {r.get('n_group')} vs {r.get('n_rest')} "
                 f"{r.get('units')}; {ta_name} significant: {r.get('n_significant_tumor_associated')}")
     t = sens.get("sensitivity_leiden_harmony.csv")
@@ -2280,11 +2279,11 @@ if __name__ == "__main__":
     ap.add_argument("--root", default=None, help="folder containing SR007144_LL-2-1/ and SR007144_RL-1-5/ "
                                                  "(default: the configuration's data_root, or .)")
     ap.add_argument("--out", default="Manuscript/code/results")
-    ap.add_argument("--config", default=None, help="JSON configuration (pipeline_config.py); default: the manuscript")
+    ap.add_argument("--config", default=None, help="JSON configuration (pipeline_config.py); default: the default configuration (bone)")
     ap.add_argument("--roi-mask", action="append", default=None,
                     help="hand-drawn ROI as SAMPLE=PATH (.geojson on tissue_hires_image.png); repeat per sample")
     ap.add_argument("--mask-frame", default=None, choices=["hires", "fullres", "lowres"])
-    ap.add_argument("--skip-moran", action="store_true", help="skip Supplementary Figure S2 (slow)")
+    ap.add_argument("--skip-moran", action="store_true", help="skip the spatially variable genes (Moran's I, slow)")
     ap.add_argument("--geneset-sensitivity", action="store_true", help="run the three-gene-set check of Methods")
     ap.add_argument("--project-8um", action="store_true", help="write the 16 um labels projected onto 8 um bins")
     ap.add_argument("--events", action="store_true", help="also print machine-readable @@EVENT progress lines")
