@@ -16,7 +16,14 @@ if [ -f coolify-deploy.env ]; then
   [ -z "$API_URL" ] && API_URL="${NEXT_PUBLIC_API_URL:-}"
   [ -z "$NPK" ] && NPK="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}"
   [ -z "$CPK" ] && CPK="${CLERK_PUBLISHABLE_KEY:-}"
-  [ -z "$SK" ] && SK="${CLERK_SECRET_KEY:-}"
+  if [ -z "$SK" ] && [ -n "${CLERK_SECRET_KEY:-}" ]; then
+    # The secret key comes from this file, so its publishable key does too: the two must belong to the same Clerk
+    # application, and a publishable key left in Coolify from another application would break sign-in.
+    SK="$CLERK_SECRET_KEY"
+    NPK="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-$NPK}"
+    CPK="${CLERK_PUBLISHABLE_KEY:-$NPK}"
+    echo "[prepare-coolify-deploy-env] Using the Clerk keys of coolify-deploy.env"
+  fi
 fi
 
 [ -z "$CPK" ] && CPK="$NPK"

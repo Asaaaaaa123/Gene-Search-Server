@@ -1,71 +1,74 @@
 """Verify Clerk session JWTs (Bearer tokens from the Next.js app)."""
 
 import os
-from typing import Optional
+from typing import Dict, List, Optional
 
 import jwt
 from fastapi import HTTPException, status
 from jwt import PyJWKClient, ExpiredSignatureError, InvalidTokenError
 
-_jwks_client: Optional[PyJWKClient] = None
-_cached_jwks_url: Optional[str] = None
+# The website's Clerk application (Clerk Dashboard → API keys → Frontend API URL); its keys are in
+# genegen/coolify-deploy.env. Its session tokens are always accepted, so the backend needs no CLERK_ISSUER variable.
+# CLERK_ISSUER names another application whose tokens are accepted too (for example the one used before).
+DEFAULT_CLERK_ISSUER = "https://tender-snipe-6719.clerk.accounts.dev"
+
+_jwks_clients: Dict[str, PyJWKClient] = {}
 
 
 def clerk_issuer() -> str:
-    return os.getenv("CLERK_ISSUER", "").strip().rstrip("/")
+    """CLERK_ISSUER if set, else the website's Clerk application."""
+    return os.getenv("CLERK_ISSUER", "").strip().rstrip("/") or DEFAULT_CLERK_ISSUER
+
+
+def clerk_issuers() -> List[str]:
+    """Every issuer whose session tokens are accepted."""
+    issuers = [clerk_issuer()]
+    if DEFAULT_CLERK_ISSUER not in issuers:
+        issuers.append(DEFAULT_CLERK_ISSUER)
+    return issuers
+
+
+def _jwks_url_for(issuer: str) -> str:
+    """CLERK_JWKS_URL for the CLERK_ISSUER application if set, else {issuer}/.well-known/jwks.json (Clerk default)."""
+    explicit = os.getenv("CLERK_JWKS_URL", "").strip()
+    if explicit and issuer == clerk_issuer():
+        return explicit
+    return f"{issuer}/.well-known/jwks.json"
 
 
 def clerk_jwks_url() -> str:
-    """Explicit CLERK_JWKS_URL, else {CLERK_ISSUER}/.well-known/jwks.json (Clerk default)."""
-    explicit = os.getenv("CLERK_JWKS_URL", "").strip()
-    if explicit:
-        return explicit
-    iss = clerk_issuer()
-    if iss:
-        return f"{iss}/.well-known/jwks.json"
-    return ""
+    return _jwks_url_for(clerk_issuer())
 
 
-def _get_jwks_client() -> Optional[PyJWKClient]:
-    global _jwks_client, _cached_jwks_url
-    url = clerk_jwks_url()
-    if not url:
-        return None
-    if _jwks_client is None or _cached_jwks_url != url:
-        _jwks_client = PyJWKClient(url, cache_keys=True)
-        _cached_jwks_url = url
-    return _jwks_client
+def _get_jwks_client(url: str) -> PyJWKClient:
+    client = _jwks_clients.get(url)
+    if client is None:
+        client = _jwks_clients[url] = PyJWKClient(url, cache_keys=True)
+    return client
 
 
 def clerk_auth_configured() -> bool:
-    return bool(clerk_issuer() and clerk_jwks_url())
+    return bool(clerk_issuer())
 
 
 def verify_clerk_bearer_token(token: str) -> str:
     """
     Validate JWT and return Clerk user id (`sub`).
 
-    In backend/.env set at least:
-      CLERK_ISSUER=https://<your-instance>.clerk.accounts.dev
-    (JWKS URL defaults to {ISSUER}/.well-known/jwks.json unless CLERK_JWKS_URL is set.)
-
-    Find the issuer in Clerk Dashboard → Configure → API keys → "Frontend API URL" / JWT issuer.
+    The token's issuer must be one of clerk_issuers(); its signature is checked with that issuer's keys (JWKS).
     """
-    issuer = clerk_issuer()
-    jwks = clerk_jwks_url()
-    client = _get_jwks_client()
-    if not issuer or not client:
+    try:
+        claimed = jwt.decode(token, options={"verify_signature": False})
+    except InvalidTokenError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid session: {e}")
+    issuer = str(claimed.get("iss") or "").rstrip("/")
+    if issuer not in clerk_issuers():
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Clerk auth is not configured on the Python API. "
-                "Add CLERK_ISSUER to backend/.env (e.g. https://YOUR_APP.clerk.accounts.dev). "
-                "Optional: CLERK_JWKS_URL if not using the default /.well-known/jwks.json path. "
-                "Restart the backend after saving."
-            ),
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid session: issued by {issuer or 'an unknown issuer'}, not this site's Clerk application",
         )
     try:
-        signing_key = client.get_signing_key_from_jwt(token)
+        signing_key = _get_jwks_client(_jwks_url_for(issuer)).get_signing_key_from_jwt(token)
         payload = jwt.decode(
             token,
             signing_key.key,
