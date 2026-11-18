@@ -5,7 +5,7 @@
 // instruments: their count and position files, never their transcript tables or images) to the project's upload
 // folder, its data root, in chunks (PUT /api/projects/<id>/upload/<path>?offset=&size=), so that no request outlasts a
 // proxy's timeout. The server refuses any other file (webapp/server.py upload_parts, UPLOAD_OTHER_RE).
-import { h, mount, button, api, apiUrl, banner, confirmDialog, fmt, state } from '../core.js';
+import { h, mount, button, api, apiUrl, authHeaders, banner, confirmDialog, fmt, state } from '../core.js';
 
 const MATRIX = 'filtered_feature_bc_matrix.h5';
 const SPATIAL = new Set(['tissue_positions.parquet', 'tissue_positions.csv', 'tissue_positions_list.csv',
@@ -104,7 +104,7 @@ async function putChunk(url, body, signal) {
     let res;
     try {
       res = await fetch(url, { method: 'PUT', body, signal, credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/octet-stream', Accept: 'application/json' } });
+        headers: { 'Content-Type': 'application/octet-stream', Accept: 'application/json', ...(await authHeaders({ fresh: attempt > 1 })) } });
     } catch (e) {
       if (e && e.name === 'AbortError') throw e;
       if (attempt < ATTEMPTS) continue;

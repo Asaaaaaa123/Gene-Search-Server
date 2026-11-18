@@ -52,12 +52,62 @@ function errorFrom(status, data) {
   return new ApiError(message, status, detail);
 }
 
+// ------------------------------------------------------------------------------------------------ session
+// Signed in with Clerk (auth.js), every request carries the session token: in the Authorization header (fetch) and,
+// for images and downloads that the browser loads by itself, in the popcorn_session cookie (webapp/auth.py).
+const session = { getToken: null, name: '' };
+const SESSION_COOKIE = 'popcorn_session';
+
+function setSessionCookie(token) {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  const value = token ? encodeURIComponent(token) : '';
+  document.cookie = `${SESSION_COOKIE}=${value}; Path=${ROOT || '/'}; SameSite=Strict; Max-Age=${token ? 300 : 0}${secure}`;
+}
+
+/** Use a Clerk session: getToken({ skipCache }) resolves to a session token; name is shown as the owner of what the user makes. */
+export function setSession({ getToken, name }) {
+  session.getToken = getToken;
+  session.name = name || '';
+}
+
+/** Forget the session (signing out): no more tokens, and the cookie is removed. */
+export function clearSession() {
+  session.getToken = null;
+  session.name = '';
+  setSessionCookie(null);
+}
+
+/** The token of the current session (null without sign-in), also written to the cookie. */
+export async function sessionToken({ fresh = false } = {}) {
+  if (!session.getToken) return null;
+  let token = null;
+  try { token = await session.getToken(fresh ? { skipCache: true } : undefined); } catch { token = null; }
+  setSessionCookie(token);
+  return token;
+}
+
+/** Headers that sign a request in (empty without sign-in). */
+export async function authHeaders({ fresh = false } = {}) {
+  const token = await sessionToken({ fresh });
+  return token ? { Authorization: `Bearer ${token}`, 'X-Popcorn-User': encodeURIComponent(session.name) } : {};
+}
+
 /**
  * JSON request to the backend. Paths are absolute ('/api/projects').
  * body: object (sent as JSON) or FormData. Resolves to the parsed JSON (or text); rejects with ApiError.
  */
-export async function api(path, { method = 'GET', body, query, signal } = {}) {
-  const opts = { method, headers: { Accept: 'application/json' }, signal, credentials: 'same-origin' };
+export async function api(path, opts = {}) {
+  try {
+    return await request(path, opts, false);
+  } catch (e) {
+    // a session token lives a minute: refused once, the request is sent again with a new one
+    if (e instanceof ApiError && e.status === 401 && session.getToken) return request(path, opts, true);
+    throw e;
+  }
+}
+
+async function request(path, { method = 'GET', body, query, signal } = {}, fresh = false) {
+  const opts = { method, headers: { Accept: 'application/json', ...(await authHeaders({ fresh })) }, signal, credentials: 'same-origin' };
   if (body !== undefined) {
     if (body instanceof FormData) opts.body = body;
     else {
@@ -187,6 +237,8 @@ const ICONS = {
   flask: '<path d="M9 3h6M10 3v6L4.5 18.5A2 2 0 0 0 6.2 21h11.6a2 2 0 0 0 1.7-2.5L14 9V3"/><path d="M7 15h10"/>',
   polygon: '<path d="M12 2.5 21 9l-3.5 11.5h-11L3 9z"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
   more: '<circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/><circle cx="5" cy="12" r="1.2"/>',
   terminal: '<path d="m4 17 6-6-6-6M12 19h8"/>',

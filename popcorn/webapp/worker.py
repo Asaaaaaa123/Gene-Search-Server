@@ -4,7 +4,8 @@ webapp/worker.py
 `python -m webapp.worker <run_dir>`: one analysis run of Popcorn, started by webapp.jobs in its own process.
 
 Reads <run_dir>/config.json, reports progress as pipeline_config.Progress events (@@EVENT lines on stdout), runs
-bone_analysis.run_analysis_from_config into <run_dir>/results and then, when steps.figures is on,
+bone_analysis.run_analysis_from_config into <run_dir>/results (bone_analysis.retype_from_h5ad with a retype.json: new
+cell types for an earlier run) and then, when steps.figures is on,
 bone_figures.make_figures. Exit code 0 after a "done" event; 1 after an "error" event; 2 for a wrong command line.
 """
 from __future__ import annotations
@@ -22,6 +23,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from pipeline_config import Progress, merge_with_defaults  # noqa: E402
 
 USAGE = "usage: python -m webapp.worker <run_dir>"
+# in a run folder: the run gives new cell types to an earlier run ({"parent", "h5ad", "results"}) instead of analysing
+# the sections from the start
+RETYPE_FILE = "retype.json"
 
 
 def run(run_dir: Path) -> int:
@@ -32,9 +36,15 @@ def run(run_dir: Path) -> int:
         import bone_figures as bf
 
         figures = bool(cfg["steps"]["figures"])
-        progress.plan(ba.planned_steps(cfg) + (bf.planned_steps(cfg) if figures else []))
         results = run_dir / "results"
-        ba.run_analysis_from_config(cfg, results, progress)
+        retype = run_dir / RETYPE_FILE
+        if retype.is_file():  # new cell types on the joint object of an earlier run (bone_analysis.retype_from_h5ad)
+            source = json.loads(retype.read_text(encoding="utf-8"))
+            progress.plan(ba.retype_planned_steps(cfg) + (bf.planned_steps(cfg) if figures else []))
+            ba.retype_from_h5ad(cfg, results, Path(source["h5ad"]), Path(source["results"]), progress)
+        else:
+            progress.plan(ba.planned_steps(cfg) + (bf.planned_steps(cfg) if figures else []))
+            ba.run_analysis_from_config(cfg, results, progress)
         if figures:
             bf.make_figures(results, cfg, progress)
         progress.done()

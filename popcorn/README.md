@@ -197,7 +197,12 @@ environment variables), and the Next.js site rewrites `/popcorn` to it. A hosted
 * at most two analyses are queued or running at once (HTTP 429 beyond), each is stopped after 30 minutes and uses one
   thread per numerical library, and workers inherit none of the server's environment variables except the system
   ones (`webapp/jobs.py`, `CLEAN_ENV_VARS`);
-* every visitor sees the same projects and runs.
+* everybody signs in with Clerk (`create_app(..., auth=Auth(...))`, `webapp/auth.py`; the page loads Clerk's sign-in,
+  `static/js/auth.js`). Everybody signed in sees every project, run and analysis, with the name of whoever made it,
+  and can open, check and download it; only its owner changes it (saves, uploads, regions, runs, analyses, deleting:
+  HTTP 403 for anybody else, and the pages show another user's work read-only, with **Make a copy of your own**).
+  Projects made before sign-in have no owner and stay open to every signed-in user. `POPCORN_AUTH=0` turns sign-in
+  off; the application on your own computer (`python -m webapp`) has none.
 
 Analyses run in the API process's queue, so that API must run as a single process (`WORKERS=1`). The front end finds the
 `/popcorn` prefix of its API from the address of `static/js/core.js`, and the server writes it into `index.html`.

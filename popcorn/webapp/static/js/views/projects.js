@@ -1,9 +1,11 @@
-// projects.js — the project list: create a project or the demo, and one card per project (data root, samples, last
-// run). A click anywhere on a card opens the project; Duplicate and Delete are in the card's "Project actions" menu.
+// projects.js — the project list: create a project or the demo, and one card per project (owner, data root, samples,
+// last run). A click anywhere on a card opens the project; Duplicate and Delete are in the card's "Project actions"
+// menu. Signed in, everybody's projects are listed; only your own can be deleted, and a copy of any is yours.
 import {
-  h, api, mount, icon, button, menuButton, statusBadge, loading, emptyState, errorPanel, toast, modal, confirmDialog, promptDialog, fmt, navigate,
+  h, api, mount, icon, button, menuButton, statusBadge, loading, emptyState, errorPanel, toast, modal, confirmDialog, promptDialog, fmt, navigate, state,
 } from '../core.js';
 import { hasUnsavedChanges, forgetDraft } from './project.js';
+import { canEdit, ownerText, userName, isMe, changedText } from '../auth.js';
 
 const projectPath = (id) => `/projects/${encodeURIComponent(id)}/data`;
 
@@ -84,6 +86,19 @@ export async function renderProjects(container) {
     if (alive) await load();
   }
 
+  /** "by Alice" ("by Asa (you)" for your own) on a card, and who changed it last; nothing for a project nobody signed
+   * in made or changed. */
+  function ownerChip(p) {
+    const who = userName(p.owner);
+    const changed = changedText(p);
+    if (!who && !changed) return null;
+    const mine = isMe(p.owner);
+    return h('div', { class: 'owner-line' },
+      who ? h('span', { class: `owner-chip${mine ? ' mine' : ''}`, title: mine ? 'You made this project' : `Made by ${who}: you can look at it and download its results; only ${who} can change it` },
+        icon(mine ? 'user' : 'eye', { size: 12 }), `by ${who}`) : null,
+      changed ? h('span', { class: 'muted small', title: fmt.date(p.changed_by.at) }, changed) : null);
+  }
+
   async function remove(p) {
     const ok = await confirmDialog({
       title: `Delete “${p.name || p.id}”?`,
@@ -104,13 +119,14 @@ export async function renderProjects(container) {
   function projectCard(p) {
     const href = `#${projectPath(p.id)}`;
     const run = p.last_run;
+    const mine = canEdit(p);
     const menu = menuButton({
       small: true, title: 'Project actions',
       items: [
-        { label: 'Duplicate', icon: 'copy', hint: 'Copies the saved settings and drawn regions', onClick: () => duplicate(p) },
-        'separator',
-        { label: 'Delete project', icon: 'trash', danger: true, onClick: () => remove(p) },
-      ],
+        { label: mine ? 'Duplicate' : 'Make a copy of your own', icon: 'copy', hint: 'Copies the saved settings and drawn regions', onClick: () => duplicate(p) },
+        mine ? 'separator' : null,
+        mine ? { label: 'Delete project', icon: 'trash', danger: true, onClick: () => remove(p) } : null,
+      ].filter(Boolean),
     });
     menu.setAttribute('aria-label', `Project actions: ${p.name || p.id}`);
     const onClick = (e) => {
@@ -125,6 +141,7 @@ export async function renderProjects(container) {
         h('a', { class: 'pc-name', href }, p.name || p.id),
         hasUnsavedChanges(p.id) ? h('span', { class: 'badge badge-unsaved', title: 'Edits made in this browser tab are not saved yet' }, 'Unsaved edits') : null,
         h('span', { class: 'row-actions pc-menu' }, menu)),
+      ownerChip(p),
       h('div', { class: 'pc-root', title: p.data_root || '' }, icon('folder', { size: 13 }), h('span', { class: 'mono truncate' }, p.data_root || '—')),
       h('dl', { class: 'pc-meta' },
         h('div', null, h('dt', null, 'Samples'), h('dd', null, fmt.int(p.n_samples))),
@@ -150,17 +167,28 @@ export async function renderProjects(container) {
 
   // the filter row stays in place while the grid below it is repainted, so typing in the filter keeps its focus
   const filterCount = h('span', { class: 'muted small' });
-  const tools = h('div', { class: 'row projects-tools' }, filter, filterCount);
+  // signed in: everybody's projects, or only yours
+  let onlyMine = false;
+  const scopeAll = button({ label: 'All', small: true, onClick: () => { onlyMine = false; paint(); } });
+  const scopeMine = button({ label: 'Mine', small: true, onClick: () => { onlyMine = true; paint(); } });
+  const scope = h('div', { class: 'row', role: 'group', 'aria-label': 'Whose projects' }, scopeAll, scopeMine);
+  const tools = h('div', { class: 'row projects-tools' }, state.user ? scope : null, filter, filterCount);
   const grid = h('div');
 
   function paint() {
     headerActions.hidden = !projects.length;
     if (!projects.length) { mount(body, intro()); return; }
-    tools.hidden = projects.length <= 6;
-    const q = tools.hidden ? '' : filter.value.trim().toLowerCase();   // a hidden filter filters nothing
-    const shown = projects.filter((p) => !q || `${p.name} ${p.data_root} ${p.id}`.toLowerCase().includes(q));
+    const owned = projects.some((p) => p.owner);
+    tools.hidden = projects.length <= 6 && !(state.user && owned);
+    filter.hidden = projects.length <= 6;
+    scopeAll.classList.toggle('primary', !onlyMine);
+    scopeMine.classList.toggle('primary', onlyMine);
+    const q = filter.hidden ? '' : filter.value.trim().toLowerCase();   // a hidden filter filters nothing
+    const shown = projects.filter((p) => (!onlyMine || ownerText(p) === 'you')
+      && (!q || `${p.name} ${p.data_root} ${p.id} ${(p.owner && p.owner.name) || ''}`.toLowerCase().includes(q)));
     filterCount.textContent = `${shown.length} of ${projects.length}`;
-    mount(grid, shown.length ? h('div', { class: 'project-grid' }, shown.map(projectCard)) : h('p', { class: 'muted' }, 'No project matches the filter.'));
+    mount(grid, shown.length ? h('div', { class: 'project-grid' }, shown.map(projectCard))
+      : h('p', { class: 'muted' }, onlyMine && !q ? 'You have no projects yet: create one, or make a copy of somebody else’s.' : 'No project matches the filter.'));
     if (tools.parentNode !== body || grid.parentNode !== body) mount(body, tools, grid);
   }
 

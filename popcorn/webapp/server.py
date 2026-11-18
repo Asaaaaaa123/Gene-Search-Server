@@ -58,9 +58,12 @@ import pipeline_config as pc
 import spatial_readers as sr
 from webapp import __version__
 from webapp import analysis as an
+from webapp.auth import Auth, AuthGate, current_user, ownership, page_config
 from webapp.jobs import JobManager
+from webapp.worker import RETYPE_FILE
 from webapp.storage import (ACTIVE_STATUSES, FINAL_STATUSES, BadRequest, NotFound, Storage, StorageError,
                             check_sample_id, json_safe, rmtree)
+from webapp.storage import now_iso as storage_now
 
 log = logging.getLogger("bss.server")
 
@@ -112,6 +115,10 @@ FRAMES = ("hires", "lowres", "fullres")
 # per-bin table (docs/ARCHITECTURE.md, section 3)
 BIN_SKIP_COLUMNS = {"barcode", "sample_id", "section", "x_um", "y_um"}
 BIN_CATEGORY_COLUMNS = ("tissue_class", "assigned_signature", "leiden_domain")
+# the settings of the cell types, which a finished run can be given anew (POST /runs/{rid}/retype)
+RETYPE_KEYS = ("signatures", "primary", "programs", "classes")
+# in a run folder: the analyses it starts with were added once (they are not added again when they are deleted)
+DEFAULTS_MARK = "analysis_defaults.json"
 BIN_MAX_CATEGORIES = 500
 REMOVED_COLOR = "#b8b8b8"
 UNASSIGNED_COLOR = "#dedede"
@@ -1120,6 +1127,37 @@ class BinsTable:
             raise DataError("the per-bin table has no barcode column")
         values = self.df["barcode"].iloc[self.groups[sid]].tolist()
         return ["" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v) for v in values]
+
+
+def joint_h5ad(results: Path, cfg: dict) -> Path | None:
+    """The joint AnnData object a run wrote (joint_<bin>.h5ad), None without one: new cell types are scored on it
+    (POST /runs/{rid}/retype)."""
+    try:
+        path = results / f"joint_{int(pc.bin_um(cfg.get('bin_size')))}um.h5ad"
+    except ValueError:
+        path = None
+    if path is not None and path.is_file():
+        return path
+    found = sorted(results.glob("joint_*um.h5ad")) if results.is_dir() else []
+    return found[0] if found else None
+
+
+def h5ad_gene_names(path: Path) -> list[str]:
+    """The gene names (var index) of an .h5ad file, read without loading the matrix (whatever encoding of the index
+    the anndata version that wrote it used)."""
+    import anndata
+    try:
+        from anndata.io import read_elem
+    except ImportError:  # anndata < 0.11
+        from anndata.experimental import read_elem
+    with h5py.File(path, "r") as f:
+        var = read_elem(f["var"])
+    return [str(v) for v in var.index]
+
+
+def sorted_genes(names) -> list[str]:
+    """Distinct gene names in alphabetical order, ignoring case."""
+    return sorted(dict.fromkeys(str(n) for n in names), key=lambda g: (g.casefold(), g))
 
 
 def per_bin_file(results: Path, cfg: dict) -> Path:
@@ -2932,12 +2970,13 @@ def optional_text(body: dict, key: str, max_len: int = 200, allow_empty: bool = 
 # ============================================================================
 
 def create_app(workspace: Path, token: str | None = None, worker_module: str = "webapp.worker",
-               hosted: Hosted | None = None) -> FastAPI:
+               hosted: Hosted | None = None, auth: Auth | None = None) -> FastAPI:
     """The Popcorn application for one workspace folder. With `token`, every request must carry it (see
     TokenGate). worker_module is the module the job runner starts for a run (the tests use a fake one). The job runner
     starts and stops with the application (lifespan); an application mounted inside another one must call
     app.state.jobs.start() and .stop() itself, since a mounted application's lifespan does not run. With `hosted`, the
-    server is open to the public (see Hosted)."""
+    server is open to the public (see Hosted). With `auth`, every user signs in with Clerk and changes only what they
+    made (webapp/auth.py)."""
     if token is not None and not TOKEN_RE.match(token):
         raise ValueError("the access token must be 1-256 letters, digits, '.', '_', '~' or '-'")
     storage = Storage(workspace)
@@ -2975,6 +3014,20 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         app.add_middleware(TokenGate, token=token)
     elif hosted is None:
         app.add_middleware(LocalOriginGate)
+
+    def owner_lookup(kind: str, key: str) -> dict | None:
+        """The record of a project, run or analysis template, for AuthGate; None when there is none."""
+        try:
+            if kind == "project":
+                return storage.get_project(key)
+            if kind == "run":
+                return storage.get_run(key)
+            return storage.get_template(key)
+        except StorageError:
+            return None
+
+    if auth is not None:
+        app.add_middleware(AuthGate, auth=auth, owner_lookup=owner_lookup)
 
     # ---- errors ------------------------------------------------------------------------------------------------
     @app.exception_handler(StarletteHTTPException)
@@ -3043,13 +3096,18 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             require_in_data_dirs(paths)
         return acfg
 
+    def changed_by(record: dict) -> dict | None:
+        who = record.get("changed_by")
+        return who if isinstance(who, dict) and who.get("id") else None
+
     def project_view(project: dict) -> dict:
         stored = project.get("config")
         cfg = pc.merge_with_defaults(stored if isinstance(stored, dict) else {})
         errors, warnings = check_config(cfg)
         return {"id": project["id"], "name": project.get("name", ""), "created": project.get("created"),
                 "updated": project.get("updated"), "config": cfg, "rois": storage.list_rois(project["id"]),
-                "validation": {"errors": errors, "warnings": warnings}}
+                "validation": {"errors": errors, "warnings": warnings}, "changed_by": changed_by(project),
+                **ownership(project)}
 
     def project_sample(pid: str, sid: str) -> tuple[dict, dict]:
         project = storage.get_project(pid)
@@ -3061,6 +3119,8 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
     def run_view(rid: str) -> dict:
         record = jobs.get_run(rid)
+        record.update(ownership(record))
+        record["changed_by"] = storage.regions_changed_by(rid)  # what users change of a run: its drawn regions
         try:
             record["config"] = storage.read_run_config(rid)
         except NotFound:
@@ -3145,15 +3205,26 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             raise HTTPException(409, f"required packages are missing: {', '.join(missing)}; install them (see "
                                      f"requirements.txt) and restart the server")
 
-    def submit(project_id: str, project_name: str, label: str, cfg: dict, roi_files: dict[str, Path]) -> dict:
+    def submit(project_id: str, project_name: str, label: str, cfg: dict, roi_files: dict[str, Path],
+               extra: dict | None = None, prepare=None) -> dict:
+        """Queue a run. `extra`: more fields of its record; `prepare(record)`: called before the job starts (files the
+        worker reads, e.g. retype.json)."""
         if hosted is not None:
             located(cfg)
             active = jobs.queued_count + (1 if jobs.active_run_id else 0)
             if active >= hosted.max_active_runs:
                 raise HTTPException(429, f"{active} analyses are already queued or running on this server; wait "
                                          f"until one has finished, then start the analysis again")
+        user = current_user()
+        fields = {**(extra or {}), **({"owner": user} if user else {})}
         record = storage.create_run(project_id=project_id, project_name=project_name, label=label, config=cfg,
-                                    roi_files=roi_files)
+                                    roi_files=roi_files, extra=fields or None)
+        if prepare is not None:
+            try:
+                prepare(record)
+            except Exception:
+                storage.delete_run(record["id"])
+                raise
         snapshot = storage.read_run_config(record["id"])
         jobs.submit(record["id"])
         return {**record, "config": snapshot}
@@ -3262,6 +3333,26 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
                                        "unit": sr.PLATFORMS[key]["unit"], "qc": pc.QC_PRESETS.get(key)}
                                       for key in pc.PLATFORM_IDS]})
 
+    @app.get("/api/auth")
+    def auth_config():
+        """Whether the page signs in with Clerk, and with which application (public: the page asks before signing in)."""
+        return JSONOut(page_config(auth))
+
+    @app.post("/api/auth/sign-out")
+    def end_sessions():
+        """Ends every Clerk session of the signed-in user (signing out in the browser left them signed in)."""
+        user = current_user()
+        if auth is None or user is None:
+            return JSONOut({"ended": 0})
+        if auth.end_sessions is None:
+            raise HTTPException(501, "this server cannot end sessions: sign out on the Clerk account page")
+        try:
+            ended = auth.end_sessions(user["id"])
+        except Exception as exc:  # noqa: BLE001 - the sign-in service refused or could not be reached
+            log.warning("ending the sessions of %s failed: %s", user["id"], exc)
+            raise HTTPException(502, f"the sign-in service did not end the session: {exc}") from exc
+        return JSONOut({"ended": ended})
+
     @app.get("/api/docs/{name}")
     def docs(name: str):
         if name not in DOCS:
@@ -3288,7 +3379,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
                         "n_samples": len(cfg["samples"]) if isinstance(cfg.get("samples"), list) else 0,
                         "data_root": cfg.get("data_root"),
                         "last_run": ({"id": last["id"], "status": last.get("status"), "created": last.get("created")}
-                                     if last else None)})
+                                     if last else None), "changed_by": changed_by(p), **ownership(p)})
         return JSONOut(out)
 
     @app.post("/api/projects")
@@ -3299,7 +3390,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             name = config["name"].strip()[:200]
         if not name:
             raise HTTPException(400, "a project name is required")
-        project = storage.create_project(name, config)
+        project = storage.create_project(name, config, owner=current_user())
         if hosted is not None and not (config or {}).get("data_root"):  # its data is uploaded to its upload folder
             root = upload_root(project["id"])
             root.mkdir(parents=True, exist_ok=True)
@@ -3314,7 +3405,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
     def update_project(pid: str, body: dict = Depends(json_body)):
         name = optional_text(body, "name", allow_empty=False)
         config = optional_object(body, "config")
-        return JSONOut(project_view(storage.update_project(pid, name=name, config=config)))
+        return JSONOut(project_view(storage.update_project(pid, name=name, config=config, by=current_user())))
 
     @app.delete("/api/projects/{pid}")
     def delete_project(pid: str):
@@ -3379,6 +3470,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         storage.get_project(pid)
         rmtree(upload_root(pid))
         upload_root(pid).mkdir(parents=True, exist_ok=True)
+        storage.touch_project(pid, current_user())
         return JSONOut(upload_state(pid))
 
     @app.put("/api/projects/{pid}/upload/{rel:path}")
@@ -3426,11 +3518,12 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         complete = have == size
         if complete:
             os.replace(part, dest)
+            storage.touch_project(pid, current_user())
         return JSONOut({"path": rel, "received": have, "size": size, "complete": complete, "root": str(root)})
 
     @app.post("/api/projects/{pid}/duplicate")
     def duplicate_project(pid: str):
-        return JSONOut(project_view(storage.duplicate_project(pid)))
+        return JSONOut(project_view(storage.duplicate_project(pid, owner=current_user())))
 
     @app.post("/api/projects/{pid}/validate")
     def validate_project(pid: str, body: dict = Depends(optional_json_body)):
@@ -3625,6 +3718,19 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
         return Response(explore_cache.get(key, build), media_type=JSON_MEDIA_TYPE)
 
+    @app.post("/api/projects/{pid}/gene-names")
+    def project_gene_names(pid: str, body: dict = Depends(optional_json_body)):
+        """Every gene of the sections of a project, alphabetical (the gene fields of the Cell Settings tab offer them);
+        body.config: the unsaved settings, as for the explorer. problems: sections that could not be read."""
+        cfg = explore_config(pid, body)
+        names, problems = [], []
+        for sample in config_samples(cfg):
+            try:
+                names.extend(raw_section(section_source(cfg, sample)).genes)
+            except (NotFound, DataError) as exc:
+                problems.append(f"{sample['id']}: {exc}")
+        return JSONOut({"genes": sorted_genes(names), "problems": problems})
+
     @app.post("/api/projects/{pid}/explore/{sid}/genes")
     def explore_genes(pid: str, sid: str, body: dict = Depends(optional_json_body)):
         query, limit, offset = gene_query(body.get("query"), body.get("limit"), body.get("offset"))
@@ -3676,11 +3782,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             storage.write_roi(pid, sid, collection)
         else:
             storage.delete_roi(pid, sid)
+        storage.touch_project(pid, current_user())
         return JSONOut({"ok": True, "n_polygons": n_polygons})
 
     @app.delete("/api/projects/{pid}/roi/{sid}")
     def delete_roi(pid: str, sid: str):
         storage.delete_roi(pid, sid)
+        storage.touch_project(pid, current_user())
         return JSONOut({"ok": True})
 
     # ---- runs --------------------------------------------------------------------------------------------------
@@ -3717,7 +3825,8 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
     @app.get("/api/runs")
     def list_runs(project: str | None = None):
-        return JSONOut([{k: v for k, v in r.items() if k != "config"} for r in jobs.list_runs(project or None)])
+        return JSONOut([{**{k: v for k, v in r.items() if k != "config"}, **ownership(r)}
+                        for r in jobs.list_runs(project or None)])
 
     @app.get("/api/runs/{rid}")
     def get_run(rid: str):
@@ -3744,22 +3853,27 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         jobs.cancel(rid)
         return JSONOut(run_view(rid))
 
-    @app.post("/api/runs/{rid}/rerun")
-    def rerun(rid: str):
-        old = jobs.get_run(rid)
-        # a run made before the Analysis tab had every step on: run again, it is the base run like any other
-        cfg = pc.app_config(pc.merge_with_defaults(storage.read_run_config(rid)))
+    def run_roi_files(rid: str, cfg: dict) -> tuple[dict[str, Path], list[str]]:
+        """The drawn regions of a run (its own copies, wherever the workspace now is) and the ones missing."""
         run_dir = storage.run_dir(rid)
         roi = cfg.get("roi") if isinstance(cfg.get("roi"), dict) else {}
         masks = roi.get("masks") if isinstance(roi.get("masks"), dict) else {}
         roi_files, problems = {}, []
         for sid, given in masks.items():
-            kept = run_dir / "rois" / f"{sid}.geojson"  # the copy of this run, wherever the workspace now is
+            kept = run_dir / "rois" / f"{sid}.geojson"
             path = kept if kept.is_file() else Path(str(given))
             if path.is_file():
                 roi_files[sid] = path
             else:
                 problems.append(f"the region of sample {sid} of run {rid} is missing ({given})")
+        return roi_files, problems
+
+    @app.post("/api/runs/{rid}/rerun")
+    def rerun(rid: str):
+        old = jobs.get_run(rid)
+        # a run made before the Analysis tab had every step on: run again, it is the base run like any other
+        cfg = pc.app_config(pc.merge_with_defaults(storage.read_run_config(rid)))
+        roi_files, problems = run_roi_files(rid, cfg)
         require_runnable(cfg, problems)
         project_id = old.get("project_id") or ""
         try:
@@ -3773,6 +3887,11 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         record = jobs.get_run(rid)
         if jobs.is_busy(rid) or record.get("status") in ACTIVE_STATUSES:
             raise HTTPException(409, f"run {rid} is {record.get('status')}; cancel it before deleting it")
+        reading = [r["id"] for r in jobs.list_runs()
+                   if r.get("parent_run") == rid and r.get("status") in ACTIVE_STATUSES]
+        if reading:
+            raise HTTPException(409, f"run {reading[0]} is scoring new cell types on the data of run {rid}; delete "
+                                     f"it when that run has finished")
         forget_run(rid)
         try:
             storage.delete_run(rid)
@@ -3906,6 +4025,74 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         if info is None:
             raise NotFound(f"sample {sample} of run {rid}: {note}")
         return JSONOut(info)
+
+    @app.get("/api/runs/{rid}/gene-names")
+    def run_gene_names(rid: str):
+        """Every gene of the data of a run, alphabetical (the gene fields of its cell types offer them): from its joint
+        object, else from its sections."""
+        require_run(rid)
+        cfg = run_config(rid)
+        h5ad = joint_h5ad(storage.results_dir(rid), cfg)
+        if h5ad is not None:
+            try:
+                return JSONOut({"genes": sorted_genes(h5ad_gene_names(h5ad)), "problems": []})
+            except Exception as exc:  # noqa: BLE001 - not a readable AnnData file: the sections still have the names
+                log.warning("gene names of %s: %s", h5ad, exc)
+        names, problems = [], []
+        located_cfg = located(cfg)
+        for sample in config_samples(located_cfg):
+            try:
+                names.extend(raw_section(section_source(located_cfg, sample)).genes)
+            except (NotFound, DataError) as exc:
+                problems.append(f"{sample['id']}: {exc}")
+        return JSONOut({"genes": sorted_genes(names), "problems": problems})
+
+    @app.get("/api/runs/{rid}/cell-types")
+    def run_cell_types(rid: str):
+        """The cell types of a run (signatures, positivity calls, tissue assignment, classes) and whether new ones can
+        be scored on its joint object (else they need a full run)."""
+        require_run(rid)
+        cfg = run_config(rid)
+        h5ad = joint_h5ad(storage.results_dir(rid), cfg)
+        return JSONOut({key: cfg.get(key) for key in RETYPE_KEYS} | {
+            "reusable": h5ad is not None, "h5ad": h5ad.name if h5ad else None,
+            "min_core": (cfg.get("scoring") or {}).get("min_core")})
+
+    @app.post("/api/runs/{rid}/retype")
+    def retype_run(rid: str, body: dict = Depends(json_body)):
+        """A new run with other cell types: {"signatures", "primary", "programs", "classes", "label"?}. It scores them
+        on the joint object of run `rid` (quality control, normalization, Leiden domains and region of interest are
+        those of `rid`); a run without that object is analysed again from its sections. Anybody may do it: the new
+        run is theirs."""
+        old = jobs.get_run(rid)
+        if jobs.is_busy(rid) or old.get("status") != "succeeded":
+            raise HTTPException(409, f"run {rid} is {old.get('status')}; new cell types need a finished run")
+        cfg = pc.app_config(pc.merge_with_defaults(storage.read_run_config(rid)))
+        for key in RETYPE_KEYS:
+            if key in body:
+                value = body[key]
+                if not isinstance(value, dict if key == "signatures" else list):
+                    raise HTTPException(400, f"{key} must be {'an object' if key == 'signatures' else 'a list'}")
+                cfg[key] = value
+        cfg = pc.merge_with_defaults(cfg)
+        roi_files, problems = run_roi_files(rid, cfg)
+        require_runnable(cfg, problems)
+        results = storage.results_dir(rid)
+        h5ad = joint_h5ad(results, cfg)
+        project_id = old.get("project_id") or ""
+        try:
+            project_name = storage.get_project(project_id).get("name", "")
+        except NotFound:
+            project_name = old.get("project_name") or ""
+        label = optional_text(body, "label") or f"{old.get('label') or project_name or rid} · new cell types"
+
+        def prepare(record: dict) -> None:
+            storage.write_json(storage.run_dir(record["id"]) / RETYPE_FILE,
+                               {"parent": rid, "h5ad": str(h5ad), "results": str(results)})
+
+        return JSONOut(submit(project_id, project_name, label[:200], cfg, roi_files,
+                              extra={"parent_run": rid, "retyped": h5ad is not None},
+                              prepare=prepare if h5ad is not None else None))
 
     @app.get("/api/runs/{rid}/genes")
     def run_genes(rid: str, sample: str, query: str = "", limit: int = GENE_LIST_LIMIT, offset: int = 0):
@@ -4126,7 +4313,8 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
 
     def start_analysis(rid: str, tool: str, title: str | None, params: dict | None, view: dict | None) -> tuple:
         with analysis_guard:
-            card = storage.create_analysis(rid, tool, title or an.TOOLS_BY_ID[tool].title, params or {}, view)
+            card = storage.create_analysis(rid, tool, title or an.TOOLS_BY_ID[tool].title, params or {}, view,
+                                           by=current_user())
             return card, runner.submit(rid, card["id"])
 
     @app.get("/api/runs/{rid}/analysis/context")
@@ -4134,8 +4322,28 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         """What the forms of the Analysis tab offer: sections, fields and their values, regions, tools, tables."""
         require_run(rid)
         ctx = analysis_ctx(rid)
-        return JSONOut(context_view(ctx, regions_view(ctx, storage.read_regions(rid)),
-                                    no_expression(rid, bins_table(rid)), result_tables(rid)))
+        return JSONOut({**context_view(ctx, regions_view(ctx, storage.read_regions(rid)),
+                                       no_expression(rid, bins_table(rid)), result_tables(rid)),
+                        "defaults_added": (storage.run_dir(rid) / DEFAULTS_MARK).is_file()})
+
+    @app.post("/api/runs/{rid}/analyses/defaults")
+    def add_default_analyses(rid: str):
+        """Start the analyses a run starts with (analysis.default_analyses: detected from its cell types, sections,
+        conditions, calls and domains), leaving out those already on the run (same tool and title). Answers
+        {"cards": the new cards, newest first as the list shows them, "added": how many}."""
+        require_analysable(rid)
+        bins_table(rid)
+        ctx = analysis_ctx(rid)
+        have = {(c.get("tool"), c.get("title")) for c in storage.list_analyses(rid)}
+        todo = [c for c in an.default_analyses(ctx, run_config(rid)) if (c["tool"], c["title"]) not in have]
+        if len(runner) + len(todo) > ANALYSIS_QUEUE_MAX + MAX_TEMPLATE_CARDS:
+            raise HTTPException(429, "too many analyses are waiting on this server; wait until some have finished")
+        # the list shows the newest first: started in reverse, the first analysis ends up on top
+        cards = [start_analysis(rid, c["tool"], c["title"], c["params"], c["view"])[0] for c in reversed(todo)]
+        user = current_user()
+        storage.write_json(storage.run_dir(rid) / DEFAULTS_MARK,
+                           {"added": storage_now(), "by": user, "cards": [c["id"] for c in cards]})
+        return JSONOut({"cards": cards[::-1], "added": len(cards)})
 
     @app.get("/api/runs/{rid}/analyses")
     def list_analyses(rid: str):
@@ -4175,7 +4383,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
                 card["title"] = title
             if view is not None:
                 card["view"] = view
-            return JSONOut(storage.save_analysis(rid, card))
+            return JSONOut(storage.save_analysis(rid, card, by=current_user()))
 
     @app.post("/api/runs/{rid}/analyses/{aid}/rerun")
     def rerun_analysis(rid: str, aid: str, body: dict = Depends(optional_json_body)):
@@ -4197,7 +4405,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             if view is not None:
                 card["view"] = view
             card.update(status="running", error=None)
-            storage.save_analysis(rid, card)
+            storage.save_analysis(rid, card, by=current_user())
             task = runner.submit(rid, aid)
         if task["done"].wait(ANALYSIS_WAIT) and task["refused"]:
             with analysis_guard, contextlib.suppress(StorageError):
@@ -4246,13 +4454,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
         """Replace the regions drawn on a run: {"regions": [{"id"?, "name", "sample", "polygons", "color"?}]}."""
         require_run(rid)
         regions = clean_regions(body, [s["id"] for s in bins_table(rid).samples()])
-        storage.write_regions(rid, regions)
+        storage.write_regions(rid, regions, by=current_user())
         return JSONOut({"regions": regions_view(analysis_ctx(rid), regions)})
 
     def template_view(t: dict) -> dict:
         cards = [c for c in t.get("cards") or [] if isinstance(c, dict)]
         return {"id": t.get("id"), "name": t.get("name") or "", "created": t.get("created"),
-                "cards": [{"tool": c.get("tool"), "title": c.get("title") or ""} for c in cards]}
+                "cards": [{"tool": c.get("tool"), "title": c.get("title") or ""} for c in cards], **ownership(t)}
 
     @app.get("/api/analysis/templates")
     def list_templates():
@@ -4274,7 +4482,7 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
             tool, title, params, view = analysis_request(c)
             cards.append({"tool": tool, "title": title or an.TOOLS_BY_ID[tool].title, "params": params or {},
                           "view": view or {}})
-        return JSONOut(template_view(storage.create_template(name, cards)))
+        return JSONOut(template_view(storage.create_template(name, cards, owner=current_user())))
 
     @app.delete("/api/analysis/templates/{tid}")
     def delete_template(tid: str):
@@ -4307,11 +4515,13 @@ def create_app(workspace: Path, token: str | None = None, worker_module: str = "
                 samples = generator.generate(out_dir=storage.demo_dir, size="small")
             except (ImportError, OSError, ValueError) as exc:
                 raise HTTPException(500, f"cannot generate the demo data: {exc}") from exc
+            user = current_user()  # signed in, everybody has a demo of their own
             for project in storage.list_projects():  # newest first
-                if project.get("name") == DEMO_NAME:
+                owner = project.get("owner") if isinstance(project.get("owner"), dict) else {}
+                if project.get("name") == DEMO_NAME and (user is None or owner.get("id") == user["id"]):
                     return JSONOut({"project": project_view(project)})
             config = {"name": DEMO_NAME, "data_root": str(storage.demo_dir), "samples": samples,
                       "reference_sample": samples[0]["id"], **DEMO_SETTINGS}
-            return JSONOut({"project": project_view(storage.create_project(DEMO_NAME, config))})
+            return JSONOut({"project": project_view(storage.create_project(DEMO_NAME, config, owner=user))})
 
     return app

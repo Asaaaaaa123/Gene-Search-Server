@@ -7,6 +7,7 @@ import {
   h, api, mount, button, menuButton, icon, card, statusBadge, emptyState, errorPanel, banner, loading, fmt, navigate,
   confirmDialog, toast, refreshHealth,
 } from '../core.js';
+import { userName, isMe } from '../auth.js';
 
 const ACTIVE = new Set(['queued', 'running']);
 const POLL_MS = 4000;
@@ -119,18 +120,18 @@ export async function renderRuns(container) {
     const active = ACTIVE.has(r.status);
     return [
       r.project_id ? { label: 'Open project', icon: 'folder', hint: r.project_name || r.project_id, href: projectHref(r.project_id) } : null,
-      'separator',
-      {
+      r.can_edit === false ? null : 'separator',   // another user's run: open it, not delete it (webapp/auth.py)
+      r.can_edit === false ? null : {
         label: 'Delete run', icon: 'trash', danger: true, disabled: active,
         hint: active ? 'Cancel the run before deleting it' : null, onClick: () => deleteRun(r),
       },
-    ];
+    ].filter(Boolean);
   }
 
   function row(r, queuePos) {
     const active = ACTIVE.has(r.status);
     // an active run keeps a visible Cancel; everything else is in the row's menu, revealed on hover or focus
-    const cancel = active
+    const cancel = active && r.can_edit !== false
       ? button({ label: 'Cancel', icon: 'stop', small: true, kind: 'ghost danger', title: 'Cancel this run', onClick: () => cancelRun(r) })
       : null;
     if (cancel) cancel.dataset.action = 'cancel';
@@ -147,7 +148,7 @@ export async function renderRuns(container) {
     h('td', null, statusBadge(r.status)),
     h('td', { class: 'runs-name' },
       h('a', { href: runHref(r.id), dataset: { action: 'open' } }, r.label || 'Untitled run'),
-      h('div', { class: 'mono faint small' }, r.id)),
+      h('div', { class: 'mono faint small' }, r.id, userName(r.owner) ? h('span', { class: `owner-chip${isMe(r.owner) ? ' mine' : ''}`, style: 'margin-left:8px' }, `· started by ${userName(r.owner)}`) : null)),
     h('td', null, r.project_id
       ? h('a', { href: projectHref(r.project_id), dataset: { action: 'project' } }, r.project_name || r.project_id)
       : h('span', { class: 'muted' }, r.project_name || '—')),

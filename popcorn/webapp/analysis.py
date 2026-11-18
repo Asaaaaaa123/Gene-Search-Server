@@ -713,6 +713,11 @@ class Context:
         raise ToolError(f"{what}: this run has no field {key!r}")
 
     # ---- raw counts
+    @property
+    def has_expression(self) -> bool:
+        """Whether the raw counts can be asked for (they are read on first use)."""
+        return self._expression is not None
+
     def expression(self) -> Expression:
         if callable(self._expression):
             self._expression = self._expression()
@@ -1777,6 +1782,104 @@ TOOLS = (
          expression=False, icon="table"),
 )
 TOOLS_BY_ID = {t.id: t for t in TOOLS}
+
+
+# ============================================================================
+# THE ANALYSES A RUN STARTS WITH  [APP] 2026-11-17
+# ============================================================================
+# A finished run's Analysis tab starts with a few analyses chosen from what the run has (POST /runs/{rid}/analyses/
+# defaults), so that nobody faces an empty page: the cell types of each section and the marker genes behind them, the
+# tissue classes, the positivity calls, the genes that differ between the conditions (or the sections), which cell
+# types lie next to each other and the Leiden domains. Each is an ordinary card: its settings can be changed, it can
+# be deleted, and more can be added.
+DEFAULT_MARKERS_PER_TYPE = 2
+DEFAULT_MAX_CALLS = 12
+
+
+def _present_values(f: Field) -> list:
+    """The values of a category field that some bin has, in the field's order."""
+    counts = np.bincount(f.codes[f.codes >= 0], minlength=len(f.categories))
+    return [v for v, n in zip(f.categories, counts.tolist()) if n > 0]
+
+
+def default_analyses(ctx: Context, cfg: dict) -> list[dict]:
+    """[{"tool", "title", "params", "view"}]: the analyses a run starts with, detected from its fields, its sections
+    and their conditions (cfg: the run's configuration, for the conditions and the genes of the cell types)."""
+    keys = set(ctx.field_keys())
+    cards: list[dict] = []
+
+    def card(tool, title, params, view=None):
+        cards.append({"tool": tool, "title": title, "params": params, "view": view or {}})
+
+    types = _present_values(ctx.field("assigned_signature")) if "assigned_signature" in keys else []
+    real_types = [t for t in types if t != "ambiguous"]
+
+    # 1. cell types of each section
+    if types:
+        card("composition", "Cell types in each section",
+             {"count": {"field": "assigned_signature"}, "across": {"field": "sample"}}, {"chart": "stacked"})
+
+    # 2. the marker genes behind them (the genes the cell types were called from)
+    if real_types and ctx.has_expression:
+        signatures = cfg.get("signatures") if isinstance(cfg.get("signatures"), dict) else {}
+        by_value = {}
+        for key, d in signatures.items():
+            if isinstance(d, dict):
+                by_value.setdefault(str(d.get("label") or key).replace(" ", "_"), d)
+                by_value.setdefault(key, d)
+        genes: list[str] = []
+        for t in real_types:
+            d = by_value.get(t) or {}
+            mine = []
+            for g in [*(d.get("core") or []), *(d.get("canonical") or []), *(d.get("extended") or [])]:
+                if isinstance(g, str) and g and g not in genes and g not in mine:
+                    mine.append(g)
+                if len(mine) >= DEFAULT_MARKERS_PER_TYPE:
+                    break
+            genes.extend(mine)
+        genes = genes[:MAX_GENES]
+        if genes:
+            card("expression", "Marker genes of each cell type",
+                 {"genes": genes, "group_by": {"field": "assigned_signature", "values": real_types}}, {"chart": "dot"})
+
+    # 3. tissue classes
+    if "tissue_class" in keys and len(_present_values(ctx.field("tissue_class"))) > 1:
+        card("composition", "Tissue classes in each section",
+             {"count": {"field": "tissue_class"}, "across": {"field": "sample"}}, {"chart": "stacked"})
+
+    # 4. positivity calls (native depth: the pooled and depth-matched copies are variants of them)
+    calls = [k for k in ctx.field_keys() if k.startswith("positive_") and not k.startswith("positive_fraction_")
+             and not POOLED_RE.search(k) and ctx.field(k).kind == "bool"]
+    if calls:
+        card("composition", "Positive bins in each section",
+             {"count": {"calls": calls[:DEFAULT_MAX_CALLS]}, "across": {"field": "sample"}}, {"chart": "grouped"})
+
+    # 5. genes that differ between the conditions (else between the sections and the reference section)
+    ids = [s["id"] for s in ctx.samples]
+    if len(ids) > 1 and ctx.has_expression:
+        configured = {s.get("id"): s for s in cfg.get("samples") or [] if isinstance(s, dict)}
+        cond = {i: str(configured.get(i, {}).get("condition") or "").strip() for i in ids}
+        ref = cfg.get("reference_sample") if cfg.get("reference_sample") in ids else ids[0]
+        label = ctx.field("sample").text
+        if cond[ref] and any(cond[i] and cond[i] != cond[ref] for i in ids):
+            a = [i for i in ids if cond[i] and cond[i] != cond[ref]]
+            b = [i for i in ids if cond[i] == cond[ref]]
+            others = ", ".join(dict.fromkeys(cond[i] for i in a))
+            title = f"Genes that differ: {others} vs {cond[ref]}"
+        else:
+            a, b = [i for i in ids if i != ref], [ref]
+            title = f"Genes that differ from {label(ref)}"
+        card("de", title, {"a": [{"field": "sample", "values": a}], "b": [{"field": "sample", "values": b}]})
+
+    # 6. which cell types lie next to each other
+    if len(real_types) > 1:
+        card("neighborhood", "Cell types next to each other", {"field": "assigned_signature"})
+
+    # 7. Leiden domains
+    if "leiden_domain" in keys and len(_present_values(ctx.field("leiden_domain"))) > 1:
+        card("composition", "Leiden domains in each section",
+             {"count": {"field": "leiden_domain"}, "across": {"field": "sample"}}, {"chart": "stacked"})
+    return cards
 
 
 def run_tool(tool_id: str, ctx: Context, params: dict) -> tuple[dict, dict]:

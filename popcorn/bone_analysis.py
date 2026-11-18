@@ -83,6 +83,7 @@ import copy
 import json
 import platform
 import re
+import shutil
 import sys
 import traceback
 import warnings
@@ -609,6 +610,28 @@ def map_domains_from_coarser(a_fine, coarse, fine_um, coarse_um, keys=("leiden",
 
 def present(a, genes):
     return [g for g in genes if g in a.var_names]
+
+
+def match_gene_case(sigs, var_names):
+    """[APP] Signature genes written in another case than the data's (ctsk, CTSK for Ctsk) take the data's spelling,
+    in place; genes the data does not have stay as written (reported missing). Returns {written: data's spelling}."""
+    exact = set(map(str, var_names))
+    folded = {}
+    for g in sorted(exact):
+        folded.setdefault(g.casefold(), g)
+    changed = {}
+    for d in sigs.values():
+        for key in ("core", "extended"):
+            out = []
+            for g in d.get(key) or []:
+                g = str(g)
+                fixed = g if g in exact else folded.get(g.casefold(), g)
+                if fixed != g:
+                    changed[g] = fixed
+                if fixed not in out:
+                    out.append(fixed)
+            d[key] = out
+    return changed
 
 
 def score_all(a, sigs=SIG, ctrl_size=50, seed=RANDOM_SEED):
@@ -1718,6 +1741,165 @@ def run_analysis_from_config(cfg, out, progress=None):
         return _run(cfg, out, progress)
 
 
+# ============================================================================
+# NEW CELL TYPES FOR A FINISHED RUN  [APP] 2026-11-17
+# ============================================================================
+# A run's joint AnnData object (write_h5ad) holds the sections after quality control, the log-normalized matrix, the
+# Leiden domains and the region of interest. New or changed cell types (signatures) are scored on it again: the gene-set
+# scores, the positivity calls, the cell type of every bin, the per-bin table and the summary are computed anew; the
+# sections are not read again, and quality control, normalization, the Leiden domains and the region of interest are
+# those of the earlier run (their tables are copied from it).
+RETYPE_DROP_PREFIXES = ("score_", "ncore_", "pos_", "pooled_", "pooled_dm_")
+RETYPE_DROP_COLUMNS = ("program", "program_dm")
+# results of the earlier run that stay valid (they do not depend on the signatures)
+RETYPE_KEEP = ("qc_threshold_sweep_", "qc_per_bin_", "leiden_domain_screen.csv", "leiden_domain_markers.csv",
+               "leiden_seed_stability_adjusted_rand_index.csv")
+
+
+def _retype_steps(cfg):
+    st = cfg["steps"]
+    return [
+        ("reuse", "Reuse the sections, quality control and Leiden domains of the earlier run", True),
+        ("scores", "Gene-set scores and positivity calls", True),
+        ("positivity", "Positivity rates at native depth", True),
+        ("assignment", "Cell type of every bin (spatially pooled scores)", st["assignment"]),
+        ("domain_matrix", "Leiden domains by cell type", st["leiden"]),
+        ("tables", "Gene-set table and per-bin calls", True),
+        ("write_h5ad", f"Write joint_{_bin_label(cfg['bin_size'])}.h5ad", st["write_h5ad"]),
+        ("summary", "Summary", True),
+    ]
+
+
+def retype_planned_steps(cfg) -> list[str]:
+    """[APP] Progress labels of retype_from_h5ad for this configuration, in order."""
+    return [label for _, label, on in _retype_steps(pc.merge_with_defaults(cfg)) if on]
+
+
+def retype_from_h5ad(cfg, out, h5ad, earlier_results, progress=None):
+    """[APP] The cell types of `cfg` (signatures, positivity calls, tissue assignment, classes) applied to the joint
+    AnnData object `h5ad` of an earlier run whose results are in `earlier_results`; writes the outputs into `out`."""
+    cfg = pc.effective_config(cfg)
+    progress = progress or pc.Progress()
+    out, earlier_results = Path(out), Path(earlier_results)
+    out.mkdir(parents=True, exist_ok=True)
+    pc.save_config(cfg, out / "config.json")
+    with _thread_limits(cfg.get("deterministic", True)):
+        return _retype(cfg, out, Path(h5ad), earlier_results, progress)
+
+
+def _retype(cfg, out, h5ad, earlier, progress):
+    steps = _retype_steps(cfg)
+    label = {k: lab for k, lab, _ in steps}
+    enabled = {k: en for k, _, en in steps}
+    progress.plan([lab for _, lab, on in steps if on])
+    sco = cfg["scoring"]
+    sigs = {k: {"core": list(d["core"]), "extended": list(d["extended"]), "competes": list(d.get("competes") or []),
+                "excluded": dict(d.get("excluded") or {})} for k, d in cfg["signatures"].items()}
+    primary, programs, seed = cfg["primary"], cfg["programs"], int(cfg["seed"])
+    samples = pc.sample_ids(cfg)
+    ref = cfg["reference_sample"]
+    B = _bin_label(cfg["bin_size"])
+    call_kw = dict(sigs=sigs, min_core=sco["min_core"], pct=sco["null_percentile"], n_sub=sco["null_n_sub"],
+                   ctrl_size=sco["ctrl_size"], seed=seed, progress=progress)
+    target_sum = float(cfg["clustering"]["target_sum"])
+    W = _Outputs(out)
+    W.add("config.json", "data", "Configuration", "The effective configuration of this run (pipeline_config.py).")
+    tables = {}
+    try:
+        # ---- the earlier run: its object and the tables that do not depend on the signatures
+        progress.step(label["reuse"])
+        if not h5ad.is_file():
+            raise FileNotFoundError(f"the earlier run has no {h5ad.name}: start a full run with these cell types")
+        try:
+            manifest = json.loads((earlier / "manifest.json").read_text(encoding="utf-8")).get("files") or []
+        except (OSError, ValueError):
+            manifest = []
+        described = {f.get("file"): f for f in manifest if isinstance(f, dict)}
+        for f in sorted(earlier.iterdir()):
+            if f.is_file() and f.name.startswith(RETYPE_KEEP):
+                shutil.copyfile(f, out / f.name)
+                d = described.get(f.name) or {}
+                W.add(f.name, d.get("kind", "table"), d.get("title", f.name),
+                      ((d.get("description") or "") + " (from the earlier run)").strip(), d.get("rows"))
+        try:
+            loaded = {s["id"]: s.get("n_bins_loaded") or 0 for s in
+                      json.loads((earlier / "summary.json").read_text(encoding="utf-8")).get("samples") or []}
+        except (OSError, ValueError):
+            loaded = {}
+        a = ad.read_h5ad(h5ad)
+        if "lognorm" not in a.layers:
+            raise ValueError(f"{h5ad.name} has no log-normalized layer: start a full run with these cell types")
+        drop = [c for c in a.obs.columns if c.startswith(RETYPE_DROP_PREFIXES) or c in RETYPE_DROP_COLUMNS]
+        a.obs = a.obs.drop(columns=drop)
+        if "signature_coverage" in a.uns:
+            del a.uns["signature_coverage"]
+        a.obs["sample"] = pd.Categorical(a.obs["sample"].astype(str), categories=samples)
+        _report_case(match_gene_case(sigs, a.var_names))
+
+        # ---- scores and positivity calls
+        progress.step(label["scores"])
+        a = score_all(a, sigs, sco["ctrl_size"], seed)
+        for r in a.uns["signature_coverage"].itertuples():
+            if r.missing:
+                _warn(progress, f"signature {r.signature}: genes not in the data: {r.missing.replace(',', ', ')}")
+        a = call_positive(a, primary, n_perm=sco["n_perm"], **call_kw)
+
+        progress.step(label["positivity"])
+        tumor_ids = [s["id"] for s in cfg["samples"] if s.get("condition") in cfg["compartments"]["tumor_conditions"]]
+        tables["native"] = W.csv(positivity_table(a, primary, roi_key="in_marrow_roi", reference=ref, samples=samples,
+                                                  tumor_samples=tumor_ids),
+                                 "positivity_native_depth.csv", "Positivity, native depth (ROI)",
+                                 "Positive bins per signature and section inside the region of interest, Wilson 95% "
+                                 "intervals.")
+
+        if enabled["assignment"]:
+            progress.step(label["assignment"])
+            pool_kw = dict(pool_k=sco["pool_k"], mode=sco["depth_matching"], names=primary,
+                           n_perm=sco["n_perm_resampled"], target_sum=target_sum, **call_kw)
+            a = spatially_pooled_scores(a, **pool_kw)
+            a = assign_dominant_program(a, "pooled_", "program", programs, sco["min_core"])
+            a = spatially_pooled_scores(a, depth_match=True, **pool_kw)
+            a = assign_dominant_program(a, "pooled_dm_", "program_dm", programs, sco["min_core"])
+            tables["comp"] = W.csv(program_composition(a, "program", samples), "cell_type_composition_native.csv",
+                                   "Cell type of every bin, native depth", "Bins per assigned cell type and section.")
+            tables["comp_dm"] = W.csv(program_composition(a, "program_dm", samples),
+                                      "cell_type_composition_depth_matched.csv", "Cell type of every bin, depth-matched",
+                                      "Bins per assigned cell type and section after depth matching.")
+
+        if enabled["domain_matrix"]:
+            if "leiden" in a.obs:
+                progress.step(label["domain_matrix"])
+                M, un = leiden_signature_matrix(a, primary, cfg["signatures"], lambda c: pc.signature_label(cfg, c),
+                                                samples=samples)
+                W.csv(M, "leiden_domain_by_cell_type_zscores.csv", "Leiden domains by cell type",
+                      "Mean cell-type score per Leiden domain, z-scored across domains.")
+                tables["unresolved"] = W.csv(un, "leiden_unresolved_bins.csv", "Unresolved bins",
+                                             "Bins in the 'unresolved' domain: all sections (first row, sample 'all'), "
+                                             "then each section, in all bins and in the region of interest.")
+            else:
+                progress.skip(label["domain_matrix"], "the earlier run has no Leiden domains")
+
+        progress.step(label["tables"])
+        W.csv(table1_signatures(cfg["signatures"]), "gene_signatures.csv", "Gene signatures (cell types)",
+              "Signature genes, genes counted toward the two-gene rule, excluded genes.")
+        W.csv(per_bin_table(a, cfg), f"per_bin_signature_calls_{B}.csv.gz", "Per-bin calls",
+              "One row per bin: position (um), region of interest, assignment, tissue class, positivity.")
+        if enabled["write_h5ad"]:
+            progress.step(label["write_h5ad"])
+            a.write(out / f"joint_{B}.h5ad")
+            W.add(f"joint_{B}.h5ad", "object", "Joint AnnData object",
+                  "All sections, counts and log-normalized layers, scores, calls, ROI, domains and assignments.")
+
+        progress.step(label["summary"])
+        summary = _summary(cfg, a, loaded, tables, progress)
+        (out / "summary.json").write_text(json.dumps(summary, indent=2, default=_json_default), encoding="utf-8")
+        W.add("summary.json", "data", "Summary", "Key numbers of this run.")
+        print(f"done -> {out}")
+        return a
+    finally:
+        W.write()
+
+
 def _resolve_mask_paths(cfg):
     masks = {}
     for sid, p in (cfg["roi"].get("masks") or {}).items():
@@ -1728,6 +1910,12 @@ def _resolve_mask_paths(cfg):
             raise FileNotFoundError(f"region of interest of {sid}: {path} not found")
         masks[sid] = path
     return masks
+
+
+def _report_case(changed):
+    if changed:
+        print("[genes] written in another case than the data's, used as "
+              + ", ".join(f"{k} -> {v}" for k, v in sorted(changed.items())))
 
 
 def _run(cfg, out, progress):
@@ -1781,6 +1969,7 @@ def _run(cfg, out, progress):
         a.obs["sample"] = pd.Categorical(a.obs["sample"].astype(str), categories=samples)
         a.uns["microns_per_pixel"] = mpp
         del adatas
+        _report_case(match_gene_case(sigs, a.var_names))
         done.add("load")
 
         # ---- 1b. per-bin QC at the QC bin size (Supplementary Figure S1) ------------------- [APP]

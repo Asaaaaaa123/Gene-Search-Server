@@ -6,13 +6,16 @@
 // Header actions: Export (a menu of zip downloads), Re-run and a "Run actions" menu (open the project, delete the run);
 // Cancel joins them while the run is queued or running.
 import {
-  h, api, apiUrl, mount, button, menuButton, icon, card, tabs, statusBadge, loading, emptyState, errorPanel, banner,
+  h, api, apiUrl, authHeaders, mount, button, menuButton, icon, card, tabs, statusBadge, loading, emptyState, errorPanel, banner,
   toast, confirmDialog, promptDialog, fmt, copyText, navigate, setPathSilently, clone, refreshHealth, state,
 } from '../core.js';
 import { logView, downloadText } from '../components/log-view.js';
 import { tableBrowser, fileUrl, formatNumber } from '../components/table-viewer.js';
 import { analysisWorkbench } from '../components/analysis.js';
 import { spatialViewer, runSource } from '../components/spatial-viewer.js';
+import { ownerText, userName, isMe, changedText } from '../auth.js';
+import { signatureEditor } from '../components/signature-editor.js';
+import { geneCatalog } from '../components/chips.js';
 
 const ACTIVE = new Set(['queued', 'running']);
 const FAILED = new Set(['failed', 'interrupted']);
@@ -21,12 +24,13 @@ const TABS = [
   { id: 'progress', label: 'Progress', icon: 'activity' },
   { id: 'summary', label: 'Summary', icon: 'chart' },
   { id: 'analysis', label: 'Analysis', icon: 'flask' },
+  { id: 'celltypes', label: 'Cell types', icon: 'dna' },
   { id: 'tables', label: 'Tables', icon: 'table' },
   { id: 'viewer', label: 'Spatial viewer', icon: 'map' },
   { id: 'config', label: 'Configuration', icon: 'sliders' },
 ];
 const TAB_ALIASES = { figures: 'analysis' };   // addresses kept from before the Analysis tab replaced the figures
-const RESULT_TABS = new Set(['summary', 'analysis', 'tables', 'viewer']);
+const RESULT_TABS = new Set(['summary', 'analysis', 'celltypes', 'tables', 'viewer']);
 const STEP_TEXT = { pending: 'pending', running: 'running', done: 'done', skipped: 'skipped', failed: 'failed' };
 const WARNINGS_SHOWN = 8;
 const PER_BIN_TABLE = /^per_bin_signature_calls_\d+um\.csv\.gz$/;
@@ -84,7 +88,7 @@ function fileNameOf(res, fallback) {
 async function downloadZip(url, fallbackName, what) {
   let res;
   try {
-    res = await fetch(url, { credentials: 'same-origin' });
+    res = await fetch(url, { credentials: 'same-origin', headers: await authHeaders() });
   } catch {
     toast('Cannot reach the server. Is it still running?', 'error');
     return null;
@@ -359,6 +363,8 @@ export async function renderRun(container, { id, tab }) {
   let ticker = null;
 
   const isActive = () => ACTIVE.has(st.run.status);
+  // signed in, only the run's owner cancels, re-runs, deletes it and changes its analyses (webapp/auth.py)
+  const mine = first.can_edit !== false;
 
   // ---- results, fetched lazily; partial results of an active run are never kept
   function fetchResult(key, path) {
@@ -388,7 +394,7 @@ export async function renderRun(container, { id, tab }) {
   const rerunBtn = button({ label: 'Re-run', icon: 'refresh', title: 'Start a new run with the same configuration snapshot and regions', onClick: rerun });
   const actionsEl = h('div', { class: 'actions' },
     menuButton({ label: 'Export', icon: 'download', items: exportItems }),
-    rerunBtn,
+    mine ? rerunBtn : null,
     menuButton({ title: 'Run actions', items: runActionItems }));
   mount(headerEl, titlesEl, actionsEl);
   let cancelBtn = null;
@@ -396,7 +402,7 @@ export async function renderRun(container, { id, tab }) {
   function paintHeader() {
     const r = st.run;
     const active = isActive();
-    if (active && !cancelBtn) {
+    if (active && !cancelBtn && mine) {
       // while the run is queued or running, stopping it is the action that matters: a visible button
       cancelBtn = button({ label: 'Cancel', icon: 'stop', kind: 'danger', onClick: cancelRun });
       actionsEl.prepend(cancelBtn);
@@ -408,13 +414,25 @@ export async function renderRun(container, { id, tab }) {
       if (hadFocus) rerunBtn.focus();
     }
     const title = r.label || r.project_name || r.id;
-    const sig = JSON.stringify([r.status, title, r.project_id, r.project_name, fmt.ago(r.created), r.started, r.finished, r.duration_s]);
+    const sig = JSON.stringify([r.status, title, r.project_id, r.project_name, fmt.ago(r.created), r.started, r.finished, r.duration_s, changedText(r)]);
     if (sig === headerSig) return;
     headerSig = sig;
     const meta = [];
     if (r.project_id) {
       meta.push(h('span', null, 'Project ', h('a', { href: `#/projects/${encodeURIComponent(r.project_id)}` }, r.project_name || r.project_id)));
     }
+    if (r.parent_run) {
+      meta.push(h('span', { title: r.retyped ? 'Its cell types were scored on the data of that run' : 'Analysed again with other cell types' },
+        'New cell types of ', h('a', { class: 'mono', href: `#/runs/${encodeURIComponent(r.parent_run)}` }, r.parent_run)));
+    }
+    const who = userName(r.owner);
+    if (who) {
+      const mine = isMe(r.owner);
+      meta.push(h('span', { class: `owner-chip${mine ? ' mine' : ''}`, title: mine ? 'You started this run' : `Started by ${who}: you can look at it and download it; only ${who} can change it` },
+        icon(mine ? 'user' : 'lock', { size: 12 }), mine || r.can_edit !== false ? `Started by ${who}` : `Started by ${who} · view only`));
+    }
+    const changed = changedText(r);
+    if (changed) meta.push(h('span', { title: `The regions drawn on this run: ${fmt.date(r.changed_by.at)}` }, `Regions: ${changed.charAt(0).toLowerCase()}${changed.slice(1)}`));
     meta.push(h('span', { title: fmt.date(r.created) }, `Created ${fmt.ago(r.created)}`));
     if (r.started) meta.push(h('span', null, `Started ${fmt.date(r.started)}`));
     if (r.finished) meta.push(h('span', null, `Finished ${fmt.date(r.finished)}`));
@@ -436,12 +454,12 @@ export async function renderRun(container, { id, tab }) {
         label: 'Open project', icon: 'folder', hint: r.project_name || r.project_id,
         href: `#/projects/${encodeURIComponent(r.project_id)}`,
       } : null,
-      'separator',
-      {
+      mine ? 'separator' : null,
+      mine ? {
         label: 'Delete run', icon: 'trash', danger: true, disabled: active,
         hint: active ? 'Cancel the run before deleting it' : null, onClick: deleteRun,
-      },
-    ];
+      } : null,
+    ].filter(Boolean);
   }
 
   // ---- export: zips of the results, built by the server on request
@@ -569,7 +587,7 @@ export async function renderRun(container, { id, tab }) {
     if (pane && pane.destroy) pane.destroy();
     pane = null;
     const token = ++paneToken;
-    const builders = { progress: progressPane, summary: summaryPane, analysis: analysisPane, tables: tablesPane, viewer: viewerPane, config: configPane };
+    const builders = { progress: progressPane, summary: summaryPane, analysis: analysisPane, celltypes: cellTypesPane, tables: tablesPane, viewer: viewerPane, config: configPane };
     const show = (p) => {
       pane = p;
       mount(bodyEl, p.el);
@@ -727,7 +745,7 @@ export async function renderRun(container, { id, tab }) {
       };
     }
     const w = analysisWorkbench({
-      runId: id, store: st.analysisStore, binUm: binUmOf(st.run.config),
+      runId: id, store: st.analysisStore, binUm: binUmOf(st.run.config), canEdit: mine, owner: ownerText(st.run),
       // a gene clicked in a table of the Analysis tab: shown on the map of the Spatial viewer tab
       onShowGenes: (genes) => { st.viewerShow = { genes }; selectTab('viewer'); },
     });
@@ -768,6 +786,77 @@ export async function renderRun(container, { id, tab }) {
       st.viewerShow = null;
     }
     return { el: v.el, destroy: v.destroy };
+  }
+
+  // ---- cell types: change them, or make new ones, and regenerate the results with them (POST /retype: a new run that
+  // scores them on this run's joint object; quality control, normalization, Leiden domains and region of interest stay)
+  async function cellTypesPane() {
+    const r = st.run;
+    if (r.status !== 'succeeded') {
+      return { el: card({ body: emptyState({ icon: 'dna', title: 'Cell types', text: ACTIVE.has(r.status) ? 'When the run has finished, its cell types can be changed here, or new ones made from genes of your choice.' : 'New cell types can be given to a run that finished.' }) }) };
+    }
+    const [types, defaults] = await Promise.all([api(`/api/runs/${enc}/cell-types`), api('/api/defaults')]);
+    if (!st.genes) st.genes = geneCatalog(() => api(`/api/runs/${enc}/gene-names`));
+    if (!st.cellUi) st.cellUi = {};
+    const draft = {
+      signatures: clone(types.signatures || {}), primary: clone(types.primary || []), programs: clone(types.programs || []),
+      classes: clone(types.classes || []), scoring: { min_core: types.min_core },
+    };
+    const saved = JSON.stringify([draft.signatures, draft.primary, draft.programs, draft.classes]);
+    const changedNow = () => JSON.stringify([draft.signatures, draft.primary, draft.programs, draft.classes]) !== saved;
+    const mine = r.can_edit !== false;
+    const statusEl = h('div', { class: 'muted small' });
+    let busy = false;
+    const regen = button({ label: 'Regenerate with these cell types', icon: 'refresh', kind: 'primary', onClick: () => regenerate() });
+    const undo = button({ label: 'Undo changes', icon: 'undo', onClick: () => renderPane() });
+    const paintBar = () => {
+      const changed = changedNow();
+      undo.disabled = !changed || busy;
+      regen.disabled = busy;
+      statusEl.textContent = changed ? 'Changed: regenerate to see the results with these cell types.' : 'The cell types of this run. Change them, or add new ones (Add), then regenerate.';
+    };
+    const editor = signatureEditor({
+      cfg: draft, defaults: (defaults && defaults.config) || {}, report: null, ui: st.cellUi, genes: st.genes,
+      ubiquitous: false, onChange: paintBar,
+    });
+
+    async function regenerate() {
+      const unusable = draft.programs.concat(draft.primary)
+        .filter((n, i, all) => all.indexOf(n) === i && draft.signatures[n] && (draft.signatures[n].extended || []).length < 2);
+      if (unusable.length) {
+        toast(`Give ${unusable.map((n) => (draft.signatures[n].label || n)).join(', ')} at least two scored genes first.`, 'error');
+        return;
+      }
+      busy = true;
+      paintBar();
+      try {
+        const next = await api(`/api/runs/${enc}/retype`, {
+          method: 'POST',
+          body: { signatures: draft.signatures, primary: draft.primary, programs: draft.programs, classes: draft.classes },
+        });
+        toast(next.retyped ? 'Regenerating: the new cell types are scored on the data of this run.' : 'Regenerating: this run has no .h5ad file, so its sections are analysed again.', 'success');
+        navigate(`/runs/${encodeURIComponent(next.id)}`);
+      } catch (e) {
+        toast(`Cannot regenerate: ${e.message || e}`, 'error', { timeout: 9000 });
+        busy = false;
+        paintBar();
+      }
+    }
+
+    paintBar();
+    const how = types.reusable
+      ? 'Quality control, normalization, the Leiden domains and the region of interest of this run are kept: only the gene-set scores, the positivity calls and the cell type of every bin are computed again.'
+      : 'This run has no .h5ad file (the AnnData step was off): the new run analyses its sections again from the start.';
+    return {
+      el: h('div', { class: 'stack-lg' },
+        card({
+          title: 'Regenerate with new cell types',
+          subtitle: `${how} The results go into a new run; this run stays as it is${mine ? '' : ' (the new run is yours)'}.`,
+          body: h('div', { class: 'row', style: 'flex-wrap:wrap;gap:8px;align-items:center' }, regen, undo, statusEl),
+          cls: 'retype-bar',
+        }),
+        editor.el),
+    };
   }
 
   function configPane() {

@@ -572,3 +572,51 @@ def test_deleting_the_run_removes_its_analyses(tmp_path, tiny_demo, tiny_joint):
         assert list((run_dir / "analyses").glob("a-*.json"))
         assert c.delete(f"/api/runs/{rid}").status_code == 200 and not run_dir.exists()
         assert c.get(f"/api/runs/{rid}/analyses").status_code == 404
+
+
+def test_a_run_starts_with_the_recommended_analyses(analysed, tmp_path):
+    """POST /analyses/defaults: analyses chosen from what the run has, each computed without error; once added they
+    are not added again, and deleting them does not bring them back on their own (defaults_added)."""
+    c, rid = analysed["c"], analysed["rid"]
+    for card in c.get(f"/api/runs/{rid}/analyses").json():          # earlier tests' cards
+        c.delete(f"/api/runs/{rid}/analyses/{card['id']}")
+    mark = analysed["app"].state.storage.run_dir(rid) / server.DEFAULTS_MARK
+    mark.unlink(missing_ok=True)
+    assert c.get(f"/api/runs/{rid}/analysis/context").json()["defaults_added"] is False
+    r = c.post(f"/api/runs/{rid}/analyses/defaults")
+    assert r.status_code == 200, r.text
+    added = r.json()
+    titles = [card["title"] for card in added["cards"]]
+    assert titles[0] == "Cell types in each section" and added["added"] == len(titles) >= 5
+    assert "Marker genes of each cell type" in titles and "Cell types next to each other" in titles
+    assert "Genes that differ: tumor vs control" in titles                    # the conditions of the sections
+    for card in added["cards"]:
+        card = finished(analysed, card)
+        assert card["status"] == "done", f"{card['title']}: {card['error']}"
+    assert c.get(f"/api/runs/{rid}/analysis/context").json()["defaults_added"] is True
+    assert c.post(f"/api/runs/{rid}/analyses/defaults").json()["added"] == 0   # every one is already there
+    listed = c.get(f"/api/runs/{rid}/analyses").json()
+    assert [x["title"] for x in listed][:len(titles)] == titles              # newest first: the first on top
+    for card in listed:
+        c.delete(f"/api/runs/{rid}/analyses/{card['id']}")
+
+
+def test_recommended_analyses_without_raw_counts_or_conditions():
+    """Without the raw counts the analyses that need them are left out; without conditions the sections are compared
+    with the reference section."""
+    import numpy as np
+    n = 40
+    fields = {"assigned_signature": an.Field("assigned_signature", "category", ["osteoclast", "osteoblast", "ambiguous"],
+                                             np.arange(n) % 3),
+              "positive_osteoclast": an.Field("positive_osteoclast", "bool", values=np.arange(n) % 2 == 0)}
+    samples = [{"id": "S1", "label": "one"}, {"id": "S2", "label": "two"}]
+    ctx = an.Context(samples=samples, sample_codes=np.arange(n) % 2, x=np.arange(n), y=np.zeros(n), fields=fields)
+    cfg = {"samples": samples, "reference_sample": "S1", "signatures": {"osteoclast": {"core": ["Ctsk"]}}}
+    titles = [c["title"] for c in an.default_analyses(ctx, cfg)]
+    assert titles == ["Cell types in each section", "Positive bins in each section", "Cell types next to each other"]
+    ctx2 = an.Context(samples=samples, sample_codes=np.arange(n) % 2, x=np.arange(n), y=np.zeros(n), fields=fields,
+                      expression=lambda: None)
+    cards = {c["title"]: c for c in an.default_analyses(ctx2, cfg)}
+    assert cards["Marker genes of each cell type"]["params"]["genes"] == ["Ctsk"]
+    de = cards["Genes that differ from one"]["params"]
+    assert de["a"] == [{"field": "sample", "values": ["S2"]}] and de["b"] == [{"field": "sample", "values": ["S1"]}]

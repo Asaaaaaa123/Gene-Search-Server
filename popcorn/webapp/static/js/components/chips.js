@@ -39,6 +39,61 @@ export function iconButton(iconName, label, onClick, { kind = 'ghost', disabled 
   return b;
 }
 
+/**
+ * The gene names of the data, loaded once with `load()` (resolving to {genes: [...], problems: [...]}): gene fields
+ * (chipInput's catalog) offer them while typing, take their spelling whatever the case typed, and say which typed genes
+ * the data does not have. get() is null until they are loaded (or when they cannot be).
+ */
+export function geneCatalog(load) {
+  let data = null;
+  let error = null;
+  let pending = null;
+  const listeners = new Set();
+  const fold = (g) => String(g).toLocaleLowerCase('en-US');
+  const cat = {
+    get: () => data,
+    error: () => error,
+    loading: () => !!pending && !data && !error,
+    /** The data's spelling of a gene typed in any case; null when the data does not have it. */
+    find(g) {
+      if (!data) return null;
+      return data.exact.has(g) ? g : (data.byFold.get(fold(g)) ?? null);
+    },
+    /** Up to `limit` genes that start with (first) or contain the text, any case, leaving out `skip` (folded). */
+    suggest(text, limit = 12, skip = new Set()) {
+      if (!data) return [];
+      const q = fold(text.trim());
+      if (!q) return [];
+      const starts = [];
+      const contains = [];
+      for (const g of data.genes) {
+        const f = fold(g);
+        if (skip.has(f)) continue;
+        const i = f.indexOf(q);
+        if (i === 0) starts.push(g);
+        else if (i > 0 && contains.length < limit) contains.push(g);
+        if (starts.length >= limit) break;
+      }
+      return [...starts, ...contains].slice(0, limit);
+    },
+    onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    load() {
+      if (!pending) {
+        pending = Promise.resolve().then(load).then((res) => {
+          const genes = Array.isArray(res && res.genes) ? res.genes.map(String) : [];
+          const byFold = new Map();
+          for (const g of genes) if (!byFold.has(fold(g))) byFold.set(fold(g), g);
+          data = { genes, exact: new Set(genes), byFold, problems: Array.isArray(res && res.problems) ? res.problems : [] };
+          if (!genes.length) { error = (data.problems[0]) || 'the data has no gene names'; data = null; }
+        }).catch((e) => { error = e && e.message ? e.message : String(e); })
+          .finally(() => listeners.forEach((fn) => fn()));
+      }
+      return pending;
+    },
+  };
+  return cat;
+}
+
 function restartFlash(el) {
   el.classList.remove('flash');
   void el.offsetWidth; // reflow, so that the animation runs again
@@ -50,9 +105,11 @@ function restartFlash(el) {
  * item; duplicates are skipped (the existing chip flashes); Backspace in the empty field removes the last chip;
  * Backspace or Delete on a chip's remove button removes that chip.
  * classify(value) -> '' | 'ok' | 'warn' | 'bad'; isCore(value) -> bold chip; describe(value) -> tooltip.
+ * catalog (geneCatalog): typing offers the genes of the data (arrow keys and Enter, or a click, pick one); a gene typed
+ * in another case takes the data's spelling; genes the data does not have are listed under the field.
  * Returns {el, set(values), refresh(), values(), focus()}.
  */
-export function chipInput({ values = [], onChange, classify, isCore, describe, label = 'Genes', placeholder = 'Add…', id } = {}) {
+export function chipInput({ values = [], onChange, classify, isCore, describe, label = 'Genes', placeholder = 'Add…', id, catalog = null } = {}) {
   let items = uniqueList(values);
   const nodes = new Map();
   const list = h('ul', { class: 'chip-list', 'aria-label': label });
@@ -60,10 +117,23 @@ export function chipInput({ values = [], onChange, classify, isCore, describe, l
     class: 'chip-entry', type: 'text', id, placeholder, spellcheck: false, autocomplete: 'off',
     'aria-label': `Add to ${label}`,
   });
-  const el = h('div', { class: 'chip-input' }, list, entry);
-  el.addEventListener('mousedown', (e) => {
-    if (e.target === el || e.target === list) { e.preventDefault(); entry.focus(); }
+  const box = h('div', { class: 'chip-input' }, list, entry);
+  box.addEventListener('mousedown', (e) => {
+    if (e.target === box || e.target === list) { e.preventDefault(); entry.focus(); }
   });
+  const suggestId = id ? `${id}-suggest` : '';
+  const menu = h('ul', { class: 'chip-suggest hidden', role: 'listbox', id: suggestId || null, 'aria-label': `Genes of the data for ${label}` });
+  const note = h('div', { class: 'chip-note hidden', role: 'status' });
+  const el = catalog ? h('div', { class: 'chip-field' }, h('div', { class: 'chip-anchor' }, box, menu), note) : box;
+  if (catalog) {
+    entry.setAttribute('role', 'combobox');
+    entry.setAttribute('aria-autocomplete', 'list');
+    entry.setAttribute('aria-expanded', 'false');
+    if (suggestId) entry.setAttribute('aria-controls', suggestId);
+  }
+  const fold = (g) => String(g).toLocaleLowerCase('en-US');
+  let shown = [];
+  let active = -1;
 
   const emit = () => { if (onChange) onChange(items.slice()); };
 
@@ -86,10 +156,68 @@ export function chipInput({ values = [], onChange, classify, isCore, describe, l
     return li;
   }
 
+  function paintNote() {
+    if (!catalog) return;
+    const known = catalog.get();
+    const missing = known ? items.filter((v) => !catalog.find(v)) : [];
+    note.classList.toggle('hidden', !missing.length);
+    note.replaceChildren(...(missing.length ? [icon('alert', { size: 13 }),
+      h('span', null, `Not found in the data: ${missing.join(', ')}. `,
+        h('span', { class: 'muted' }, 'Check the spelling: these genes are not scored.'))] : []));
+  }
+
   function paint() {
     for (const v of [...nodes.keys()]) if (!items.includes(v)) nodes.delete(v);
     list.replaceChildren(...items.map(node));
-    el.classList.toggle('is-empty', items.length === 0);
+    box.classList.toggle('is-empty', items.length === 0);
+    paintNote();
+  }
+
+  function closeMenu() {
+    shown = [];
+    active = -1;
+    menu.classList.add('hidden');
+    menu.replaceChildren();
+    entry.setAttribute('aria-expanded', 'false');
+    entry.removeAttribute('aria-activedescendant');
+  }
+
+  function paintMenu() {
+    if (!catalog) return;
+    const text = entry.value;
+    if (!text.trim() || SEPARATORS.test(text.trim())) { closeMenu(); return; }
+    if (!catalog.get()) {
+      if (!catalog.error()) catalog.load();
+      menu.replaceChildren(h('li', { class: 'chip-suggest-empty' }, catalog.error() ? `The genes of the data cannot be listed: ${catalog.error()}` : 'Loading the genes of the data…'));
+      menu.classList.remove('hidden');
+      entry.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    shown = catalog.suggest(text, 12, new Set(items.map(fold)));
+    if (active >= shown.length) active = shown.length - 1;
+    menu.replaceChildren(...(shown.length ? shown.map((g, i) => {
+      const q = text.trim();
+      const at = fold(g).indexOf(fold(q));
+      const li = h('li', {
+        role: 'option', id: suggestId ? `${suggestId}-${i}` : null, class: i === active ? 'active' : '',
+        'aria-selected': i === active ? 'true' : 'false',
+      }, at >= 0 ? [g.slice(0, at), h('mark', null, g.slice(at, at + q.length)), g.slice(at + q.length)] : g);
+      li.addEventListener('mousedown', (e) => { e.preventDefault(); pick(g); });
+      return li;
+    }) : [h('li', { class: 'chip-suggest-empty' }, catalog.suggest(text, 1).length
+      ? `Every gene of the data that contains “${text.trim()}” is already in this list`
+      : `No gene of the data contains “${text.trim()}”`)]));
+    menu.classList.remove('hidden');
+    entry.setAttribute('aria-expanded', 'true');
+    if (active >= 0 && suggestId) entry.setAttribute('aria-activedescendant', `${suggestId}-${active}`);
+    else entry.removeAttribute('aria-activedescendant');
+  }
+
+  function pick(g) {
+    entry.value = '';
+    closeMenu();
+    add([g]);
+    entry.focus();
   }
 
   function removeValue(v, keyboard) {
@@ -105,9 +233,12 @@ export function chipInput({ values = [], onChange, classify, isCore, describe, l
 
   function add(tokens) {
     let added = false;
-    for (const t of tokens) {
-      if (items.includes(t)) {
-        const li = nodes.get(t);
+    for (const typed of tokens) {
+      // the data's spelling of a gene typed in another case (ctsk -> Ctsk)
+      const t = (catalog && catalog.find(typed)) || typed;
+      const same = items.find((x) => x === t || (catalog && fold(x) === fold(t)));
+      if (same !== undefined) {
+        const li = nodes.get(same);
         if (li) restartFlash(li);
       } else {
         items.push(t);
@@ -124,6 +255,25 @@ export function chipInput({ values = [], onChange, classify, isCore, describe, l
   }
 
   entry.addEventListener('keydown', (e) => {
+    if (catalog && !menu.classList.contains('hidden') && shown.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        active = (active + (e.key === 'ArrowDown' ? 1 : -1) + shown.length + 1) % (shown.length + 1);
+        if (active === shown.length) active = -1;
+        paintMenu();
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && active >= 0) {
+        e.preventDefault();
+        pick(shown[active]);
+        return;
+      }
+    }
+    if (e.key === 'Escape' && catalog && !menu.classList.contains('hidden')) {
+      e.stopPropagation();
+      closeMenu();
+      return;
+    }
     if (e.key === 'Enter' || e.key === ',' || e.key === ';' || e.key === ' ') {
       if (e.key !== 'Enter' || entry.value.trim()) e.preventDefault();
       commit();
@@ -149,7 +299,16 @@ export function chipInput({ values = [], onChange, classify, isCore, describe, l
     entry.value = '';
     add(parseTokens(value.slice(0, start) + text + value.slice(end)));
   });
-  entry.addEventListener('blur', commit);
+  entry.addEventListener('blur', () => { closeMenu(); commit(); });
+  if (catalog) {
+    entry.addEventListener('input', () => { active = -1; paintMenu(); });
+    entry.addEventListener('focus', () => { if (!catalog.get() && !catalog.error()) catalog.load(); });
+    catalog.onChange(() => {
+      if (!el.isConnected) return;
+      paint();
+      if (document.activeElement === entry) paintMenu();
+    });
+  }
 
   paint();
   return {

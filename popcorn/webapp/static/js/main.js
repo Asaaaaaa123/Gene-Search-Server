@@ -5,6 +5,7 @@ import { renderProject } from './views/project.js';
 import { renderRuns } from './views/runs.js';
 import { renderRun } from './views/run.js';
 import { renderHelp } from './views/help.js';
+import { signIn } from './auth.js';
 
 function brandMark() {
   // a 3 x 3 grid of capture bins on the accent tile, the "positive" ones solid
@@ -25,7 +26,7 @@ const NAV = [
   { href: '#/help', label: 'Guide', icon: 'help', match: /^\/help/ },
 ];
 
-function buildShell() {
+function buildShell(user) {
   const app = document.getElementById('app');
   const links = NAV.map((n) => {
     const a = h('a', { href: n.href }, icon(n.icon, { size: 17 }), h('span', null, n.label));
@@ -46,6 +47,17 @@ function buildShell() {
       h('div', { class: 'nav-label' }, 'Workspace'),
       nav,
       h('div', { class: 'sidebar-foot' },
+        user ? h('div', { class: 'user-card' },
+          h('span', { class: 'user-avatar', 'aria-hidden': 'true' }, (user.name || '?').trim().charAt(0).toUpperCase()),
+          h('div', { class: 'user-text' }, h('div', { class: 'user-name truncate', title: user.name }, user.name),
+            h('button', { type: 'button', class: 'linklike user-signout', onClick: async (e) => {
+              const b = e.currentTarget;
+              b.disabled = true;
+              b.textContent = 'Signing out…';
+              await user.signOut();
+              b.disabled = false;   // only when signing out failed: the page reloads otherwise
+              b.textContent = 'Sign out';
+            } }, 'Sign out'))) : null,
         h('div', { class: 'env-card' }, h('div', { class: 'env-line' }, envDot, envText), envSub))),
     h('div', { style: 'flex:1 1 auto;min-width:0;display:flex;flex-direction:column' }, banner, view));
 
@@ -99,9 +111,12 @@ route('/runs', async (container) => renderRuns(container, {}));
 route('/runs/:id/:tab?', async (container, p) => renderRun(container, { id: p.id, tab: p.tab || null }));
 route('/help/:topic?', async (container, p) => renderHelp(container, { topic: p.topic || null }));
 
-const viewRoot = buildShell();
-poll(async () => { await refreshHealth(); return true; }, 5000);
-startRouter(viewRoot);
+// signed in first (when the server needs it: auth.js), then the application
+signIn().then((user) => {
+  const viewRoot = buildShell(user);
+  poll(async () => { await refreshHealth(); return true; }, 5000);
+  startRouter(viewRoot);
+});
 
 // keep `state` reachable from the browser console for debugging
 window.bss = { state, button };

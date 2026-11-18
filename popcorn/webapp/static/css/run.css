@@ -544,3 +544,6 @@
 .md-link-text { text-decoration: underline dotted var(--text-faint); text-underline-offset: 3px; }
 .md-image { font-style: italic; }
 .prose code { overflow-wrap: anywhere; }
+
+/* the Cell types tab: Regenerate stays in view while the cell types below are edited */
+.retype-bar { position: sticky; top: 8px; z-index: 6; box-shadow: var(--shadow); }

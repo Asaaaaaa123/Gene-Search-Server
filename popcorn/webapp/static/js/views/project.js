@@ -11,9 +11,11 @@ import { openFolderPicker } from '../components/folder-picker.js';
 import { uploadPanel } from '../components/upload-panel.js';
 import { chooseDetectedSamples, applyDetectedSamples, reportPanel, binLabel, platformName, unitWord } from '../components/sample-editor.js';
 import { signatureEditor, geneCoverage } from '../components/signature-editor.js';
+import { geneCatalog } from '../components/chips.js';
 import { tissuePanel, applyTissueConfig, undoTissueConfig, mayAutoApply, appliedMessage } from '../components/tissue-panel.js';
 import { roiEditor } from '../components/roi-editor.js';
 import { dataExplorer, exploreState } from '../components/data-explorer.js';
+import { ownerText, userName, changedText } from '../auth.js';
 
 const TABS = [
   { id: 'data', label: 'Data', icon: 'folder' },
@@ -31,6 +33,33 @@ const DEFAULT_BINS = ['002um', '008um', '016um'];
 const VALIDATE_DELAY_MS = 800;
 const DRAFT_CHECK_DELAY_MS = 300;   // the configuration check of the unsaved settings (no data access, fast)
 const RUNS_POLL_MS = 4000;
+
+// Another user's project is shown read-only (webapp/auth.py refuses its changes anyway): its settings can be looked at,
+// not changed. Controls that change settings are disabled as they appear; those that only move around stay, and the
+// Explore tab stays whole (its thresholds only change what is shown until saved, and saving is not offered).
+const VIEW_OK = '.tab, [role="tab"], .sig-list button, .linklike, summary, input[type="search"], [data-view-ok]';
+const CONTROLS = 'input, select, textarea, button';
+
+function lockControls(root, skip) {
+  const lock = (el) => {
+    if (skip() || !el.matches(CONTROLS) || el.matches(VIEW_OK) || el.closest('[data-view-ok]')) return;
+    if (!el.disabled) el.disabled = true;
+  };
+  const sweep = (node) => {
+    if (node.nodeType !== 1) return;
+    lock(node);
+    node.querySelectorAll(CONTROLS).forEach(lock);
+  };
+  sweep(root);
+  const observer = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === 'attributes') lock(r.target);
+      else r.addedNodes.forEach(sweep);
+    }
+  });
+  observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled'] });
+  return () => observer.disconnect();
+}
 
 const drafts = new Map();
 let defaultsPromise = null;
@@ -78,6 +107,9 @@ function adopt(d, project) {
   d.validation = normValidation(project.validation);
   d.created = project.created;
   d.updated = project.updated;
+  d.owner = project.owner || null;
+  d.changed_by = project.changed_by || null;
+  d.canEdit = project.can_edit !== false;   // signed in: the owner, or a project without one (webapp/auth.py)
   d.remoteUpdated = project.updated;
   if (Array.isArray(project.rois)) setRois(d, project.rois);
   d.originalIds = new WeakMap((Array.isArray(d.config.samples) ? d.config.samples : [])
@@ -95,6 +127,7 @@ function newDraft(project) {
 }
 
 function roiUnsaved(d) {
+  if (d.canEdit === false) return [];   // read-only: nothing to save
   // only sections that still exist: drawings of a removed section can be neither saved nor discarded
   const ids = new Set((Array.isArray(d.config.samples) ? d.config.samples : []).map((s) => s && s.id));
   return Object.entries((d.roi && d.roi.entries) || {})
@@ -178,6 +211,7 @@ export async function renderProject(container, { id, tab }) {
     adopt(d, project);
   } else {
     d.remoteUpdated = project.updated;
+    d.changed_by = project.changed_by || null;
     d.validation = normValidation(project.validation);
     if (Array.isArray(project.rois)) setRois(d, project.rois);
   }
@@ -245,19 +279,50 @@ function projectView(container, d, defaults, initialTab) {
     }
   });
 
+  // another user's project: a banner says whose it is and offers a copy of one's own
+  const readOnly = d.canEdit === false;
+  const ownerName = ownerText(d) || 'another user';
+  let copying = false;
+  const copyBtn = button({
+    label: 'Make a copy of your own', icon: 'copy', small: true, kind: 'primary',
+    onClick: async () => {
+      if (copying) return;
+      copying = true;
+      try {
+        const copy = await api(`/api/projects/${enc(d.id)}/duplicate`, { method: 'POST' });
+        toast(`Created “${copy.name}”: it is yours to change`, 'success');
+        navigate(`/projects/${enc(copy.id)}/${current}`);
+      } catch (e) {
+        toast(`The copy could not be made: ${e.message}`, 'error');
+      } finally {
+        copying = false;
+      }
+    },
+  });
+  const readOnlyBanner = readOnly ? h('div', { class: 'banner info readonly-banner' }, icon('lock', { size: 18 }),
+    h('div', { class: 'banner-body' },
+      h('span', null, h('strong', null, `View only: this project belongs to ${ownerName}. `),
+        'You can look at its settings and data, and open and download its runs; only its owner can change it.'),
+      h('span', { class: 'spacer' }), copyBtn)) : null;
+  if (readOnly) {
+    nameInput.readOnly = true;
+    nameInput.title = `Only ${ownerName} can rename this project`;
+  }
+
   mount(container, h('div', { class: 'page project-page' },
     h('div', { class: 'breadcrumb' }, h('a', { href: '#/projects' }, 'Projects'), icon('chevron-right', { size: 12 }), crumbName),
     h('div', { class: 'page-header project-head' },
       h('div', { class: 'titles' }, nameInput, meta),
       h('div', { class: 'actions' }, vchip)),
-    vpanel, conflict, tabsHost, body, unsavedBar));
+    readOnlyBanner, vpanel, conflict, tabsHost, body, unsavedBar));
+  const unlock = readOnly ? lockControls(body, () => current === 'explore') : null;
 
   function setButton(btn, busy, iconName, label) {
     mount(btn, busy ? h('span', { class: 'spinner' }) : icon(iconName, { size: btn.classList.contains('small') ? 14 : 16 }), label);
   }
 
   function computeDirty() {
-    d.dirty = snapshot(d.name, d.config) !== d.savedJson;
+    d.dirty = d.canEdit !== false && snapshot(d.name, d.config) !== d.savedJson;
     return d.dirty;
   }
 
@@ -378,9 +443,12 @@ function projectView(container, d, defaults, initialTab) {
     checkDraftSoon();
     const named = d.name.trim().length > 0;
     nameInput.classList.toggle('invalid', !named);
-    nameInput.title = named ? 'Click to rename' : 'The project needs a name';
+    if (!readOnly) nameInput.title = named ? 'Click to rename' : 'The project needs a name';
     crumbName.textContent = d.name.trim() || d.id;
-    mount(meta, h('span', { class: 'mono' }, d.id), ` · created ${fmt.date(d.created)} · saved ${fmt.ago(d.updated)}`);
+    const who = userName(d.owner);
+    const changed = changedText(d);
+    mount(meta, h('span', { class: 'mono' }, d.id), who ? ` · by ${who}` : '', ` · created ${fmt.date(d.created)} · saved ${fmt.ago(d.updated)}`,
+      changed ? h('span', { title: fmt.date(d.changed_by.at) }, ` · ${changed.charAt(0).toLowerCase()}${changed.slice(1)}`) : '');
     barSave.disabled = !d.dirty || d.saving;
     barDiscard.disabled = !d.dirty || d.saving;
     setButton(barSave, d.saving, 'save', d.saving ? 'Saving…' : 'Save');
@@ -493,6 +561,7 @@ function projectView(container, d, defaults, initialTab) {
   /** Save the draft (PUT). Resolves to true when the saved settings now match the draft; a call made while a save is
    *  in flight shares its result. */
   function save() {
+    if (d.canEdit === false) return Promise.resolve(false);
     if (d.saving && d.savePromise) return d.savePromise;
     d.savePromise = writeProject();
     return d.savePromise;
@@ -523,6 +592,7 @@ function projectView(container, d, defaults, initialTab) {
       d.validation = normValidation(res.validation);
       d.updated = res.updated || d.updated;
       d.remoteUpdated = d.updated;
+      d.changed_by = res.changed_by || d.changed_by;
       if (Array.isArray(res.rois)) setRois(d, res.rois);
       if (!editedMeanwhile) {
         if (snapshot(d.name, d.config) !== d.savedJson) {
@@ -632,6 +702,7 @@ function projectView(container, d, defaults, initialTab) {
     qcSel.addEventListener('change', () => { cfg.qc_bin_size = qcSel.value; changed({ data: true }); });
     const reportBox = h('div');
     const recheck = button({ label: 'Check again', icon: 'refresh', small: true, kind: 'ghost', onClick: () => { validateNow(true); } });
+    recheck.dataset.viewOk = '';   // only reads: open to everybody
     recheck.title = 'Check the data again with the settings above';
 
     function fillBins() {
@@ -705,7 +776,7 @@ function projectView(container, d, defaults, initialTab) {
         const res = await api(`/api/projects/${enc(d.id)}/detect-tissue`, { method: 'POST', body: { config: d.config } });
         d.tissue = res;
         d.tissueKey = key;
-        if (dataKey(d.config) === key && mayAutoApply(d.config, defCfg)) applyTissue(res, true);
+        if (d.canEdit !== false && dataKey(d.config) === key && mayAutoApply(d.config, defCfg)) applyTissue(res, true);
         else if (manual) toast(`Detected tissue: ${res.tissue.label}. Your edited signatures were kept; “Use these cell types” replaces them.`, 'info', { timeout: 8000 });
       } catch (e) {
         d.tissueError = e;
@@ -781,7 +852,7 @@ function projectView(container, d, defaults, initialTab) {
     }
 
     async function autoAddUploadedSamples() {
-      if (!upload || hasSamples(d.config) || !d.config.data_root || d.autoSamplesRoot === d.config.data_root) return;
+      if (d.canEdit === false || !upload || hasSamples(d.config) || !d.config.data_root || d.autoSamplesRoot === d.config.data_root) return;
       d.autoSamplesRoot = d.config.data_root;   // once per folder and session: removing every sample is respected
       try {
         const res = await api(`/api/projects/${enc(d.id)}/detect-samples`, { method: 'POST', body: { data_root: d.config.data_root } });
@@ -884,12 +955,26 @@ function projectView(container, d, defaults, initialTab) {
   }
 
   // ---- Signatures
+  /** The genes of the project's sections (POST /gene-names), loaded again when the data settings change. */
+  function projectGenes() {
+    const samples = (Array.isArray(d.config.samples) ? d.config.samples : []).map((s) => s && [s.id, s.path, s.platform]);
+    const key = JSON.stringify([d.config.data_root, d.config.bin_size, samples]);
+    if (!d.genes || d.genesKey !== key) {
+      const config = clone(d.config);
+      d.genes = geneCatalog(() => api(`/api/projects/${enc(d.id)}/gene-names`, { method: 'POST', body: { config } }));
+      d.genesKey = key;
+    }
+    return d.genes;
+  }
+
   function signaturesTab(host) {
+    const genes = projectGenes();
     const hint = h('div');
-    const paintHint = () => mount(hint, !d.report && !d.checking ? banner('info', h('span', null,
-      'Gene chips are colored once the data has been checked (green: in the probe set, red: missing). ',
+    const paintHint = () => mount(hint, genes.error() && !d.report && !d.checking ? banner('info', h('span', null,
+      'Gene chips are colored once the data has been checked (green: in the data, red: missing). ',
       h('button', { type: 'button', class: 'linklike', onClick: () => { validateNow(true); } }, 'Check the data now'))) : null);
-    const editor = signatureEditor({ cfg: d.config, defaults: defCfg, report: d.report, ui: d.ui, onChange: () => changed() });
+    genes.onChange(() => { if (hint.isConnected) paintHint(); });
+    const editor = signatureEditor({ cfg: d.config, defaults: defCfg, report: d.report, ui: d.ui, onChange: () => changed(), genes });
     mount(host, h('div', null, hint, editor.el));
     paintHint();
     return { onReport: () => { paintHint(); editor.setReport(d.report); } };
@@ -1178,6 +1263,7 @@ function projectView(container, d, defaults, initialTab) {
 
   return () => {
     alive = false;
+    if (unlock) unlock();
     clearTimeout(validateTimer);
     clearTimeout(draftTimer);
     if (draftAbort) {

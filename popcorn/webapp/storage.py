@@ -86,6 +86,14 @@ def parse_time(text) -> datetime | None:
     return dt if dt.tzinfo else dt.astimezone()
 
 
+def stamp(record: dict, by: dict | None, now: str | None = None) -> dict:
+    """Record who changed `record` last ("changed_by": {"id", "name", "at"}); `by` is the signed-in user
+    (webapp/auth.py), None without sign-in (then nothing is recorded)."""
+    if by and by.get("id"):
+        record["changed_by"] = {"id": by["id"], "name": by.get("name") or "", "at": now or now_iso()}
+    return record
+
+
 def created_key(record: dict) -> tuple:
     """Sort key of a project or run record by creation time (then id)."""
     return parse_time(record.get("created")) or _EPOCH, str(record.get("id", ""))
@@ -244,7 +252,7 @@ class Storage:
                 log.warning("skipping project %s: %s", d.name, exc)
         return _newest_first(out)
 
-    def _new_project(self, name: str, config: dict) -> dict:
+    def _new_project(self, name: str, config: dict, owner: dict | None = None) -> dict:
         with self.lock:
             while True:
                 pid = f"p-{secrets.token_hex(4)}"
@@ -255,17 +263,21 @@ class Storage:
                     continue
             now = now_iso()
             project = {"id": pid, "name": name, "created": now, "updated": now, "config": config}
+            if owner:  # the signed-in user who made it (webapp/auth.py)
+                project["owner"] = dict(owner)
             self.write_json(self.projects_dir / pid / "project.json", project)
         return project
 
-    def create_project(self, name: str, config: dict | None = None) -> dict:
+    def create_project(self, name: str, config: dict | None = None, owner: dict | None = None) -> dict:
         """A new project; `config` is merged with the defaults and named after the project unless it has a name."""
         cfg = merge_with_defaults(config or {})
         if not (config or {}).get("name"):
             cfg["name"] = name
-        return self._new_project(name, cfg)
+        return self._new_project(name, cfg, owner)
 
-    def update_project(self, pid, name: str | None = None, config: dict | None = None) -> dict:
+    def update_project(self, pid, name: str | None = None, config: dict | None = None,
+                       by: dict | None = None) -> dict:
+        """Change the name or settings of a project; `by`: the user who changed it (stamp())."""
         with self.lock:
             project = self.get_project(pid)
             if name is not None:
@@ -273,8 +285,20 @@ class Storage:
             if config is not None:
                 project["config"] = merge_with_defaults(config)
             project["updated"] = now_iso()
+            stamp(project, by, project["updated"])
             self.write_json(self.project_dir(pid) / "project.json", project)
         return project
+
+    def touch_project(self, pid, by: dict | None) -> None:
+        """Something of the project besides its settings changed (a drawn region, its uploaded data): record who
+        changed it. "updated" stays the time the settings were saved (the page compares it to see whether somebody
+        else saved them meanwhile)."""
+        if not (by and by.get("id")):
+            return
+        with self.lock:
+            project = self.get_project(pid)
+            stamp(project, by)
+            self.write_json(self.project_dir(pid) / "project.json", project)
 
     def delete_project(self, pid) -> None:
         d = self.project_dir(pid)
@@ -283,10 +307,11 @@ class Storage:
                 raise NotFound(f"project {pid} not found")
             rmtree(d)
 
-    def duplicate_project(self, pid) -> dict:
+    def duplicate_project(self, pid, owner: dict | None = None) -> dict:
+        """A copy of a project (settings and drawn regions), owned by `owner`."""
         with self.lock:
             src = self.get_project(pid)
-            new = self._new_project(f"{src['name']} (copy)", copy.deepcopy(src["config"]))
+            new = self._new_project(f"{src['name']} (copy)", copy.deepcopy(src["config"]), owner)
             rois = self.project_dir(pid) / "rois"
             if rois.is_dir():
                 shutil.copytree(rois, self.project_dir(new["id"]) / "rois")
@@ -424,9 +449,10 @@ class Storage:
             raise NotFound(f"analysis {aid!r} not found")
         return self.analyses_dir(rid) / f"{aid}{suffix}"
 
-    def create_analysis(self, rid, tool: str, title: str, params: dict, view: dict | None = None) -> dict:
+    def create_analysis(self, rid, tool: str, title: str, params: dict, view: dict | None = None,
+                        by: dict | None = None) -> dict:
         """A new card, status "running": {"id", "tool", "title", "params", "view", "status", "error", "created",
-        "updated", "seconds"}."""
+        "updated", "seconds", "created_by"?, "changed_by"?} (`by`: the user who made it)."""
         d = self.analyses_dir(rid)
         with self.lock:
             d.mkdir(parents=True, exist_ok=True)
@@ -437,6 +463,9 @@ class Storage:
             now = now_iso()
             card = {"id": aid, "tool": tool, "title": title, "params": params, "view": view or {},
                     "status": "running", "error": None, "created": now, "updated": now, "seconds": None}
+            if by and by.get("id"):
+                card["created_by"] = {"id": by["id"], "name": by.get("name") or ""}
+            stamp(card, by, now)
             self.write_json(d / f"{aid}.json", card)
         return card
 
@@ -450,14 +479,16 @@ class Storage:
                 card["result"] = None
         return card
 
-    def save_analysis(self, rid, card: dict) -> dict:
-        """Write the card (never its result) with a new "updated" time; NotFound when it was deleted meanwhile."""
+    def save_analysis(self, rid, card: dict, by: dict | None = None) -> dict:
+        """Write the card (never its result) with a new "updated" time, and `by` as who changed it (a user's change;
+        None when the server saves a result); NotFound when it was deleted meanwhile."""
         path = self._analysis_path(rid, card["id"])
         with self.lock:
             if not path.is_file():
                 raise NotFound(f"analysis {card['id']} not found")
             data = {k: v for k, v in card.items() if k != "result"}
             data["updated"] = now_iso()
+            stamp(data, by, data["updated"])
             self.write_json(path, data)
         return data
 
@@ -522,6 +553,15 @@ class Storage:
                 self._analysis_path(rid, aid, suffix).unlink(missing_ok=True)
 
     # ---- regions drawn on a run's sections ----------------------------------------------------------------------
+    def regions_changed_by(self, rid) -> dict | None:
+        """Who last changed the regions drawn on a run (stamp()), None when nobody signed in did."""
+        try:
+            data = self.read_json(self.run_dir(rid) / "regions.json")
+        except (NotFound, StorageError):
+            return None
+        who = data.get("changed_by") if isinstance(data, dict) else None
+        return who if isinstance(who, dict) else None
+
     def read_regions(self, rid) -> list[dict]:
         try:
             data = self.read_json(self.run_dir(rid) / "regions.json")
@@ -530,11 +570,11 @@ class Storage:
         regions = data.get("regions") if isinstance(data, dict) else None
         return [r for r in regions if isinstance(r, dict)] if isinstance(regions, list) else []
 
-    def write_regions(self, rid, regions: list[dict]) -> None:
+    def write_regions(self, rid, regions: list[dict], by: dict | None = None) -> None:
         with self.lock:
             if not (self.run_dir(rid) / "run.json").is_file():
                 raise NotFound(f"run {rid} not found")
-            self.write_json(self.run_dir(rid) / "regions.json", {"regions": regions}, compact=True)
+            self.write_json(self.run_dir(rid) / "regions.json", stamp({"regions": regions}, by), compact=True)
 
     # ---- templates: sets of analyses that can be applied to any run ---------------------------------------------
     @property
@@ -560,8 +600,8 @@ class Storage:
     def get_template(self, tid) -> dict:
         return self.read_json(self._template_path(tid), f"template {tid}")
 
-    def create_template(self, name: str, cards: list[dict]) -> dict:
-        """{"id", "name", "created", "cards": [{"tool", "title", "params", "view"}]}"""
+    def create_template(self, name: str, cards: list[dict], owner: dict | None = None) -> dict:
+        """{"id", "name", "created", "cards": [{"tool", "title", "params", "view"}], "owner"?}"""
         with self.lock:
             self.templates_dir.mkdir(parents=True, exist_ok=True)
             while True:
@@ -569,6 +609,8 @@ class Storage:
                 if not (self.templates_dir / f"{tid}.json").exists():
                     break
             template = {"id": tid, "name": name, "created": now_iso(), "cards": cards}
+            if owner:
+                template["owner"] = dict(owner)
             self.write_json(self.templates_dir / f"{tid}.json", template)
         return template
 

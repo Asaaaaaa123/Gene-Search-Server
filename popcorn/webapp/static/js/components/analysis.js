@@ -17,6 +17,7 @@ import { geneInput, fieldLabel } from './spatial-viewer.js';
 import { formatNumber } from './table-viewer.js';
 import * as ch from './charts.js';
 import { openRegionEditor } from './region-editor.js';
+import { userName } from '../auth.js';
 
 const POLL_MS = 1000;
 const TABLE_PAGE = 100;
@@ -644,7 +645,9 @@ function suggestTitle(tool, p, ctx) {
 }
 
 // ================================================================================================ the tab
-export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
+// canEdit false (another user's run, webapp/auth.py): the cards are shown and downloaded, and a chart may be switched
+// for oneself, but nothing is added, changed, kept or deleted; `owner` names whose run it is.
+export function analysisWorkbench({ runId, store, binUm, onShowGenes, canEdit = true, owner = null }) {
   const enc = encodeURIComponent(runId);
   const base = `/api/runs/${enc}`;
   if (!(store.results instanceof Map)) store.results = new Map();    // card id -> its result, once fetched
@@ -825,6 +828,7 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
       bodyEl);
     const chartEl = h('div', { class: 'an-chart' });
     const saveView = debounce(() => {
+      if (!canEdit) return;   // another user's card: the chart is switched for this page only
       api(`${base}/analyses/${card.id}`, { method: 'PUT', body: { view: card.view || {} } }).catch(() => {});
     }, 600);
 
@@ -884,6 +888,11 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
       const parts = [tool ? tool.title : card.tool];
       if (card.status === 'done' && Number.isFinite(card.seconds)) parts.push(card.seconds < 1 ? 'under a second' : fmt.duration(card.seconds));
       parts.push(fmt.ago(card.created));
+      const maker = userName(card.created_by);
+      if (maker) parts.push(`by ${maker}`);
+      // changed after it was made (renamed, other settings, computed again): by whom
+      const changer = card.changed_by;
+      if (userName(changer) && changer.at && changer.at !== card.created) parts.push(`changed by ${userName(changer)}, ${fmt.ago(changer.at)}`);
       subEl.textContent = parts.join(' · ');
     }
 
@@ -899,7 +908,7 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
         drawn = null;
         mount(bodyEl, h('div', { class: 'banner danger an-failed', role: 'alert' }, icon('alert', { size: 18 }),
           h('div', { class: 'banner-body' }, h('strong', null, 'This analysis could not be computed. '), card.error || ''),
-          toolOf(card.tool) ? button({ label: 'Change the settings', small: true, onClick: edit }) : null));
+          canEdit && toolOf(card.tool) ? button({ label: 'Change the settings', small: true, onClick: edit }) : null));
         return;
       }
       if (!result) {
@@ -980,17 +989,21 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
       const ready = card.status === 'done' && !!result;
       const m = ready ? model() : null;
       const isMap = m && m.kind === 'map';
-      return [
+      const editing = canEdit ? [
         toolOf(card.tool) ? { label: 'Change the settings…', icon: 'sliders', hint: 'Computed again in this card', disabled: card.status === 'running', onClick: edit } : null,
         toolOf(card.tool) ? { label: 'Duplicate…', icon: 'copy', hint: 'A new card from these settings', onClick: () => newAnalysis(toolOf(card.tool), clone(card.params || {}), '') } : null,
         { label: 'Rename…', icon: 'edit', onClick: rename },
-        'separator', { heading: 'Download' },
+        'separator',
+      ] : [];
+      return [
+        ...editing,
+        { heading: 'Download' },
         { label: 'Image (PNG)', icon: 'image', disabled: !m, onClick: () => exportImage('png') },
         { label: 'Image (SVG)', icon: 'image', hint: isMap ? 'Maps are saved as PNG' : 'Vector, for figures', disabled: !m || isMap, onClick: () => exportImage('svg') },
         { label: 'Table (CSV)', icon: 'table', disabled: !(ready && result.table && result.table.rows), href: apiUrl(`${base}/analyses/${card.id}/table.csv`), download: `${fileName(card.title)}.csv` },
-        'separator',
-        { label: 'Delete', icon: 'trash', danger: true, onClick: remove },
-      ];
+        canEdit ? 'separator' : null,
+        canEdit ? { label: 'Delete', icon: 'trash', danger: true, onClick: remove } : null,
+      ].filter(Boolean);
     }
 
     async function rename() {
@@ -1191,7 +1204,7 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
         h('tbody', null, templates.map((t) => h('tr', null,
           h('td', null, h('strong', null, t.name)),
           h('td', { class: 'muted small' }, t.cards.map((c) => c.title).join(' · ')),
-          h('td', { class: 'nowrap', title: fmt.date(t.created) }, fmt.ago(t.created)),
+          h('td', { class: 'nowrap', title: fmt.date(t.created) }, fmt.ago(t.created), userName(t.owner) ? h('div', { class: 'muted small' }, `by ${userName(t.owner)}`) : null),
           h('td', { class: 'nowrap' }, h('div', { class: 'row end' },
             button({
               label: 'Apply to this run', small: true, kind: 'primary',
@@ -1202,7 +1215,7 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
                 toast(`${plural(started.length, 'analysis', 'analyses')} started`, 'success');
               },
             }),
-            button({
+            t.can_edit === false ? null : button({
               icon: 'trash', small: true, kind: 'ghost danger', title: `Delete the template ${t.name}`,
               onClick: async () => {
                 if (!(await confirmDialog({ title: 'Delete this template?', message: `“${t.name}” is removed. The analyses made from it stay.`, confirmLabel: 'Delete', danger: true }))) return;
@@ -1214,11 +1227,48 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
     paintList();
   }
 
+  // The analyses a run starts with (POST /analyses/defaults, analysis.py default_analyses): chosen from what the run has,
+  // added the first time its owner opens the tab, and again on request (only the ones not here yet). They are ordinary
+  // cards: change their settings, delete them, add more.
+  let addingDefaults = false;
+  async function addDefaults(auto) {
+    if (addingDefaults) return;
+    addingDefaults = true;
+    paintChrome();
+    try {
+      const res = await api(`${base}/analyses/defaults`, { method: 'POST' });
+      ctx.defaults_added = true;
+      if (!alive) return;
+      for (const c of res.cards.slice().reverse()) adopt(c, true);
+      if (res.added) {
+        toast(auto
+          ? `Started with ${plural(res.added, 'recommended analysis', 'recommended analyses')} for this run. Change their settings with ⋯, delete the ones you do not need, or add your own with New analysis.`
+          : `${plural(res.added, 'recommended analysis', 'recommended analyses')} added`, 'success', { timeout: auto ? 9000 : 4500 });
+      } else if (!auto) {
+        toast('Every recommended analysis is already here.', 'info');
+      }
+    } catch (err) {
+      if (!auto || alive) toast(`The recommended analyses could not be added: ${err.message || err}`, 'error');
+    } finally {
+      addingDefaults = false;
+      if (alive) paintChrome();
+    }
+  }
+
   function paintChrome() {
     if (!ctx) return;
     const n = store.cards.length;
-    mount(toolbarEl,
+    if (!canEdit) {
+      mount(toolbarEl, h('span', { class: 'owner-chip' }, icon('lock', { size: 13 }),
+        `View only: ${owner || 'the owner of this run'} adds and changes its analyses. You can look at them and download them.`),
+      h('span', { class: 'spacer' }), h('span', { class: 'muted small' }, n ? plural(n, 'analysis', 'analyses') : ''));
+    } else mount(toolbarEl,
       menuButton({ label: 'New analysis', icon: 'plus', kind: 'primary', items: toolItems, align: 'start' }),
+      button({
+        label: addingDefaults ? 'Adding…' : 'Recommended', icon: 'chart', disabled: addingDefaults,
+        title: 'Add the recommended analyses for this run (cell types, marker genes, differences between sections, neighbors): the ones that are not here yet',
+        onClick: () => addDefaults(false),
+      }),
       button({ label: ctx.regions.length ? `Regions (${ctx.regions.length})` : 'Regions', icon: 'polygon', title: 'Draw regions on the sections; a region is a group like any other', onClick: editRegions }),
       button({ label: 'Templates', icon: 'layers', onClick: openTemplates }),
       h('span', { class: 'spacer' }),
@@ -1230,15 +1280,23 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
   }
 
   function quickStart() {
+    if (!canEdit) {
+      return h('div', { class: 'card an-empty' }, emptyState({
+        icon: 'chart', title: 'No analyses yet',
+        text: `The analyses of this run are made by ${owner || 'its owner'}; they appear here when there are some.`,
+      }));
+    }
     const starts = [['expression', 'Compare genes between groups'], ['de', 'Find the genes of a group'], ['composition', 'Count cell types per section']];
     return h('div', { class: 'card an-empty' }, emptyState({
-      icon: 'chart', title: 'Ask your own questions',
-      text: `Nothing here is fixed in advance: choose a tool, say which ${units()} and genes it should look at, and the chart is added below. Settings can be changed afterwards and every chart can be downloaded.`,
-      action: h('div', { class: 'row an-starts' }, starts.map(([id, label]) => {
-        const t = toolOf(id);
-        const off = t && t.expression && !ctx.expression.available;
-        return t ? button({ label, icon: t.icon || 'chart', disabled: !!off, onClick: () => newAnalysis(t, {}, '') }) : null;
-      })),
+      icon: 'chart', title: 'Start with the recommended analyses, or ask your own questions',
+      text: `The recommended analyses are chosen from what this run has: the cell types of each section and their marker genes, the genes that differ between the sections, which cell types lie next to each other. Or choose a tool yourself, say which ${units()} and genes it should look at, and the chart is added below. Settings can be changed afterwards and every chart can be downloaded.`,
+      action: h('div', { class: 'stack', style: 'align-items:center' },
+        button({ label: 'Add the recommended analyses', icon: 'chart', kind: 'primary', onClick: () => addDefaults(false) }),
+        h('div', { class: 'row an-starts' }, starts.map(([id, label]) => {
+          const t = toolOf(id);
+          const off = t && t.expression && !ctx.expression.available;
+          return t ? button({ label, icon: t.icon || 'chart', disabled: !!off, onClick: () => newAnalysis(t, {}, '') }) : null;
+        }))),
     }));
   }
 
@@ -1260,6 +1318,8 @@ export function analysisWorkbench({ runId, store, binUm, onShowGenes }) {
       }
       paintChrome();
       follow();
+      // the first visit of the owner: the recommended analyses, once
+      if (canEdit && !ctx.defaults_added && !cards.length) addDefaults(true);
     } catch (err) {
       if (!alive) return;
       const noTable = err.status === 404;

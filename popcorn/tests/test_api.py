@@ -181,7 +181,8 @@ def test_projects_crud(client):
     listing = client.get("/api/projects").json()
     assert [p["id"] for p in listing] == [b["id"], a["id"]]  # newest first
     assert listing[0] == {"id": b["id"], "name": "Beta", "created": b["created"], "updated": b["updated"],
-                          "n_samples": 1, "data_root": ".", "last_run": None}
+                          "n_samples": 1, "data_root": ".", "last_run": None,
+                          "changed_by": None, "owner": None, "can_edit": True}  # no sign-in (tests/test_auth.py)
     assert listing[1]["n_samples"] == 2
 
     # drafts with errors are saved; the response lists the errors

@@ -16,6 +16,10 @@ Environment:
   POPCORN_MAX_UPLOAD_MB    data a project may upload (default 3072)
   POPCORN_MIN_FREE_MB      disk space uploads always leave free (default 4096)
   POPCORN_HOME_URL         the site the Popcorn sidebar links back to (default /)
+  POPCORN_AUTH             0 lets everybody in without signing in (default 1: sign in with Clerk; everybody sees every
+                           project, only its owner changes it; popcorn/webapp/auth.py)
+  POPCORN_CLERK_PUBLISHABLE_KEY  the Clerk application of the sign-in (default: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, else
+                           clerk_auth.DEFAULT_CLERK_PUBLISHABLE_KEY); its session tokens are checked by clerk_auth.py
 
 Analyses are queued in this process, so the API must run as one process (WORKERS=1, the image's default): a second
 uvicorn worker finds the workspace locked and answers 503 under /popcorn.
@@ -118,6 +122,7 @@ def _create(default_workspace: str):
         raise FileNotFoundError("the popcorn folder (POPCORN_DIR) was not found")
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
+    from webapp.auth import Auth
     from webapp.jobs import kill_workers_with_server
     from webapp.server import Hosted, create_app
 
@@ -138,8 +143,17 @@ def _create(default_workspace: str):
                     min_free_mb=max(0, int(os.environ.get("POPCORN_MIN_FREE_MB", "4096"))),
                     home_url=os.environ.get("POPCORN_HOME_URL", "/").strip() or None,
                     home_label="Back to Geno Intelligence")
+    auth = None
+    if os.environ.get("POPCORN_AUTH", "1").strip() != "0":
+        import clerk_auth
+        key = (os.environ.get("POPCORN_CLERK_PUBLISHABLE_KEY", "").strip()
+               or os.environ.get("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "").strip()
+               or clerk_auth.DEFAULT_CLERK_PUBLISHABLE_KEY)
+        auth = Auth(verify=clerk_auth.verify_clerk_bearer_token, publishable_key=key,
+                    end_sessions=clerk_auth.end_user_sessions)
     kill_workers_with_server()
-    sub = create_app(workspace, hosted=hosted)
+    sub = create_app(workspace, hosted=hosted, auth=auth)
     sub.state.workspace_lock = lock  # held for the life of the process
-    log.info("Popcorn at %s: workspace %s, data %s", MOUNT_PATH, workspace, ", ".join(map(str, data_dirs)))
+    log.info("Popcorn at %s: workspace %s, data %s, %s", MOUNT_PATH, workspace, ", ".join(map(str, data_dirs)),
+             "sign-in with Clerk" if auth else "no sign-in (POPCORN_AUTH=0)")
     return sub

@@ -126,9 +126,12 @@ const signatureGenes = (s) => uniqueList([...(s.extended || []), ...(s.core || [
 
 // ------------------------------------------------------------------------------------------------ editor
 /**
- * The Cell Settings tab. ui keeps the selected signature across renders (ui.signature). Returns {el, setReport(report)}.
+ * The Cell Settings tab. ui keeps the selected signature across renders (ui.signature). genes: a geneCatalog of the
+ * data (chips.js): the gene fields offer its genes, take their spelling in any case and name the genes it lacks.
+ * ubiquitous: false leaves out the ubiquitous transcripts (a run's new cell types do not use them).
+ * Returns {el, setReport(report)}.
  */
-export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
+export function signatureEditor({ cfg, defaults, report, ui, onChange, genes = null, ubiquitous: showUbiquitous = true }) {
   let cov = geneCoverage(report);
   const emit = () => { if (onChange) onChange(); };
   const sigs = () => {
@@ -144,10 +147,16 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     if (!has(sigs(), ui.signature)) ui.signature = names[0] || null;
     return ui.signature;
   };
-  const geneState = (g) => (cov.missing.has(g) ? 'bad' : cov.present.has(g) ? 'ok' : '');
-  const geneTip = (g) => (cov.missing.has(g) ? 'Not in the probe set of these sections'
-    : cov.present.has(g) ? 'In the probe set' : (cov.known ? 'Not checked yet: use Check again in the Data tab' : ''));
-  const missingOf = (s) => (cov.known ? signatureGenes(s).filter((g) => cov.missing.has(g)) : []);
+  // the genes of the data (genes) when they are loaded, else the last data check
+  const inData = (g) => (genes && genes.get() ? (genes.find(g) ? true : false) : cov.present.has(g) ? true : cov.missing.has(g) ? false : null);
+  const geneState = (g) => { const x = inData(g); return x === false ? 'bad' : x ? 'ok' : ''; };
+  const geneTip = (g) => {
+    const x = inData(g);
+    if (x === false) return 'Not found in the data of these sections';
+    if (x) return genes && genes.get() && genes.find(g) !== g ? `In the data as ${genes.find(g)}` : 'In the data';
+    return cov.known ? 'Not checked yet: use Check again in the Data tab' : '';
+  };
+  const missingOf = (s) => signatureGenes(s).filter((g) => inData(g) === false);
 
   // editor-level references refreshed by setReport() and by edits elsewhere
   let editorChips = [];
@@ -189,7 +198,7 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       h('span', { class: 'swatch', style: { background: HEX_RE.test(String(s.color)) ? s.color : 'transparent' } }),
       h('span', { class: 'sig-item-text' }, h('span', { class: 'sig-item-label' }, s.label || plain),
         s.label && s.label !== n && s.label !== plain ? h('span', { class: 'sig-item-key' }, n) : null),
-      miss.length ? icon('alert', { size: 14, cls: 'sig-warn', title: `Missing from the probe set: ${miss.join(', ')}` }) : null,
+      miss.length ? icon('alert', { size: 14, cls: 'sig-warn', title: `Not found in the data: ${miss.join(', ')}` }) : null,
       primary.has(n) ? h('span', { class: 'sig-flag', title: 'Positivity call (primary)' }, 'P') : null,
       programs.has(n) ? h('span', { class: 'sig-flag', title: 'Tissue assignment (programs)' }, 'A') : null,
       h('span', { class: 'sig-count', title: `${(s.extended || []).length} scored genes` }, String((s.extended || []).length))));
@@ -214,7 +223,8 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     const count = h('span', { class: 'sig-genes-count' });
     const paintCount = () => { count.textContent = String((s[key] || []).length); };
     const ci = chipInput({
-      values: s[key] || [], id, label, placeholder: 'Type a gene and press Enter, or paste a list',
+      values: s[key] || [], id, label, catalog: genes,
+      placeholder: genes ? 'Type to pick a gene of the data (any case), or paste a list' : 'Type a gene and press Enter, or paste a list',
       classify: opts.classify || geneState, describe: opts.describe || geneTip, isCore: opts.isCore,
       onChange: (v) => { s[key] = v; paintCount(); emit(); if (opts.after) opts.after(); },
     });
@@ -384,12 +394,12 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
       }
       if ((s.extended || []).length < 2) notes.push(h('div', { class: 'state warn' }, icon('alert', { size: 13 }), 'Fewer than two scored genes: this signature cannot be scored.'));
       const coreGenes = s.core || [];
-      if (cov.known && coreGenes.length && coreGenes.every((g) => cov.present.has(g) || cov.missing.has(g))) {
-        const detected = coreGenes.filter((g) => cov.present.has(g)).length;
+      if (coreGenes.length && coreGenes.every((g) => inData(g) !== null)) {
+        const detected = coreGenes.filter((g) => inData(g)).length;
         const minCore = Number(cfg.scoring && cfg.scoring.min_core);
         const few = Number.isFinite(minCore) && detected < minCore;
         notes.push(h('div', { class: few ? 'state bad' : 'state ok' }, icon(few ? 'alert' : 'check', { size: 13 }),
-          `${detected} of ${coreGenes.length} core genes are in the probe set${few ? `, fewer than scoring.min_core = ${minCore}: no bin can be called positive` : ''}.`));
+          `${detected} of ${coreGenes.length} core genes are in the data${few ? `, fewer than scoring.min_core = ${minCore}: no bin can be called positive` : ''}.`));
       }
       mount(coreNote, notes);
     };
@@ -616,8 +626,8 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
 
   // ---------------------------------------------------------------- ubiquitous transcripts
   const ubiquitous = chipInput({
-    values: isList(cfg.ubiquitous) ? cfg.ubiquitous : [], label: 'Ubiquitous transcripts',
-    placeholder: 'Type a gene and press Enter, or paste a list',
+    values: isList(cfg.ubiquitous) ? cfg.ubiquitous : [], label: 'Ubiquitous transcripts', catalog: genes,
+    placeholder: genes ? 'Type to pick a gene of the data (any case), or paste a list' : 'Type a gene and press Enter, or paste a list',
     classify: geneState, describe: geneTip, onChange: (v) => { cfg.ubiquitous = v; emit(); },
   });
 
@@ -657,16 +667,40 @@ export function signatureEditor({ cfg, defaults, report, ui, onChange }) {
     ubiquitous.set(isList(cfg.ubiquitous) ? cfg.ubiquitous : []);
   }
 
+  const geneStatus = h('div', { class: 'gene-status muted small', role: 'status' });
+  function paintGeneStatus() {
+    if (!genes) { geneStatus.classList.add('hidden'); return; }
+    const data = genes.get();
+    const err = genes.error();
+    mount(geneStatus, data
+      ? [icon('check', { size: 13 }), `${data.genes.length.toLocaleString()} genes in the data: type in a gene field to pick from them, in any case. Genes the data does not have are marked red and listed under the field.`,
+        data.problems.length ? h('span', { class: 'state warn' }, ` Some sections could not be read: ${data.problems.join('; ')}`) : null]
+      : err ? [icon('alert', { size: 13 }), `The genes of the data cannot be listed (${err}): genes are taken as typed.`]
+        : [h('span', { class: 'spinner' }), 'Loading the genes of the data…']);
+  }
+  if (genes) {
+    genes.onChange(() => {
+      if (!el.isConnected) return;
+      paintGeneStatus();
+      editorChips.forEach((ci) => ci.refresh());
+      paintCoreNote();
+      paintList();
+    });
+    genes.load();
+  }
+
   const el = h('div', { class: 'stack-lg sig-tab' },
+    geneStatus,
     h('div', { class: 'sig-layout' },
       card({ title: 'Signatures', subtitle: countEl, actions: listActions, body: h('div', { class: 'stack' }, filter, listEl), cls: 'sig-side', flush: false }),
       h('section', { class: 'card sig-main' }, editorBody)),
     card({ title: 'Calling order', subtitle: 'Order of the positivity calls and of the tissue assignment (P and A in the list).', body: orderBody }),
-    h('div', { class: 'grid-2' },
+    h('div', { class: showUbiquitous ? 'grid-2' : '' },
       card({ title: 'Tissue classes', subtitle: 'Coarser groups of the cell types, in legend order. A signature whose class is not listed is assigned but counts as removed.', body: classesBody }),
-      card({ title: 'Ubiquitous transcripts', subtitle: 'Transcripts abundant in essentially every cell; a Leiden domain headed by them has no interpretable identity.', body: ubiquitous.el })));
+      showUbiquitous ? card({ title: 'Ubiquitous transcripts', subtitle: 'Transcripts abundant in essentially every cell; a Leiden domain headed by them has no interpretable identity.', body: ubiquitous.el }) : null));
 
   paintAll();
+  paintGeneStatus();
 
   return {
     el,
