@@ -202,7 +202,10 @@ environment variables), and the Next.js site rewrites `/popcorn` to it. A hosted
   and can open, check and download it; only its owner changes it (saves, uploads, regions, runs, analyses, deleting:
   HTTP 403 for anybody else, and the pages show another user's work read-only, with **Make a copy of your own**).
   Projects made before sign-in have no owner and stay open to every signed-in user. `POPCORN_AUTH=0` turns sign-in
-  off; the application on your own computer (`python -m webapp`) has none.
+  off; the application on your own computer (`python -m webapp`) has none. A program that cannot sign in in a browser
+  (Perspicax, which runs Popcorn's analyses as one of its tools) sends a key of its own as `X-Popcorn-Key` instead:
+  `POPCORN_SERVICE_KEYS="Perspicax:<key>"` (`backend/popcorn_mount.py`, `webapp/auth.py` `ServiceKey`). It acts as the
+  user "Perspicax", under the same rules as everybody: it sees everything and changes only what it made.
 
 Analyses run in the API process's queue, so that API must run as a single process (`WORKERS=1`). The front end finds the
 `/popcorn` prefix of its API from the address of `static/js/core.js`, and the server writes it into `index.html`.

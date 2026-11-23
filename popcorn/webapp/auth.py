@@ -16,11 +16,17 @@ and stays open to every signed-in user. Requests that only read, sent with POST 
 check, the explorer, gene look-ups), are open to everybody (READ_POSTS).
 
 Without `auth` (the local application, the tests) nothing changes: there are no users, and everything may be changed.
+
+Service keys. Another program (Perspicax, which runs Popcorn's analyses as one of its tools) cannot sign in with Clerk in
+a browser. It sends a key of its own as `X-Popcorn-Key: <key>` instead (ServiceKey, POPCORN_SERVICE_KEYS in
+backend/popcorn_mount.py). The key acts as one fixed user, id "service:<name>": like every user it sees everything and
+changes only what it made itself. A wrong key is refused (401) and never falls back to the Clerk session.
 """
 from __future__ import annotations
 
 import base64
 import contextvars
+import hmac
 import re
 from typing import Callable, NamedTuple
 from urllib.parse import unquote
@@ -38,6 +44,11 @@ except ImportError:  # pragma: no cover
 SESSION_COOKIES = ("popcorn_session", "__session")   # the page's own cookie (auth.js), Clerk's
 NAME_HEADER = "x-popcorn-user"                       # the display name of the user, URL-encoded (auth.js)
 NAME_MAX = 80
+KEY_HEADER = "x-popcorn-key"                         # a service key (ServiceKey): a program, not a person
+SERVICE_PREFIX = "service:"                          # user id of a service key: "service:<name>"
+KEY_MIN_LENGTH = 32
+_SERVICE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,39}")
+_SERVICE_KEY = re.compile(r"[A-Za-z0-9_\-.~+/=]+")
 
 # answered without signing in: what the page needs to show the sign-in
 PUBLIC_API = re.compile(r"^/api/(health|defaults|auth|docs/[^/]+)$")
@@ -61,18 +72,62 @@ CLERK_JS_MAJOR = "6"
 CLERK_UI_MAJOR = "1"
 
 
+class ServiceKey(NamedTuple):
+    """A program's key, sent as `X-Popcorn-Key` in place of a Clerk session. It signs in as user
+    {"id": "service:<name>", "name": <name>}."""
+    name: str
+    key: str
+
+    @property
+    def user(self) -> dict:
+        return {"id": f"{SERVICE_PREFIX}{self.name.lower()}", "name": self.name}
+
+
+def parse_service_keys(text: str | None) -> tuple[ServiceKey, ...]:
+    """POPCORN_SERVICE_KEYS: entries "<name>:<key>" separated by commas, e.g. "Perspicax:3f9c...". The name (a letter,
+    then letters, digits, - or _) is the user shown as the owner of what the program makes; the key needs at least
+    KEY_MIN_LENGTH characters. Raises ValueError, naming the entry but never the key, for anything else."""
+    keys: list[ServiceKey] = []
+    for n, entry in enumerate((text or "").split(","), 1):
+        entry = entry.strip()
+        if not entry:
+            continue
+        name, sep, key = entry.partition(":")
+        name, key = name.strip(), key.strip()
+        if not sep or not _SERVICE_NAME.fullmatch(name):
+            raise ValueError(f"entry {n} is not <name>:<key> with a name of letters, digits, - or _")
+        if len(key) < KEY_MIN_LENGTH or not _SERVICE_KEY.fullmatch(key):
+            raise ValueError(f"the key of {name} needs at least {KEY_MIN_LENGTH} characters, without spaces")
+        if any(k.name.lower() == name.lower() for k in keys):
+            raise ValueError(f"{name} is named twice")
+        keys.append(ServiceKey(name, key))
+    return tuple(keys)
+
+
 class Auth(NamedTuple):
     """Sign-in with Clerk. `verify` takes a session token and returns the user id, raising on an invalid or expired
     token; `publishable_key` is the Clerk application's (pk_test_... or pk_live_...); `clerk_js_url` and
     `clerk_ui_url` are where the page loads ClerkJS and its UI components from (default: the application's Frontend
     API; with only `clerk_js_url` given, no separate UI script is loaded). `end_sessions(user_id)` ends every session of
     a user with Clerk's Backend API and returns how many (POST /api/auth/sign-out: the page asks for it when signing
-    out in the browser left the user signed in); None when the server cannot."""
+    out in the browser left the user signed in); None when the server cannot. `service_keys`: the programs that may
+    send a key instead of a session (ServiceKey)."""
     verify: Callable[[str], str]
     publishable_key: str
     clerk_js_url: str | None = None
     clerk_ui_url: str | None = None
     end_sessions: Callable[[str], int] | None = None
+    service_keys: tuple[ServiceKey, ...] = ()
+
+
+def service_user(auth: Auth, key: str) -> dict | None:
+    """The user of a service key; None when it is no configured key. Compares every key in constant time."""
+    sent = key.strip().encode()
+    found = None
+    for sk in auth.service_keys:
+        if hmac.compare_digest(sent, sk.key.encode()):
+            found = sk.user
+    return found if sent else None
 
 
 def frontend_api(publishable_key: str) -> str:
@@ -182,6 +237,26 @@ class AuthGate:
                         f"download it, but only its owner can change it")
         return "this request changes something that is not yours"
 
+    def _user(self, request: Request, path: str) -> tuple[dict | None, JSONResponse | None]:
+        """The user sending `request` and None, or None and the refusal (401, or 400 for a program signing out)."""
+        key = request.headers.get(KEY_HEADER)
+        if key is not None:   # a program: its key or nothing, never a session as well
+            user = service_user(self.auth, key)
+            if user is None:
+                return None, self._deny(401, "the service key (X-Popcorn-Key) is not valid")
+            if SELF_POSTS.match(path):
+                return None, self._deny(400, "a service key has no session to end")
+            return user, None
+        token = _token(request)
+        if token is None:
+            return None, self._deny(401, "sign in to use Popcorn Genetic")
+        try:
+            user_id = str(self.auth.verify(token))
+        except Exception as exc:  # noqa: BLE001 - any failure of the check is a refused session
+            detail = getattr(exc, "detail", None) or str(exc) or "invalid session"
+            return None, self._deny(401, f"sign in again: {detail}")
+        return {"id": user_id, "name": clean_name(request.headers.get(NAME_HEADER), user_id)}, None
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
@@ -191,22 +266,11 @@ class AuthGate:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        token = _token(request)
-        if token is None:
-            response = self._deny(401, "sign in to use Popcorn Genetic")
-            await response(scope, receive, send)
-            return
-        try:
-            user_id = str(self.auth.verify(token))
-        except Exception as exc:  # noqa: BLE001 - any failure of the check is a refused session
-            detail = getattr(exc, "detail", None) or str(exc) or "invalid session"
-            response = self._deny(401, f"sign in again: {detail}")
-            await response(scope, receive, send)
-            return
-        user = {"id": user_id, "name": clean_name(request.headers.get(NAME_HEADER), user_id)}
-        reason = self._forbidden(request.method, path, user)
-        if reason:
-            response = self._deny(403, reason)
+        user, response = self._user(request, path)
+        if response is None:
+            reason = self._forbidden(request.method, path, user)
+            response = self._deny(403, reason) if reason else None
+        if response is not None:
             await response(scope, receive, send)
             return
         reset = _user.set(user)

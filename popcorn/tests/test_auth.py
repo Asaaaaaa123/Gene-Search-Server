@@ -18,7 +18,7 @@ with warnings.catch_warnings():  # Starlette 1.x prefers httpx2 for its TestClie
     warnings.filterwarnings("ignore", message=".*httpx.*")
     from fastapi.testclient import TestClient
 
-from webapp.auth import Auth, frontend_api  # noqa: E402
+from webapp.auth import Auth, ServiceKey, frontend_api, parse_service_keys  # noqa: E402
 from webapp.server import Hosted, create_app  # noqa: E402
 
 FAKE = "tests.fake_worker"
@@ -274,6 +274,65 @@ def test_every_change_records_who_made_it(client, tiny_demo):
     assert wait_final(client, rid, ALICE)["changed_by"] is None
     client.put(f"/api/runs/{rid}/regions", json={"regions": []}, headers=ALICE)
     assert client.get(f"/api/runs/{rid}", headers=BOB).json()["changed_by"]["name"] == "Alice Ångström"
+
+
+SERVICE_KEY = "k" * 40
+PERSPICAX = {"X-Popcorn-Key": SERVICE_KEY}
+
+
+@pytest.fixture
+def keyed(tmp_path, tiny_demo):
+    app = create_app(tmp_path / "ws", worker_module=FAKE,
+                     hosted=Hosted(data_dirs=(tiny_demo["root"],), max_active_runs=2, home_url="/"),
+                     auth=Auth(verify=verify, publishable_key=PK,
+                               service_keys=(ServiceKey("Perspicax", SERVICE_KEY),)))
+    with TestClient(app, base_url=PUBLIC) as c:
+        yield c
+
+
+def test_parse_service_keys():
+    good = "a" * 32
+    assert parse_service_keys(None) == () and parse_service_keys(" , ") == ()
+    assert parse_service_keys(f"Perspicax:{good}, other-tool:{good}b") == (
+        ServiceKey("Perspicax", good), ServiceKey("other-tool", good + "b"))
+    assert ServiceKey("Perspicax", good).user == {"id": "service:perspicax", "name": "Perspicax"}
+    for bad in (good, f"Perspicax:{'a' * 31}", f"Per spicax:{good}", f"1x:{good}", f"P:{'a' * 31} b",
+                f"P:{good},p:{good}"):
+        with pytest.raises(ValueError) as e:
+            parse_service_keys(bad)
+        assert good not in str(e.value)   # never says the key
+
+
+def test_a_service_key_signs_a_program_in(keyed, tiny_demo):
+    p = keyed.post("/api/projects", json={"name": "From Perspicax", "config": demo_config(tiny_demo)},
+                   headers=PERSPICAX)
+    assert p.status_code == 200, p.text
+    assert p.json()["owner"] == {"id": "service:perspicax", "name": "Perspicax"}
+    pid = p.json()["id"]
+    rid = keyed.post(f"/api/projects/{pid}/runs", json={}, headers=PERSPICAX).json()["id"]
+    assert wait_final(keyed, rid, PERSPICAX)["owner"]["name"] == "Perspicax"
+    # people see what it made, and only it changes it
+    assert keyed.get(f"/api/projects/{pid}", headers=ALICE).json()["can_edit"] is False
+    assert keyed.put(f"/api/projects/{pid}", json={"name": "x"}, headers=ALICE).status_code == 403
+    # it sees what people made, and changes none of it
+    mine = new_project(keyed, ALICE)["id"]
+    assert keyed.get(f"/api/projects/{mine}", headers=PERSPICAX).json()["can_edit"] is False
+    r = keyed.put(f"/api/projects/{mine}", json={"name": "x"}, headers=PERSPICAX)
+    assert r.status_code == 403 and "belongs to Alice" in r.json()["detail"]
+
+
+def test_a_wrong_service_key_is_refused(keyed):
+    for headers in ({"X-Popcorn-Key": "k" * 39}, {"X-Popcorn-Key": ""},
+                    {"X-Popcorn-Key": "nope", **ALICE}):   # a wrong key never falls back to the session
+        r = keyed.get("/api/projects", headers=headers)
+        assert r.status_code == 401 and "service key" in r.json()["detail"]
+    assert keyed.get("/api/projects", headers=ALICE).status_code == 200
+    assert keyed.post("/api/auth/sign-out", headers=PERSPICAX).status_code == 400
+
+
+def test_no_service_keys_without_configuring_them(client):
+    assert client.get("/api/projects", headers=PERSPICAX).status_code == 401
+    assert "service" not in str(client.get("/api/auth").json())   # the page is told nothing about them
 
 
 def test_an_analysis_says_who_made_and_changed_it(tmp_path):
