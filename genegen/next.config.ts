@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
   // was killed for lack of memory (silent exit 255). Check the types before pushing: npx tsc --noEmit.
   typescript: { ignoreBuildErrors: process.env.SKIP_TYPECHECK === "1" },
 
+  // The default-theme version of Thematic GO was removed: old links and bookmarks open the custom-theme analysis.
+  async redirects() {
+    return [
+      { source: "/gene-ontology/default-theme", destination: "/gene-ontology/customize-theme", permanent: false },
+    ];
+  },
+
   // Proxy /api/* → FastAPI in dev and production (browser uses same-origin; no CORS).
   async rewrites() {
     return [

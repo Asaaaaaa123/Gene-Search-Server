@@ -54,7 +54,7 @@ export const siteConfig = {
     {
       title: 'Theme Overlap Networks',
       description: 'Circular, chord, and log-scaled heatmap views of shared genes between GO themes.',
-      href: '/gene-ontology/default-theme',
+      href: '/gene-ontology/customize-theme',
       icon: 'share' as const,
     },
     {
