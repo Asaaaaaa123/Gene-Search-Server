@@ -72,7 +72,7 @@ export function Features() {
                     {feature.title}
                     <ArrowUpRight className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />
                   </h3>
-                  <p className="mt-2 flex-1 text-sm leading-relaxed text-zinc-500">{feature.description}</p>
+                  <p className="mt-2 flex-1 text-sm leading-relaxed text-zinc-400">{feature.description}</p>
                 </Link>
               </motion.div>
             );

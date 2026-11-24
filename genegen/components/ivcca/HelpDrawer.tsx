@@ -27,7 +27,7 @@ function Section({ icon, title, items, ordered }: { icon: React.ReactNode; title
             <span
               className={
                 ordered
-                  ? 'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-800 ring-1 ring-teal-600/15'
+                  ? 'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-xs font-semibold text-teal-800 ring-1 ring-teal-600/15'
                   : 'mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300'
               }
             >
@@ -78,7 +78,7 @@ export function HelpDrawer({ tool, onClose }: { tool: ToolId | null; onClose: ()
             <Icon className="h-4.5 w-4.5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-teal-700">How to use</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-teal-700">How to use</p>
             <h2 className="text-base font-semibold text-slate-900">{help ? help.title : 'Getting started'}</h2>
           </div>
           <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
@@ -114,7 +114,7 @@ export function HelpDrawer({ tool, onClose }: { tool: ToolId | null; onClose: ()
                       }}
                       className="flex w-full gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-left hover:border-teal-600/40 hover:bg-slate-50"
                     >
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-800">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-50 text-xs font-semibold text-teal-800">
                         {i + 1}
                       </span>
                       <span className="min-w-0">
@@ -140,7 +140,7 @@ export function HelpDrawer({ tool, onClose }: { tool: ToolId | null; onClose: ()
           <Btn size="sm" variant="ghost" onClick={() => openGuide('help-faq')}>
             Troubleshooting
           </Btn>
-          <span className="ml-auto text-[11px] text-slate-400">
+          <span className="ml-auto text-xs text-slate-400">
             Press <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-sans">?</kbd> anywhere
           </span>
         </footer>

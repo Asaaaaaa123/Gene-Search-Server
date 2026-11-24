@@ -38,6 +38,7 @@ import { DistributionPanel } from './panels/DistributionPanel';
 import { DendrogramPanel } from './panels/DendrogramPanel';
 import { OptimalKPanel } from './panels/OptimalKPanel';
 import { EmbeddingPanel } from './panels/EmbeddingPanel';
+import { ProducerCredit } from '@/components/layout/ProducerCredit';
 import { GeneSetsPanel } from './panels/GeneSetsPanel';
 import {
   CeciPanel,
@@ -119,7 +120,7 @@ function ScopeSwitcher({ collapsed }: { collapsed: boolean }) {
                   )}
                 />
                 <span className={cn('min-w-0 flex-1 truncate', isActive && 'font-medium')}>{s.label}</span>
-                <span className="shrink-0 text-[11px] tabular-nums text-zinc-500">{s.nGenes.toLocaleString()}</span>
+                <span className="shrink-0 text-xs tabular-nums text-zinc-500">{s.nGenes.toLocaleString()}</span>
               </button>
               {s.kind === 'pathway' && (
                 <button
@@ -327,8 +328,11 @@ function SessionBar({ onOpenActivity, onOpenHelp }: { onOpenActivity: () => void
             <Grid3x3 className="h-4 w-4" />
           </span>
           <div className="min-w-0 leading-tight">
-            <p className="text-sm font-semibold text-white">IVCCA</p>
-            <p className="hidden truncate text-[11px] text-zinc-500 sm:block">Inter-Variability Cross-Correlation Analysis</p>
+            <p className="truncate text-sm font-semibold text-white">
+              IVCCA
+              <span className="hidden font-normal text-zinc-300 sm:inline"> · Inter-Variability Cross-Correlation Analysis</span>
+            </p>
+            <ProducerCredit className="hidden truncate text-xs sm:block" />
           </div>
         </div>
 
@@ -363,7 +367,7 @@ function SessionBar({ onOpenActivity, onOpenHelp }: { onOpenActivity: () => void
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1200);
               }}
-              className="hidden items-center gap-1 rounded-md px-2 py-1 font-mono text-[11px] text-zinc-500 hover:bg-white/5 hover:text-zinc-300 xl:inline-flex"
+              className="hidden items-center gap-1 rounded-md px-2 py-1 font-mono text-xs text-zinc-500 hover:bg-white/5 hover:text-zinc-300 xl:inline-flex"
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               {session.analyzerId.slice(0, 8)}

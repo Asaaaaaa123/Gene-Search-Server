@@ -282,7 +282,7 @@ function ClusterMembership({ kind, result, matrix }: { kind: Kind; result: Embed
             </div>
             <div className="mt-2 flex max-h-28 flex-wrap gap-1 overflow-auto">
               {c.genes.map((g) => (
-                <span key={g} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                <span key={g} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">
                   {g}
                 </span>
               ))}

@@ -26,7 +26,7 @@ export function Hero() {
             {siteConfig.producer}
           </span>
           <h1 className="text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
-            <span className="block text-sm font-medium uppercase tracking-widest text-zinc-500 sm:text-base">
+            <span className="block text-sm font-medium uppercase tracking-widest text-zinc-400 sm:text-base">
               {siteConfig.name}
             </span>
             <span className="mt-3 block text-gradient">{siteConfig.heroTitle}</span>

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { ProducerCredit } from '@/components/layout/ProducerCredit';
 
 type PlatformPageProps = {
   title: string;
@@ -25,14 +26,17 @@ export function PlatformPage({ title, icon, headerRight, children }: PlatformPag
           <div className="flex items-center gap-4">
             <Link
               href="/"
-              className="flex items-center gap-1.5 text-sm text-zinc-400 transition hover:text-[#00FFAA]"
+              className="flex items-center gap-1.5 text-sm text-zinc-300 transition hover:text-[#00FFAA]"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Home
             </Link>
             <div className="flex items-center gap-3 border-l border-white/10 pl-4">
               {icon}
-              <h1 className="text-xl font-semibold tracking-tight text-white md:text-2xl">{title}</h1>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight text-white md:text-2xl">{title}</h1>
+                <ProducerCredit className="mt-0.5" />
+              </div>
             </div>
           </div>
           {headerRight ? <div className="flex flex-wrap items-center gap-2">{headerRight}</div> : null}

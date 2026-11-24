@@ -7,7 +7,10 @@ export const siteConfig = {
   description:
     'Featuring ChemoTox™ collaborative gene expression resources for chemotherapy side effects, ThematicGO™ for ontology-driven transcriptomic discovery, and IVCCA™ (Inter-Variability Cross-Correlation Analysis) for multidimensional biological insight generation.',
   audience: 'Researchers, lab scientists, and bioinformatics professionals',
-  producer: 'Zhimu Wang (Berezin Lab)',
+  // Who made the platform: on every tool's header (components/layout/ProducerCredit.tsx), the footer and the home page.
+  producerName: 'Zhimu Wang',
+  producerLab: "Berezin's Lab - Washington University in Saint Louis",
+  producer: "Zhimu Wang (Berezin's Lab - Washington University in Saint Louis)",
   colors: {
     bg: '#0A0A0A',
     accent: '#00FFAA',

@@ -1,5 +1,5 @@
 // main.js — application shell: sidebar navigation, environment status and the route table.
-import { h, icon, mount, route, startRouter, onRouteChange, refreshHealth, state, poll, svg, button } from './core.js';
+import { h, icon, mount, route, startRouter, onRouteChange, refreshHealth, state, poll, svg, button, producerCredit } from './core.js';
 import { renderProjects } from './views/projects.js';
 import { renderProject } from './views/project.js';
 import { renderRuns } from './views/runs.js';
@@ -44,6 +44,7 @@ function buildShell(user) {
     h('aside', { class: 'sidebar' },
       h('div', { class: 'brand' }, brandMark(),
         h('div', null, h('div', { class: 'brand-name' }, 'Popcorn Genetic'), h('div', { class: 'brand-sub' }, 'Spatial transcriptomics analysis'))),
+      producerCredit(),
       h('div', { class: 'nav-label' }, 'Workspace'),
       nav,
       h('div', { class: 'sidebar-foot' },

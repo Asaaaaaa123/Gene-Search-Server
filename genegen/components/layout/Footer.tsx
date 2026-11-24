@@ -14,8 +14,8 @@ export function Footer() {
               </span>
               <span className="text-lg font-semibold text-white">{siteConfig.name}</span>
             </div>
-            <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-500">{siteConfig.description}</p>
-            <p className="mt-4 text-xs text-zinc-600">
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-400">{siteConfig.description}</p>
+            <p className="mt-4 text-sm text-zinc-400">
               Produced by <span className="text-zinc-400">{siteConfig.producer}</span>
             </p>
           </div>
@@ -23,22 +23,22 @@ export function Footer() {
             <h4 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Product</h4>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <Link href="/gene-search" className="text-zinc-500 transition hover:text-[#00FFAA]">
+                <Link href="/gene-search" className="text-zinc-400 transition hover:text-[#00FFAA]">
                   {siteConfig.chemoTox}
                 </Link>
               </li>
               <li>
-                <Link href="/gene-ontology" className="text-zinc-500 transition hover:text-[#00FFAA]">
+                <Link href="/gene-ontology" className="text-zinc-400 transition hover:text-[#00FFAA]">
                   {siteConfig.thematicGo}
                 </Link>
               </li>
               <li>
-                <Link href="/ivcca" className="text-zinc-500 transition hover:text-[#00FFAA]">
+                <Link href="/ivcca" className="text-zinc-400 transition hover:text-[#00FFAA]">
                   IVCCA Suite
                 </Link>
               </li>
               <li>
-                <Link href="/dashboard" className="text-zinc-500 transition hover:text-[#00FFAA]">
+                <Link href="/dashboard" className="text-zinc-400 transition hover:text-[#00FFAA]">
                   Dashboard
                 </Link>
               </li>
@@ -48,19 +48,19 @@ export function Footer() {
             <h4 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Account</h4>
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <Link href="/sign-in" className="text-zinc-500 transition hover:text-[#00FFAA]">
+                <Link href="/sign-in" className="text-zinc-400 transition hover:text-[#00FFAA]">
                   Sign in
                 </Link>
               </li>
               <li>
-                <Link href="/sign-up" className="text-zinc-500 transition hover:text-[#00FFAA]">
+                <Link href="/sign-up" className="text-zinc-400 transition hover:text-[#00FFAA]">
                   Sign up
                 </Link>
               </li>
             </ul>
           </div>
         </div>
-        <p className="mt-12 border-t border-white/5 pt-8 text-center text-xs text-zinc-600">
+        <p className="mt-12 border-t border-white/5 pt-8 text-center text-xs text-zinc-400">
           © {new Date().getFullYear()} {siteConfig.name}. All rights reserved.
         </p>
       </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { fetchWithClerk } from "@/lib/clerk-fetch";
+import { ProducerCredit } from "@/components/layout/ProducerCredit";
 
 const ORGAN_PRESETS = [
   "BoneMarrow",
@@ -120,6 +121,7 @@ export default function UploadCSVPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
       <div className="max-w-md w-full space-y-6 bg-white p-8 rounded-lg shadow-md">
         <h2 className="text-2xl font-bold text-center text-gray-900">Upload gene data</h2>
+        <ProducerCredit tone="light" className="-mt-4 text-center" />
         <p className="text-sm text-gray-600 text-center">
           Upload a <strong>.csv</strong> or Excel <strong>.xlsx</strong> / <strong>.xls</strong> file with gene columns
           (same headers as the organ spreadsheets: Gene_symbol, Gene_name, etc.). Requires MongoDB. Upload history is

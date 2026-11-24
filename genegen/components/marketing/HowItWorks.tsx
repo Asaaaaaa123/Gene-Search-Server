@@ -32,7 +32,7 @@ export function HowItWorks() {
               )}
               <span className="text-4xl font-bold text-[#00FFAA]/30">{item.step}</span>
               <h3 className="mt-2 text-lg font-semibold text-white">{item.title}</h3>
-              <p className="mt-2 text-sm text-zinc-500">{item.body}</p>
+              <p className="mt-2 text-sm text-zinc-400">{item.body}</p>
             </motion.div>
           ))}
         </div>

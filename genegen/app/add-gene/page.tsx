@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { UserButton, useAuth } from '@clerk/nextjs';
 import { fetchWithClerk } from '@/lib/clerk-fetch';
+import { ProducerCredit } from '@/components/layout/ProducerCredit';
 
 interface GeneFormData {
   gene_symbol: string;
@@ -142,6 +143,7 @@ export default function AddGenePage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Add New Gene</h1>
             <p className="text-gray-600">Enter gene information to add to the database</p>
+            <ProducerCredit tone="light" className="mt-1" />
           </div>
           <div className="flex gap-3 items-center">
             <Link

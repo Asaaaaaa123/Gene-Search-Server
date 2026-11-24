@@ -80,7 +80,7 @@ function ToolGuide({ id, help, open, onToggle }: { id: ToolId; help: ToolHelp; o
       {open && (
         <div className="grid gap-5 px-4 pb-4 pl-[3.75rem] md:grid-cols-2">
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Steps</p>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">Steps</p>
             <ol className="list-decimal space-y-1.5 pl-4 text-sm leading-relaxed text-slate-700 marker:text-slate-400">
               {help.steps.map((s, i) => (
                 <li key={i}>{s}</li>
@@ -89,7 +89,7 @@ function ToolGuide({ id, help, open, onToggle }: { id: ToolId; help: ToolHelp; o
           </div>
           <div className="space-y-4">
             <div>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Reading the results</p>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">Reading the results</p>
               <ul className="list-disc space-y-1.5 pl-4 text-sm leading-relaxed text-slate-700 marker:text-slate-300">
                 {help.reading.map((s, i) => (
                   <li key={i}>{s}</li>
@@ -98,7 +98,7 @@ function ToolGuide({ id, help, open, onToggle }: { id: ToolId; help: ToolHelp; o
             </div>
             {help.tips?.length ? (
               <div>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Tips</p>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">Tips</p>
                 <ul className="list-disc space-y-1.5 pl-4 text-sm leading-relaxed text-slate-700 marker:text-slate-300">
                   {help.tips.map((s, i) => (
                     <li key={i}>{s}</li>

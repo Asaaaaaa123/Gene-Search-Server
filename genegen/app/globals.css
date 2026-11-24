@@ -19,8 +19,19 @@
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
+/* Larger, easier-to-read text: the base size is 17 px instead of 16 (every rem size grows with it, and a browser's
+   own text-size setting still applies), and the two smallest steps, which most of the interface is set in, grow a
+   little more (text-sm about 16 px, text-xs about 14 px). */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1.15 / 0.8125);
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: calc(1.4 / 0.9375);
+}
+
 html {
   scroll-behavior: smooth;
+  font-size: 106.25%;
 }
 
 body {

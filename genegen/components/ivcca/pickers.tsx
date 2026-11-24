@@ -113,7 +113,7 @@ export function GeneCombobox({
           className="absolute z-40 mt-1 max-h-72 w-full min-w-[14rem] overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
         >
           {!query && (
-            <li className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <li className="px-3 pb-1 pt-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
               Most connected genes
             </li>
           )}

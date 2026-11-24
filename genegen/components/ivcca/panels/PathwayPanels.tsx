@@ -1047,7 +1047,7 @@ function GeneList({ title, genes }: { title: string; genes: string[] }) {
           <span className="text-xs text-slate-400">None</span>
         ) : (
           genes.map((g) => (
-            <span key={g} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+            <span key={g} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700">
               {g}
             </span>
           ))

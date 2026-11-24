@@ -39,7 +39,7 @@ export function Testimonials() {
         >
           <p className="text-lg leading-relaxed text-zinc-300">&ldquo;{t.quote}&rdquo;</p>
           <p className="mt-6 font-semibold text-white">{t.name}</p>
-          <p className="text-sm text-zinc-500">{t.role}</p>
+          <p className="text-sm text-zinc-400">{t.role}</p>
         </motion.div>
         <div className="mt-6 flex justify-center gap-2">
           {siteConfig.testimonials.map((_, i) => (

@@ -225,7 +225,7 @@ export function GeneClusterVisualization() {
       {status === 'error' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0A0A0A]/85 px-6 text-center">
           <p className="text-sm text-red-400">{errorMsg}</p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-zinc-400">
             Start the backend API (port 8000) so IVCCA can load hero-expression.csv.
           </p>
         </div>

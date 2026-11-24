@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { fetchWithClerk } from '@/lib/clerk-fetch';
+import { ProducerCredit } from '@/components/layout/ProducerCredit';
 import { API_BASE_URL, API_PUBLIC_BASE_URL } from '@/lib/api-base';
 import {
   appendChartStyleToFormData,
@@ -778,6 +779,7 @@ export default function CustomizeTheme() {
               Customize Theme Analysis
             </h1>
             <p className="text-lg text-gray-600">Select specific themes for targeted functional enrichment analysis</p>
+            <ProducerCredit tone="light" className="mt-2 text-base" />
             {isLoaded && !isSignedIn && (
               <p className="mt-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 Sign in to save your theme selections and custom themes across visits.{' '}

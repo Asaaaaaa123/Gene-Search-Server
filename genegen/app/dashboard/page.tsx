@@ -132,7 +132,7 @@ export default function DashboardPage() {
       </div>
 
       <motion.p
-        className="mt-8 text-center text-xs text-zinc-500"
+        className="mt-8 text-center text-sm text-zinc-400"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.3 }}

@@ -249,7 +249,7 @@ function HeatmapFigure({
           if (Array.isArray(idx) && idx.length === 2) onCellClick(grid.indices[idx[0]], grid.indices[idx[1]]);
         }}
       />
-      <p className="px-2 pb-1 pt-1 text-[11px] text-slate-400">
+      <p className="px-2 pb-1 pt-1 text-xs text-slate-500">
         Drag to zoom · double-click to reset · click a cell to inspect the gene pair
       </p>
     </Card>
@@ -273,9 +273,9 @@ function PartnerList({
 }) {
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
       {items.length === 0 ? (
-        <p className="text-xs text-slate-400">None</p>
+        <p className="text-xs text-slate-500">None</p>
       ) : (
         <ul className="space-y-0.5">
           {items.map((p) => (
@@ -375,13 +375,13 @@ function Inspector({
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <div className="rounded-lg bg-slate-50 px-3 py-2">
-                <p className="text-[11px] text-slate-500">Rank by mean |r|</p>
+                <p className="text-xs text-slate-500">Rank by mean |r|</p>
                 <p className="text-sm font-semibold text-slate-900">
                   #{(matrix.rankOf[focus] + 1).toLocaleString()} <span className="font-normal text-slate-400">/ {matrix.n.toLocaleString()}</span>
                 </p>
               </div>
               <div className="rounded-lg bg-slate-50 px-3 py-2">
-                <p className="text-[11px] text-slate-500">Mean |r|</p>
+                <p className="text-xs text-slate-500">Mean |r|</p>
                 <p className="text-sm font-semibold text-slate-900">{fmt.num(matrix.scoreOf[focus])}</p>
               </div>
             </div>
@@ -418,7 +418,7 @@ function Inspector({
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-[11px] text-slate-400">Ranked by mean |r| with all other genes — the order used by the sorted heatmap.</p>
+      <p className="mt-2 text-xs text-slate-500">Ranked by mean |r| with all other genes — the order used by the sorted heatmap.</p>
     </div>
   );
 

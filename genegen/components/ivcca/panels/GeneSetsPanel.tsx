@@ -28,7 +28,7 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
       <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
         <div className="space-y-3">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Name</span>
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">Name</span>
             <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Angiogenesis (GO:0001525)" className="w-full" />
           </label>
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -58,7 +58,7 @@ function NewSetForm({ onDone }: { onDone: () => void }) {
           </div>
         </div>
         <label className="block">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">Genes</span>
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">Genes</span>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -175,7 +175,7 @@ function SetRow({ set }: { set: GeneSet }) {
                   key={g}
                   title={absent ? 'Not in the current dataset' : undefined}
                   className={cn(
-                    'rounded px-1.5 py-0.5 font-mono text-[11px]',
+                    'rounded px-1.5 py-0.5 font-mono text-xs',
                     absent ? 'bg-white text-slate-400 line-through ring-1 ring-slate-200' : 'bg-slate-100 text-slate-700',
                   )}
                 >

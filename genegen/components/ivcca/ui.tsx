@@ -83,7 +83,7 @@ export function ToolHeader({
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0 max-w-3xl">
         {eyebrow && (
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-teal-700">{eyebrow}</p>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-teal-700">{eyebrow}</p>
         )}
         <h2 className="text-xl font-semibold tracking-tight text-slate-900">{title}</h2>
         {description && <p className="mt-1 text-sm leading-relaxed text-slate-600">{description}</p>}
@@ -168,7 +168,7 @@ export function Field({
 }) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+      <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.06em] text-slate-500">
         {label}
         {hint && <HintIcon text={hint} />}
       </span>
@@ -571,7 +571,7 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-xs font-medium',
         tone === 'neutral' && 'bg-slate-100 text-slate-600',
         tone === 'teal' && 'bg-teal-50 text-teal-700 ring-1 ring-teal-600/15',
         tone === 'amber' && 'bg-amber-50 text-amber-700 ring-1 ring-amber-600/15',

@@ -2,7 +2,7 @@
 // application signs in; ClerkJS and its UI components (two scripts since Clerk Core 3) are loaded from that
 // application. Until a user is signed in, the page shows Clerk's sign-in instead of the application. Signed in, every
 // request carries the session (core.js setSession).
-import { h, api, mount, icon, toast, sleep, fmt, setSession, clearSession, sessionToken, state } from './core.js';
+import { h, api, mount, icon, toast, sleep, fmt, setSession, clearSession, sessionToken, state, producerCredit } from './core.js';
 
 const TOKEN_REFRESH_MS = 20000;   // the session cookie (images, downloads) stays fresh: a token lives a minute
 const SIGN_OUT_WAIT_MS = 5000;    // how long signing out may take before the page reloads anyway
@@ -57,7 +57,7 @@ function gate(app, ...content) {
   mount(app, h('div', { class: 'auth-gate' },
     h('div', { class: 'auth-card' },
       h('div', { class: 'auth-brand' }, h('div', { class: 'brand-name' }, 'Popcorn Genetic'),
-        h('div', { class: 'brand-sub' }, 'Spatial transcriptomics analysis')),
+        h('div', { class: 'brand-sub' }, 'Spatial transcriptomics analysis'), producerCredit('auth-credit')),
       ...content)));
 }
 

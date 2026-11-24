@@ -61,7 +61,7 @@ export function Navbar({ marketing = false }: { marketing?: boolean }) {
               'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
               pathname === link.href || pathname?.startsWith(link.href + '/')
                 ? 'text-[#00FFAA]'
-                : 'text-zinc-400 hover:text-white'
+                : 'text-zinc-300 hover:text-white'
             );
             return link.native ? (
               <a key={link.href} href={link.href} className={className}>

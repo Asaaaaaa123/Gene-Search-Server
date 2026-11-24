@@ -188,6 +188,12 @@ export function clear(el) {
   return el;
 }
 
+/** Who made Popcorn Genetic, shown under its name in the sidebar and on the sign-in (the Geno Intelligence site
+ * shows the same line on each of its tools). */
+export const PRODUCER = { name: 'Zhimu Wang', lab: "Berezin's Lab - Washington University in Saint Louis" };
+export const producerCredit = (cls = 'brand-credit') =>
+  h('div', { class: cls }, h('span', { class: 'brand-credit-name' }, PRODUCER.name), ` (${PRODUCER.lab})`);
+
 /** Replace the children of `el`. */
 export function mount(el, ...children) {
   clear(el);
